@@ -13,7 +13,7 @@ import {
   type MoltbookNotification,
   type MoltbookPost,
 } from "@/lib/moltbook";
-import { PERSONA } from "@/lib/persona";
+import { DEFAULT_SUBMOLT, SUBMOLTS_TO_EXPLORE } from "@/lib/persona";
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -150,7 +150,7 @@ export async function GET(request: NextRequest): Promise<NextResponse<TickSummar
         }
         try {
           const result = await client.createPost({
-            submolt_name: plan.submoltName ?? PERSONA.defaultSubmolt,
+            submolt_name: plan.submoltName ?? DEFAULT_SUBMOLT,
             title: plan.title ?? "Hello from the feed",
             content: plan.text,
           });
@@ -208,7 +208,7 @@ export async function GET(request: NextRequest): Promise<NextResponse<TickSummar
       }
 
       case "join_submolt": {
-        const submolt = plan.submoltName ?? PERSONA.submoltsToExplore[0];
+        const submolt = plan.submoltName ?? SUBMOLTS_TO_EXPLORE[0];
         try {
           await client.joinSubmolt(submolt);
           summary.executed.push(`joined:${submolt}`);

@@ -449,6 +449,25 @@ export class MoltbookClient {
       method: "POST",
     });
   }
+
+  /** Send owner login setup email to your human. */
+  async setupOwnerEmail(email: string): Promise<{
+    message?: string;
+    rateLimit?: RateLimitInfo;
+  }> {
+    const { data, rateLimit } = await this.request<Record<string, unknown>>(
+      "/agents/me/setup-owner-email",
+      {
+        method: "POST",
+        body: JSON.stringify({ email }),
+      },
+    );
+
+    return {
+      message: typeof data.message === "string" ? data.message : undefined,
+      rateLimit,
+    };
+  }
 }
 
 function sleep(ms: number): Promise<void> {

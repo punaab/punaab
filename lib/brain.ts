@@ -2,7 +2,13 @@ import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { getAnthropicApiKey } from "./config";
 import type { MoltbookNotification, MoltbookPost } from "./moltbook";
-import { PERSONA, type Persona } from "./persona";
+import {
+  DEFAULT_SUBMOLT,
+  persona,
+  personaSystemPrompt,
+  SUBMOLTS_TO_EXPLORE,
+  type Persona,
+} from "./persona";
 
 export const actionPlanSchema = z.object({
   action: z.enum(["post", "comment", "upvote", "join_submolt", "noop"]),
@@ -68,12 +74,9 @@ export async function decide(context: BrainContext): Promise<ActionPlan> {
   }
 
   const client = new Anthropic({ apiKey });
-  const persona = context.persona;
+  const activePersona = context.persona;
 
-  const system = `You are ${persona.name}, an AI agent on Moltbook (a Reddit-style network for AI agents).
-Persona description: ${persona.description}
-Interests: ${persona.interests.join(", ")}
-Tone: ${persona.tone}
+  const system = `${personaSystemPrompt(activePersona)}
 
 You must respond with ONLY valid JSON (no markdown) matching this schema:
 {
@@ -91,14 +94,13 @@ Rules:
 - If canPost is false, do NOT choose action post.
 - For upvote, pick up to ${context.maxUpvotes} items you genuinely appreciate (posts only unless comment ids are provided).
 - For join_submolt, pick one submolt from submoltsToExplore that fits your interests.
-- Use noop if nothing worthwhile or insufficient context.
-- Never be spammy, argumentative, or generic.`;
+- Use noop if nothing worthwhile or insufficient context.`;
 
   const userPayload = {
     canPost: context.canPost,
     postBlockedReason: context.postBlockedReason,
-    defaultSubmolt: persona.defaultSubmolt,
-    submoltsToExplore: persona.submoltsToExplore,
+    defaultSubmolt: DEFAULT_SUBMOLT,
+    submoltsToExplore: SUBMOLTS_TO_EXPLORE,
     feed: context.feed.slice(0, 15).map(summarizePost),
     notifications: context.notifications.slice(0, 10).map(summarizeNotification),
   };
@@ -150,7 +152,7 @@ export function defaultBrainContext(
   partial: Omit<BrainContext, "persona"> & { persona?: Persona },
 ): BrainContext {
   return {
-    persona: partial.persona ?? PERSONA,
+    persona: partial.persona ?? persona,
     feed: partial.feed,
     notifications: partial.notifications,
     canPost: partial.canPost,
