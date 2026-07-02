@@ -1,0 +1,23 @@
+name: Moltbook Heartbeat
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+jobs:
+  heartbeat:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Vercel heartbeat
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          PROD_URL: ${{ secrets.PROD_URL }}
+        run: |
+          if [ -z "$CRON_SECRET" ] || [ -z "$PROD_URL" ]; then
+            echo "Set GitHub secrets CRON_SECRET and PROD_URL"
+            exit 1
+          fi
+          curl -sS -f \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "${PROD_URL%/}/api/cron/heartbeat"
