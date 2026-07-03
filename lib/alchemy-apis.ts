@@ -44,6 +44,77 @@ function isAlchemyInactiveError(message: string): boolean {
   return /app is inactive|inactive.*alchemy/i.test(message);
 }
 
+function isAlchemyNetworkDisabledError(message: string): boolean {
+  return /is not enabled for this app/i.test(message);
+}
+
+function isInvalidAddressError(message: string): boolean {
+  return /address is not valid/i.test(message);
+}
+
+const NETWORKS_SETUP_HINT =
+  "Enable Base Mainnet + Ethereum Mainnet on your Alchemy app (Networks tab), then refresh.";
+
+function networksSetupUrlFromError(message: string): string | undefined {
+  const match = message.match(/dashboard\.alchemy\.com\/apps\/([a-z0-9]+)/i);
+  return match ? `https://dashboard.alchemy.com/apps/${match[1]}/networks` : undefined;
+}
+
+function shortenAlchemyError(message: string): string {
+  if (isAlchemyNetworkDisabledError(message)) return NETWORKS_SETUP_HINT;
+  if (isInvalidAddressError(message)) {
+    return "Wallet address rejected — verify WATCH_BASE_ADDRESS / WATCH_SOLANA_ADDRESS in Vercel.";
+  }
+  return message.length > 240 ? `${message.slice(0, 237)}…` : message;
+}
+
+function applyNetworkSetupHints(snapshot: AlchemyApiSnapshot): void {
+  const errors = [
+    snapshot.portfolio.error,
+    snapshot.nfts.error,
+    snapshot.tokens.error,
+    snapshot.transfers.error,
+  ].filter((e): e is string => Boolean(e));
+
+  let setupUrl: string | undefined;
+  for (const e of errors) {
+    setupUrl ??= networksSetupUrlFromError(e);
+  }
+
+  if (errors.some(isAlchemyNetworkDisabledError)) {
+    snapshot.alchemyNetworksHint = NETWORKS_SETUP_HINT;
+    snapshot.alchemyNetworksSetupUrl =
+      setupUrl ?? "https://dashboard.alchemy.com/apps";
+  }
+
+  snapshot.evmConfigured = Boolean(snapshot.primaryBase);
+  snapshot.solanaConfigured = Boolean(snapshot.primarySolana);
+
+  if (snapshot.portfolio.error) {
+    snapshot.portfolio.error = shortenAlchemyError(snapshot.portfolio.error);
+    if (snapshot.portfolio.tokens.length > 0) delete snapshot.portfolio.error;
+  }
+
+  if (snapshot.nfts.error) {
+    snapshot.nfts.error = shortenAlchemyError(snapshot.nfts.error);
+    if (snapshot.nfts.items.length > 0 || snapshot.nfts.totalCount > 0) {
+      delete snapshot.nfts.error;
+    }
+  }
+
+  if (snapshot.tokens.error) {
+    snapshot.tokens.error = shortenAlchemyError(snapshot.tokens.error);
+  } else if (!snapshot.primaryBase) {
+    snapshot.tokens.error = "Set WATCH_BASE_ADDRESS to load Base ERC-20 balances.";
+  }
+
+  if (snapshot.transfers.error) {
+    snapshot.transfers.error = shortenAlchemyError(snapshot.transfers.error);
+  } else if (!snapshot.primaryBase) {
+    snapshot.transfers.error = "Set WATCH_BASE_ADDRESS to load Base transfers.";
+  }
+}
+
 function formatAlchemyHttpError(prefix: string, status: number, text: string): Error {
   const body = text.slice(0, 300);
   if (status === 403 && isAlchemyInactiveError(body)) {
@@ -136,6 +207,13 @@ export interface AlchemyApiSnapshot {
     error?: string;
   };
   alchemyAppInactive?: boolean;
+  /** EVM watch wallet configured */
+  evmConfigured?: boolean;
+  /** Solana watch wallet configured */
+  solanaConfigured?: boolean;
+  /** When Base/Ethereum aren't enabled on the Alchemy app */
+  alchemyNetworksHint?: string;
+  alchemyNetworksSetupUrl?: string;
 }
 
 function emptySnapshot(configured: boolean, cacheSec: number): AlchemyApiSnapshot {
@@ -340,7 +418,16 @@ async function fetchEvmNfts(
   }
 
   if (errors.length && items.length === 0 && collections.length === 0) {
-    throw new Error(errors.join(" · "));
+    if (errors.every(isAlchemyNetworkDisabledError)) {
+      return {
+        items: [],
+        totalCount: 0,
+        collections: [],
+        collectionCount: 0,
+        spamExcluded,
+      };
+    }
+    throw new Error(errors.map(shortenAlchemyError).join(" · "));
   }
 
   return {
@@ -395,36 +482,45 @@ async function fetchPortfolioTokens(
   const rows: PortfolioTokenRow[] = [];
 
   if (base) {
-    const data = await portfolioPost<{
-      data?: {
-        tokens?: Array<{
-          network?: string;
-          tokenAddress?: string | null;
-          tokenBalance?: string;
-          tokenMetadata?: { symbol?: string; name?: string; decimals?: number };
-        }>;
-      };
-    }>(apiKey, "/assets/tokens/balances/by-address", {
-      addresses: [{ address: base, networks: [...EVM_PORTFOLIO_NETWORKS] }],
-      includeNativeTokens: true,
-      includeErc20Tokens: true,
-    });
+    for (const network of EVM_PORTFOLIO_NETWORKS) {
+      try {
+        const data = await portfolioPost<{
+          data?: {
+            tokens?: Array<{
+              network?: string;
+              tokenAddress?: string | null;
+              tokenBalance?: string;
+              tokenMetadata?: { symbol?: string; name?: string; decimals?: number };
+            }>;
+          };
+        }>(apiKey, "/assets/tokens/balances/by-address", {
+          addresses: [{ address: base, networks: [network] }],
+          includeNativeTokens: true,
+          includeErc20Tokens: true,
+        });
 
-    for (const t of data.data?.tokens ?? []) {
-      const meta = t.tokenMetadata ?? {};
-      const decimals = meta.decimals ?? 18;
-      const raw = t.tokenBalance ?? "0";
-      const normalized = raw.startsWith("0x") ? hexToDecimal(raw) : raw;
-      rows.push({
-        network: t.network ?? "unknown",
-        address: base,
-        tokenAddress: t.tokenAddress ?? null,
-        symbol: meta.symbol ?? (t.tokenAddress ? t.tokenAddress.slice(0, 6) : "NATIVE"),
-        name: meta.name ?? meta.symbol ?? "Token",
-        balance: formatTokenBalance(normalized, decimals),
-        decimals,
-        isNative: !t.tokenAddress,
-      });
+        for (const t of data.data?.tokens ?? []) {
+          const meta = t.tokenMetadata ?? {};
+          const decimals = meta.decimals ?? 18;
+          const raw = t.tokenBalance ?? "0";
+          const normalized = raw.startsWith("0x") ? hexToDecimal(raw) : raw;
+          rows.push({
+            network: t.network ?? network,
+            address: base,
+            tokenAddress: t.tokenAddress ?? null,
+            symbol: meta.symbol ?? (t.tokenAddress ? t.tokenAddress.slice(0, 6) : "NATIVE"),
+            name: meta.name ?? meta.symbol ?? "Token",
+            balance: formatTokenBalance(normalized, decimals),
+            decimals,
+            isNative: !t.tokenAddress,
+          });
+        }
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        if (!isAlchemyNetworkDisabledError(msg)) {
+          console.warn(`[alchemy-apis] portfolio tokens ${network}:`, error);
+        }
+      }
     }
   }
 
@@ -509,7 +605,12 @@ async function fetchPortfolioNfts(
       items.push(...sol.items);
       totalCount += sol.totalCount;
     } catch (error) {
-      errors.push(error instanceof Error ? error.message : "solana_nft_failed");
+      const msg = error instanceof Error ? error.message : String(error);
+      if (!isInvalidAddressError(msg)) {
+        errors.push(shortenAlchemyError(msg));
+      } else {
+        console.warn("[alchemy-apis] solana portfolio nfts:", msg);
+      }
     }
   }
 
@@ -518,7 +619,12 @@ async function fetchPortfolioNfts(
   }
 
   if (errors.length && items.length === 0 && collections.length === 0) {
-    throw new Error(errors.join(" · "));
+    const critical = errors.filter(
+      (e) => !isAlchemyNetworkDisabledError(e) && !isInvalidAddressError(e),
+    );
+    if (critical.length) {
+      throw new Error(critical.join(" · "));
+    }
   }
 
   return {
@@ -536,10 +642,20 @@ async function fetchTokenApiBalances(
 ): Promise<TokenApiRow[]> {
   if (!base) return [];
 
-  const result = await evmJsonRpc<{
+  let result: {
     address: string;
     tokenBalances: Array<{ contractAddress: string; tokenBalance: string }>;
-  }>("base-mainnet", apiKey, "alchemy_getTokenBalances", [base, "erc20"]);
+  };
+  try {
+    result = await evmJsonRpc(
+      "base-mainnet",
+      apiKey,
+      "alchemy_getTokenBalances",
+      [base, "erc20"],
+    );
+  } catch (error) {
+    throw error instanceof Error ? error : new Error("token_api_failed");
+  }
 
   const nonZero = (result.tokenBalances ?? []).filter(
     (t) => t.tokenBalance && t.tokenBalance !== "0x0" && t.tokenBalance !== "0x",
@@ -594,6 +710,7 @@ async function fetchAssetTransfers(
     network: EvmRpcNetwork,
     direction: "from" | "to",
   ) {
+    try {
     const addressParam =
       direction === "from" ? { fromAddress: base } : { toAddress: base };
 
@@ -661,12 +778,33 @@ async function fetchAssetTransfers(
           : undefined,
       });
     }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      if (!isAlchemyNetworkDisabledError(msg)) {
+        console.warn(`[alchemy-apis] transfers ${network} ${direction}:`, error);
+      }
+      throw error instanceof Error ? error : new Error(msg);
+    }
   }
 
-  await pull("base-mainnet", "to");
-  await pull("base-mainnet", "from");
-  await pull("eth-mainnet", "to");
-  await pull("eth-mainnet", "from");
+  const transferErrors: string[] = [];
+  for (const [network, direction] of [
+    ["base-mainnet", "to"],
+    ["base-mainnet", "from"],
+    ["eth-mainnet", "to"],
+    ["eth-mainnet", "from"],
+  ] as const) {
+    try {
+      await pull(network, direction);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      if (!transferErrors.includes(msg)) transferErrors.push(msg);
+    }
+  }
+
+  if (rows.length === 0 && transferErrors.length) {
+    throw new Error(transferErrors.map(shortenAlchemyError).join(" · "));
+  }
 
   return rows
     .sort((a, b) => {
@@ -800,6 +938,8 @@ async function fetchAlchemyApiSnapshotUncached(): Promise<AlchemyApiSnapshot> {
       snapshot.transfers.error = hint;
     }
   }
+
+  applyNetworkSetupHints(snapshot);
 
   return normalizeAlchemySnapshot(snapshot);
 }

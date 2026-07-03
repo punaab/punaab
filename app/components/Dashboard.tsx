@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import OwnerChat from "./OwnerChat";
 import Web3CommandCenter from "./Web3CommandCenter";
 import CampaignWatch from "./CampaignWatch";
 import CatNftShop from "./CatNftShop";
@@ -549,8 +548,6 @@ export default function Dashboard() {
 
         {/* Right column — agent mind + ops */}
         <div className="column-ops">
-          <OwnerChat />
-
           <section className="panel">
             <h2>Current Thought</h2>
             <p className="thought-text">

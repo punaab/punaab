@@ -78,6 +78,12 @@ export default function AlchemyApiPanels({ data, onRefresh }: Props) {
                 · Base <code>{shortAddr(data.primaryBase)}</code>
               </>
             )}
+            {data.primarySolana && (
+              <>
+                {" "}
+                · Solana <code>{shortAddr(data.primarySolana)}</code>
+              </>
+            )}
           </p>
         </div>
         <button
@@ -91,6 +97,20 @@ export default function AlchemyApiPanels({ data, onRefresh }: Props) {
       </div>
 
       {refreshError && <p className="login-error">{refreshError}</p>}
+      {data.alchemyNetworksHint && (
+        <p className="login-error alchemy-inactive-banner">
+          {data.alchemyNetworksHint}{" "}
+          <a
+            href={data.alchemyNetworksSetupUrl ?? "https://dashboard.alchemy.com/apps"}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Open Alchemy Networks
+          </a>
+          {" · "}
+          Solana data can still load; Base/Ethereum need enabling.
+        </p>
+      )}
       {data.alchemyAppInactive && (
         <p className="login-error alchemy-inactive-banner">
           Alchemy app inactive —{" "}
