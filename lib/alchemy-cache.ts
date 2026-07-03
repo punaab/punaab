@@ -1,4 +1,5 @@
 import { createRedisClient } from "./redis";
+import { parseRedisValue } from "./redis-json";
 
 const memoryCache = new Map<string, { value: unknown; expiresAt: number }>();
 
@@ -14,10 +15,10 @@ export async function getCached<T>(
   }
 
   try {
-    const raw = await createRedisClient().get<string>(key);
+    const raw = await createRedisClient().get(key);
     if (raw) {
-      const parsed = JSON.parse(raw) as { v: T; exp: number };
-      if (parsed.exp > now) {
+      const parsed = parseRedisValue<{ v: T; exp: number }>(raw);
+      if (parsed && parsed.exp > now) {
         memoryCache.set(key, { value: parsed.v, expiresAt: parsed.exp });
         return parsed.v;
       }
@@ -31,9 +32,7 @@ export async function getCached<T>(
   memoryCache.set(key, { value, expiresAt: exp });
 
   try {
-    await createRedisClient().set(key, JSON.stringify({ v: value, exp }), {
-      ex: ttlSec,
-    });
+    await createRedisClient().set(key, { v: value, exp }, { ex: ttlSec });
   } catch {
     // cache write optional
   }

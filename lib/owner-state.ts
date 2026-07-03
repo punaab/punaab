@@ -1,4 +1,5 @@
 import { createRedisClient } from "./redis";
+import { parseRedisValue } from "./redis-json";
 
 const CURRENT_THOUGHT_KEY = "moltbook:owner:thought";
 const PLANS_KEY = "moltbook:owner:plans";
@@ -82,7 +83,7 @@ export async function appendActivity(
   };
   try {
     const r = getRedis();
-    await r.lpush(ACTIVITY_LOG_KEY, JSON.stringify(full));
+    await r.lpush(ACTIVITY_LOG_KEY, full);
     await r.ltrim(ACTIVITY_LOG_KEY, 0, MAX_ACTIVITY_LOG - 1);
   } catch (error) {
     console.error("[owner-state] appendActivity failed:", error);
@@ -96,7 +97,7 @@ export async function getActivityLog(limit = 20): Promise<AgentActivity[]> {
     return (Array.isArray(items) ? items : [])
       .map((item) => {
         try {
-          return JSON.parse(String(item)) as AgentActivity;
+          return parseRedisValue<AgentActivity>(item);
         } catch {
           return null;
         }
@@ -128,7 +129,7 @@ export async function getCurrentThought(): Promise<string | null> {
 
 export async function setPlans(plans: OwnerPlan[]): Promise<void> {
   try {
-    await getRedis().set(PLANS_KEY, JSON.stringify(plans.slice(0, MAX_PLANS)));
+    await getRedis().set(PLANS_KEY, plans.slice(0, MAX_PLANS));
   } catch (error) {
     console.error("[owner-state] setPlans failed:", error);
   }
@@ -136,9 +137,9 @@ export async function setPlans(plans: OwnerPlan[]): Promise<void> {
 
 export async function getPlans(): Promise<OwnerPlan[]> {
   try {
-    const raw = await getRedis().get<string>(PLANS_KEY);
+    const raw = await getRedis().get(PLANS_KEY);
     if (!raw) return [];
-    const parsed = JSON.parse(raw) as unknown;
+    const parsed = parseRedisValue<unknown>(raw);
     return Array.isArray(parsed) ? (parsed as OwnerPlan[]) : [];
   } catch (error) {
     console.error("[owner-state] getPlans failed:", error);
@@ -160,7 +161,7 @@ export async function appendPlan(text: string): Promise<void> {
 export async function appendTickLog(entry: TickLogEntry): Promise<void> {
   try {
     const r = getRedis();
-    await r.lpush(TICK_LOG_KEY, JSON.stringify(entry));
+    await r.lpush(TICK_LOG_KEY, entry);
     await r.ltrim(TICK_LOG_KEY, 0, MAX_TICK_LOG - 1);
   } catch (error) {
     console.error("[owner-state] appendTickLog failed:", error);
@@ -174,7 +175,7 @@ export async function getTickLog(limit = 20): Promise<TickLogEntry[]> {
     return list
       .map((item) => {
         try {
-          return JSON.parse(String(item)) as TickLogEntry;
+          return parseRedisValue<TickLogEntry>(item);
         } catch {
           return null;
         }
@@ -195,7 +196,7 @@ export async function addCollabMessage(msg: Omit<CollabMessage, "id" | "createdA
   };
   try {
     const r = getRedis();
-    await r.lpush(COLLAB_INBOX_KEY, JSON.stringify(entry));
+    await r.lpush(COLLAB_INBOX_KEY, entry);
     await r.ltrim(COLLAB_INBOX_KEY, 0, MAX_COLLAB - 1);
   } catch (error) {
     console.error("[owner-state] addCollabMessage failed:", error);
@@ -210,7 +211,7 @@ export async function getCollabInbox(limit = 20): Promise<CollabMessage[]> {
     return list
       .map((item) => {
         try {
-          return JSON.parse(String(item)) as CollabMessage;
+          return parseRedisValue<CollabMessage>(item);
         } catch {
           return null;
         }
@@ -248,7 +249,7 @@ export async function addPublishedLink(
   };
   try {
     const r = getRedis();
-    await r.lpush(PUBLISHED_LINKS_KEY, JSON.stringify(entry));
+    await r.lpush(PUBLISHED_LINKS_KEY, entry);
     await r.ltrim(PUBLISHED_LINKS_KEY, 0, MAX_PUBLISHED_LINKS - 1);
   } catch (error) {
     console.error("[owner-state] addPublishedLink failed:", error);
@@ -263,7 +264,7 @@ export async function getPublishedLinks(limit = 20): Promise<PublishedLink[]> {
     return list
       .map((item) => {
         try {
-          return JSON.parse(String(item)) as PublishedLink;
+          return parseRedisValue<PublishedLink>(item);
         } catch {
           return null;
         }

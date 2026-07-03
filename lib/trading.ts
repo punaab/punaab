@@ -20,6 +20,7 @@ import {
   type SolanaFungibleHolding,
 } from "./solana-alchemy";
 import { createRedisClient } from "./redis";
+import { parseRedisValue } from "./redis-json";
 
 const TRADE_LOG_KEY = "moltbook:trading:log";
 const TRADES_TODAY_KEY = "moltbook:trading:trades_today";
@@ -291,9 +292,10 @@ export async function analyzeTradingOpportunity(): Promise<TradeAnalysis | null>
 
 async function getTradesToday(): Promise<number> {
   try {
-    const raw = await getRedis().get<string>(TRADES_TODAY_KEY);
+    const raw = await getRedis().get(TRADES_TODAY_KEY);
     if (!raw) return 0;
-    const parsed = JSON.parse(raw) as { date: string; count: number };
+    const parsed = parseRedisValue<{ date: string; count: number }>(raw);
+    if (!parsed) return 0;
     const today = new Date().toISOString().slice(0, 10);
     return parsed.date === today ? parsed.count : 0;
   } catch {
@@ -304,7 +306,7 @@ async function getTradesToday(): Promise<number> {
 export async function incrementTradesToday(): Promise<void> {
   const today = new Date().toISOString().slice(0, 10);
   const count = (await getTradesToday()) + 1;
-  await getRedis().set(TRADES_TODAY_KEY, JSON.stringify({ date: today, count }));
+  await getRedis().set(TRADES_TODAY_KEY, { date: today, count });
 }
 
 export async function canExecuteTrade(): Promise<{ ok: boolean; reason?: string }> {
@@ -331,7 +333,7 @@ export async function appendTradeLog(
   };
   try {
     const r = getRedis();
-    await r.lpush(TRADE_LOG_KEY, JSON.stringify(full));
+    await r.lpush(TRADE_LOG_KEY, full);
     await r.ltrim(TRADE_LOG_KEY, 0, MAX_TRADE_LOG - 1);
   } catch (error) {
     console.error("[trading] appendTradeLog failed:", error);
@@ -345,7 +347,7 @@ export async function getTradeLog(limit = 20): Promise<TradeLogEntry[]> {
     return (Array.isArray(items) ? items : [])
       .map((item) => {
         try {
-          return JSON.parse(String(item)) as TradeLogEntry;
+          return parseRedisValue<TradeLogEntry>(item);
         } catch {
           return null;
         }

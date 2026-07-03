@@ -5,6 +5,7 @@ import {
 } from "./config";
 import { getSolBalanceViaAlchemy } from "./solana-alchemy";
 import { createRedisClient } from "./redis";
+import { parseRedisValue } from "./redis-json";
 
 const WEB3_SNAPSHOT_KEY = "moltbook:web3:snapshot";
 const WEB3_LAST_RUN_KEY = "moltbook:web3:last_run";
@@ -164,7 +165,7 @@ export async function captureWeb3Snapshot(): Promise<Web3Snapshot | null> {
 
   try {
     const r = getRedis();
-    await r.set(WEB3_SNAPSHOT_KEY, JSON.stringify(snapshot));
+    await r.set(WEB3_SNAPSHOT_KEY, snapshot);
     await r.set(WEB3_LAST_RUN_KEY, Date.now().toString());
   } catch (error) {
     console.error("[web3] save snapshot failed:", error);
@@ -199,9 +200,11 @@ function normalizeSnapshot(parsed: Web3Snapshot): Web3Snapshot {
 
 export async function getWeb3Snapshot(): Promise<Web3Snapshot | null> {
   try {
-    const raw = await getRedis().get<string>(WEB3_SNAPSHOT_KEY);
+    const raw = await getRedis().get(WEB3_SNAPSHOT_KEY);
     if (!raw) return null;
-    return normalizeSnapshot(JSON.parse(raw) as Web3Snapshot);
+    const parsed = parseRedisValue<Web3Snapshot>(raw);
+    if (!parsed) return null;
+    return normalizeSnapshot(parsed);
   } catch (error) {
     console.error("[web3] getWeb3Snapshot failed:", error);
     return null;

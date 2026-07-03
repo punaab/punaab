@@ -28,6 +28,21 @@ const NFT_V3_HOST: Record<EvmNftNetwork, string> = {
 
 const CACHE_KEY = "moltbook:alchemy:dashboard";
 
+const INACTIVE_ALCHEMY_HINT =
+  "Alchemy app inactive — create a new app at https://dashboard.alchemy.com/apps and update ALCHEMY_API_KEY in Vercel.";
+
+function isAlchemyInactiveError(message: string): boolean {
+  return /app is inactive|inactive.*alchemy/i.test(message);
+}
+
+function formatAlchemyHttpError(prefix: string, status: number, text: string): Error {
+  const body = text.slice(0, 300);
+  if (status === 403 && isAlchemyInactiveError(body)) {
+    return new Error(INACTIVE_ALCHEMY_HINT);
+  }
+  return new Error(`${prefix}: ${status} ${body}`);
+}
+
 export interface PortfolioTokenRow {
   network: string;
   address: string;
@@ -96,6 +111,7 @@ export interface AlchemyApiSnapshot {
     items: TransferRow[];
     error?: string;
   };
+  alchemyAppInactive?: boolean;
 }
 
 function emptySnapshot(configured: boolean, cacheSec: number): AlchemyApiSnapshot {
@@ -143,7 +159,7 @@ async function portfolioPost<T>(apiKey: string, path: string, body: unknown): Pr
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Portfolio ${path}: ${res.status} ${text.slice(0, 200)}`);
+    throw formatAlchemyHttpError(`Portfolio ${path}`, res.status, text);
   }
   return (await res.json()) as T;
 }
@@ -161,7 +177,9 @@ async function evmJsonRpc<T>(
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
   });
   const data = (await res.json()) as { result?: T; error?: { message: string } };
-  if (data.error) throw new Error(data.error.message);
+  if (data.error) {
+    throw formatAlchemyHttpError(`RPC ${method}`, 403, data.error.message);
+  }
   if (data.result === undefined) throw new Error("empty RPC result");
   return data.result;
 }
@@ -228,7 +246,7 @@ async function fetchNftV3ForOwner(
   const res = await fetch(url.toString());
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`NFT v3 ${network}: ${res.status} ${text.slice(0, 160)}`);
+    throw formatAlchemyHttpError(`NFT v3 ${network}`, res.status, text);
   }
 
   const data = (await res.json()) as {
@@ -668,6 +686,30 @@ async function fetchAlchemyApiSnapshotUncached(): Promise<AlchemyApiSnapshot> {
 
   await enrichSolanaPortfolio(snapshot, solana);
 
+  const panelErrors = [
+    snapshot.portfolio.error,
+    snapshot.nfts.error,
+    snapshot.tokens.error,
+    snapshot.transfers.error,
+  ].filter((e): e is string => !!e);
+
+  if (panelErrors.some(isAlchemyInactiveError)) {
+    snapshot.alchemyAppInactive = true;
+    const hint = INACTIVE_ALCHEMY_HINT;
+    if (snapshot.portfolio.error && isAlchemyInactiveError(snapshot.portfolio.error)) {
+      snapshot.portfolio.error = hint;
+    }
+    if (snapshot.nfts.error && isAlchemyInactiveError(snapshot.nfts.error)) {
+      snapshot.nfts.error = hint;
+    }
+    if (snapshot.tokens.error && isAlchemyInactiveError(snapshot.tokens.error)) {
+      snapshot.tokens.error = hint;
+    }
+    if (snapshot.transfers.error && isAlchemyInactiveError(snapshot.transfers.error)) {
+      snapshot.transfers.error = hint;
+    }
+  }
+
   return snapshot;
 }
 
@@ -687,7 +729,7 @@ export async function refreshAlchemyApiSnapshot(): Promise<AlchemyApiSnapshot> {
     const { createRedisClient } = await import("./redis");
     await createRedisClient().set(
       CACHE_KEY,
-      JSON.stringify({ v: fresh, exp: Date.now() + getAlchemyHoldingsCacheSec() * 1000 }),
+      { v: fresh, exp: Date.now() + getAlchemyHoldingsCacheSec() * 1000 },
       { ex: getAlchemyHoldingsCacheSec() },
     );
   } catch {

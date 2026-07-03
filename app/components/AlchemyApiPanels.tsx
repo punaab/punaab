@@ -86,6 +86,19 @@ export default function AlchemyApiPanels({ data, onRefresh }: Props) {
       </div>
 
       {refreshError && <p className="login-error">{refreshError}</p>}
+      {data.alchemyAppInactive && (
+        <p className="login-error alchemy-inactive-banner">
+          Alchemy app inactive —{" "}
+          <a
+            href="https://dashboard.alchemy.com/apps"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            create a new app
+          </a>
+          , copy the API key, and update <code>ALCHEMY_API_KEY</code> in Vercel env.
+        </p>
+      )}
       {!data.configured && (
         <p className="muted">Set ALCHEMY_API_KEY and watch/trading wallet addresses.</p>
       )}

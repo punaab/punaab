@@ -229,9 +229,10 @@ export default function CampaignWatch({
 
       {!persisted && (
         <p className="login-error campaign-error">
-          Campaign state not saved — Redis/KV missing on server
-          {persistError ? `: ${persistError}` : ""}. Launch will reset on reload until
-          fixed.
+          Campaign state not saved to Redis
+          {persistError ? ` (${persistError})` : ""}. Check{" "}
+          <code>UPSTASH_REDIS_REST_URL</code> + <code>UPSTASH_REDIS_REST_TOKEN</code> on
+          Vercel — launch will reset on reload until fixed.
         </p>
       )}
 

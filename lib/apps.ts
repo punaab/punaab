@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { createRedisClient } from "./redis";
+import { parseRedisValue } from "./redis-json";
 
 const APPS_INDEX_KEY = "moltbook:apps:index";
 const appKey = (slug: string) => `moltbook:app:${slug}`;
@@ -55,9 +56,9 @@ export async function listApps(): Promise<BotApp[]> {
 
 export async function getApp(slug: string): Promise<BotApp | null> {
   try {
-    const raw = await getRedis().get<string>(appKey(slug));
+    const raw = await getRedis().get(appKey(slug));
     if (!raw) return null;
-    const parsed = botAppSchema.safeParse(JSON.parse(raw));
+    const parsed = botAppSchema.safeParse(parseRedisValue(raw));
     return parsed.success ? parsed.data : null;
   } catch (error) {
     console.error("[apps] getApp failed:", error);
@@ -84,7 +85,7 @@ export async function saveApp(input: BotAppInput): Promise<BotApp> {
   };
 
   const validated = botAppSchema.parse(app);
-  await r.set(appKey(validated.slug), JSON.stringify(validated));
+  await r.set(appKey(validated.slug), validated);
   await r.sadd(APPS_INDEX_KEY, validated.slug);
   return validated;
 }

@@ -1,4 +1,5 @@
 import { createRedisClient } from "./redis";
+import { parseRedisValue } from "./redis-json";
 
 const EVENTS_KEY = "moltbook:alchemy:events";
 const MAX_EVENTS = 80;
@@ -96,7 +97,7 @@ export async function storeAlchemyWebhookEvent(payload: unknown): Promise<Alchem
   };
   try {
     const r = getRedis();
-    await r.lpush(EVENTS_KEY, JSON.stringify(entry));
+    await r.lpush(EVENTS_KEY, entry);
     await r.ltrim(EVENTS_KEY, 0, MAX_EVENTS - 1);
   } catch (error) {
     console.error("[alchemy-events] store failed:", error);
@@ -110,7 +111,7 @@ export async function getRecentAlchemyEvents(limit = 15): Promise<AlchemyWebhook
     return (Array.isArray(items) ? items : [])
       .map((item) => {
         try {
-          return JSON.parse(String(item)) as AlchemyWebhookEvent;
+          return parseRedisValue<AlchemyWebhookEvent>(item);
         } catch {
           return null;
         }

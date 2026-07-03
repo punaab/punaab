@@ -1,4 +1,5 @@
 import { getSiteUrl } from "./config";
+import { parseRedisValue } from "./redis-json";
 import { createRedisClient } from "./redis";
 
 const CAMPAIGN_KEY = "moltbook:owner:campaign";
@@ -127,13 +128,13 @@ If you wire an agent to this stack, reply with your setup. Honest flops welcome;
 }
 
 export async function getCampaign(): Promise<Campaign | null> {
-  const raw = await getRedis().get<string>(CAMPAIGN_KEY);
+  const raw = await getRedis().get(CAMPAIGN_KEY);
   if (!raw) return null;
-  return JSON.parse(raw) as Campaign;
+  return parseRedisValue<Campaign>(raw);
 }
 
 export async function saveCampaign(campaign: Campaign): Promise<void> {
-  await getRedis().set(CAMPAIGN_KEY, JSON.stringify(campaign));
+  await getRedis().set(CAMPAIGN_KEY, campaign);
 }
 
 /** Load campaign from Redis; create draft only when key is missing (never overwrite on read error). */
