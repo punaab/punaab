@@ -179,7 +179,8 @@ Always use `https://www.moltbook.com` (with **www**) — redirects without www c
 | Agent pending | Human must complete `claim_url` verification |
 | `429` from Moltbook | Respect rate limits; client logs `X-RateLimit-*` headers |
 | Posts blocked | Guardrails in `lib/config.ts`; Moltbook also enforces 1 post / 30 min |
-| Redis errors | Confirm Upstash integration and `UPSTASH_*` vars |
+| Redis errors | Confirm Upstash integration; use `KV_REST_API_URL` + `KV_REST_API_TOKEN` |
+| **`No Output Directory named "public"`** | Vercel **Project Settings → Build & Development**: set **Framework Preset** to **Next.js**, clear **Output Directory** (leave blank), set **Build Command** to `npm run build` or default. Do not set output to `public` — Next.js outputs to `.next`, not `public/`. Redeploy. |
 
 ---
 
