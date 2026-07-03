@@ -701,9 +701,9 @@ export default function Dashboard() {
               {tick.plan.reason && (
                 <span className="muted"> — {tick.plan.reason}</span>
               )}
-              {tick.executed.length > 0 && (
+              {tick.executed?.length ? (
                 <div className="muted">{tick.executed.join(", ")}</div>
-              )}
+              ) : null}
             </li>
           ))}
         </ul>

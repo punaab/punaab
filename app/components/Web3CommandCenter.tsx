@@ -42,9 +42,12 @@ export default function Web3CommandCenter({ hub, onRefresh }: Props) {
   if (!hub) return null;
 
   const balances = hub.snapshot?.balances ?? [];
-  const tradeCount = hub.trading.log.length;
-  const eventCount = hub.onchainEvents.length;
-  const liveTrades = hub.trading.log.filter((t) => !t.dryRun && t.signature).length;
+  const tradeLog = hub.trading?.log ?? [];
+  const onchainEvents = hub.onchainEvents ?? [];
+  const agentActivity = hub.agentActivity ?? [];
+  const tradeCount = tradeLog.length;
+  const eventCount = onchainEvents.length;
+  const liveTrades = tradeLog.filter((t) => !t.dryRun && t.signature).length;
 
   return (
     <section className="web3-command panel panel-wide">
@@ -170,11 +173,11 @@ export default function Web3CommandCenter({ hub, onRefresh }: Props) {
             POST only · signing key verified ·{" "}
             <code className="web3-inline-code">{hub.webhookUrl}</code>
           </p>
-          {!hub.onchainEvents.length && (
+          {!onchainEvents.length && (
             <p className="muted web3-empty">Waiting for on-chain events…</p>
           )}
           <ul className="web3-event-list">
-            {hub.onchainEvents.map((e) => (
+            {onchainEvents.map((e) => (
               <li key={e.id} className="web3-event-item">
                 <div className="web3-event-pulse" />
                 <div className="web3-event-body">
@@ -193,11 +196,11 @@ export default function Web3CommandCenter({ hub, onRefresh }: Props) {
           <p className="muted web3-panel-hint">
             Jupiter (Solana) + 0x / Wallet APIs (Base)
           </p>
-          {!hub.trading.log.length && (
+          {!tradeLog.length && (
             <p className="muted web3-empty">No trades yet</p>
           )}
           <ul className="web3-trade-list">
-            {hub.trading.log.map((t) => {
+            {tradeLog.map((t) => {
               const txUrl = txExplorerUrl(t.chain, t.signature ?? "");
               return (
                 <li key={t.id} className="web3-trade-item">
@@ -235,11 +238,11 @@ export default function Web3CommandCenter({ hub, onRefresh }: Props) {
         <div className="web3-panel">
           <h3 className="web3-panel-title">Agent web3 actions</h3>
           <p className="muted web3-panel-hint">From heartbeat activity log</p>
-          {!hub.agentActivity.length && (
+          {!agentActivity.length && (
             <p className="muted web3-empty">No web3 actions logged yet</p>
           )}
           <ul className="web3-agent-list">
-            {hub.agentActivity.slice(0, 8).map((a) => (
+            {agentActivity.slice(0, 8).map((a) => (
               <li key={a.id} className="web3-agent-item">
                 <span className="activity-action">{a.action}</span>
                 <p>{a.summary ?? a.content?.slice(0, 120)}</p>

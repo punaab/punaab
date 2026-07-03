@@ -150,6 +150,35 @@ function emptySnapshot(configured: boolean, cacheSec: number): AlchemyApiSnapsho
   };
 }
 
+/** Backfill fields missing from older Redis cache entries. */
+export function normalizeAlchemySnapshot(
+  snapshot: AlchemyApiSnapshot,
+): AlchemyApiSnapshot {
+  return {
+    ...snapshot,
+    portfolio: {
+      ...snapshot.portfolio,
+      tokens: snapshot.portfolio?.tokens ?? [],
+    },
+    nfts: {
+      ...snapshot.nfts,
+      items: snapshot.nfts?.items ?? [],
+      totalCount: snapshot.nfts?.totalCount ?? 0,
+      collections: snapshot.nfts?.collections ?? [],
+      collectionCount:
+        snapshot.nfts?.collectionCount ?? snapshot.nfts?.collections?.length ?? 0,
+    },
+    tokens: {
+      ...snapshot.tokens,
+      items: snapshot.tokens?.items ?? [],
+    },
+    transfers: {
+      ...snapshot.transfers,
+      items: snapshot.transfers?.items ?? [],
+    },
+  };
+}
+
 function hexToDecimal(hex: string): string {
   if (!hex || hex === "0x") return "0";
   try {
@@ -772,7 +801,7 @@ async function fetchAlchemyApiSnapshotUncached(): Promise<AlchemyApiSnapshot> {
     }
   }
 
-  return snapshot;
+  return normalizeAlchemySnapshot(snapshot);
 }
 
 export async function getAlchemyApiSnapshot(options?: {
@@ -782,11 +811,12 @@ export async function getAlchemyApiSnapshot(options?: {
   if (options?.forceRefresh) {
     return fetchAlchemyApiSnapshotUncached();
   }
-  return getCached(CACHE_KEY, cacheSec, fetchAlchemyApiSnapshotUncached);
+  const cached = await getCached(CACHE_KEY, cacheSec, fetchAlchemyApiSnapshotUncached);
+  return normalizeAlchemySnapshot(cached);
 }
 
 export async function refreshAlchemyApiSnapshot(): Promise<AlchemyApiSnapshot> {
-  const fresh = await fetchAlchemyApiSnapshotUncached();
+  const fresh = normalizeAlchemySnapshot(await fetchAlchemyApiSnapshotUncached());
   try {
     const { createRedisClient } = await import("./redis");
     await createRedisClient().set(

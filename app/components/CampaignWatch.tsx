@@ -202,14 +202,14 @@ export default function CampaignWatch({
   }
 
   const c = local;
-  const posted = c?.steps.filter((s) => s.status === "posted").length ?? 0;
-  const total = c?.steps.length ?? 3;
+  const posted = c?.steps?.filter((s) => s.status === "posted").length ?? 0;
+  const total = c?.steps?.length ?? 3;
   const percent = total ? Math.round((posted / total) * 100) : 0;
   const isActive = c?.status === "active";
   const isComplete = c?.status === "complete";
   const isPaused = c?.status === "paused";
-  const nextStep = c?.steps.find((s) => s.status === "pending");
-  const startedEvent = c?.events.find((e) => e.type === "campaign_started");
+  const nextStep = c?.steps?.find((s) => s.status === "pending");
+  const startedEvent = c?.events?.find((e) => e.type === "campaign_started");
 
   return (
     <section className="campaign-watch panel panel-wide">

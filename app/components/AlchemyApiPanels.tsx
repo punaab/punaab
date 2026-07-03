@@ -54,10 +54,15 @@ export default function AlchemyApiPanels({ data, onRefresh }: Props) {
     }
   }
 
-  const portfolioCount = data.portfolio.tokens.length;
-  const nftCount = data.nfts.totalCount || data.nfts.items.length;
-  const tokenCount = data.tokens.items.length;
-  const transferCount = data.transfers.items.length;
+  const portfolioTokens = data.portfolio?.tokens ?? [];
+  const nftItems = data.nfts?.items ?? [];
+  const nftCollections = data.nfts?.collections ?? [];
+  const tokenItems = data.tokens?.items ?? [];
+  const transferItems = data.transfers?.items ?? [];
+  const portfolioCount = portfolioTokens.length;
+  const nftCount = data.nfts?.totalCount || nftItems.length;
+  const tokenCount = tokenItems.length;
+  const transferCount = transferItems.length;
 
   return (
     <div className="alchemy-apis">
@@ -117,7 +122,7 @@ export default function AlchemyApiPanels({ data, onRefresh }: Props) {
             <p className="muted alchemy-api-empty">No fungible balances found</p>
           )}
           <ul className="alchemy-api-list">
-            {data.portfolio.tokens.slice(0, 10).map((t, i) => (
+            {portfolioTokens.slice(0, 10).map((t, i) => (
               <li key={`${t.network}-${t.tokenAddress ?? "native"}-${i}`} className="alchemy-api-row">
                 <div className="alchemy-api-row-top">
                   <span className="alchemy-token-symbol">{t.symbol}</span>
@@ -136,7 +141,7 @@ export default function AlchemyApiPanels({ data, onRefresh }: Props) {
           <header className="alchemy-api-panel-head">
             <span className="alchemy-api-badge nft">NFT API v3</span>
             <span className="alchemy-api-count">
-              {nftCount} NFTs · {data.nfts.collectionCount || data.nfts.collections.length}{" "}
+              {nftCount} NFTs · {data.nfts?.collectionCount || nftCollections.length}{" "}
               collections
             </span>
           </header>
@@ -149,7 +154,7 @@ export default function AlchemyApiPanels({ data, onRefresh }: Props) {
           {data.nfts.error && (
             <p className="login-error alchemy-api-error">{data.nfts.error}</p>
           )}
-          {!data.nfts.items.length && !data.nfts.error && (
+          {!nftItems.length && !data.nfts?.error && (
             <p className="muted alchemy-api-empty">
               {data.nfts.totalCount > 0
                 ? `${data.nfts.totalCount} NFTs on-chain — refresh or check Portfolio`
@@ -157,7 +162,7 @@ export default function AlchemyApiPanels({ data, onRefresh }: Props) {
             </p>
           )}
           <div className="alchemy-nft-grid">
-            {data.nfts.items.map((n) => (
+            {nftItems.map((n) => (
               <div key={`${n.network}-${n.contract}-${n.tokenId}`} className="alchemy-nft-card">
                 {n.imageUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -180,11 +185,11 @@ export default function AlchemyApiPanels({ data, onRefresh }: Props) {
             ))}
           </div>
 
-          {data.nfts.collections.length > 0 && (
+          {nftCollections.length > 0 && (
             <div className="alchemy-nft-collections">
               <h4 className="alchemy-collections-title">Collections by owner</h4>
               <ul className="alchemy-api-list">
-                {data.nfts.collections.map((c) => (
+                {nftCollections.map((c) => (
                   <li key={`${c.network}-${c.contract}`} className="alchemy-api-row">
                     <div className="alchemy-api-row-top">
                       <span className="alchemy-token-symbol">{c.name}</span>
@@ -214,7 +219,7 @@ export default function AlchemyApiPanels({ data, onRefresh }: Props) {
             <p className="muted alchemy-api-empty">No ERC-20 balances on Base</p>
           )}
           <ul className="alchemy-api-list">
-            {data.tokens.items.map((t) => (
+            {tokenItems.map((t) => (
               <li key={t.contractAddress} className="alchemy-api-row">
                 <div className="alchemy-api-row-top">
                   <span className="alchemy-token-symbol">{t.symbol ?? shortAddr(t.contractAddress)}</span>
@@ -243,7 +248,7 @@ export default function AlchemyApiPanels({ data, onRefresh }: Props) {
             </p>
           )}
           <ul className="alchemy-api-list alchemy-transfer-list">
-            {data.transfers.items.map((t) => {
+            {transferItems.map((t) => {
               const txUrl = txExplorerUrl(chainExplorerKey(t.network), t.hash);
               const counterparty =
                 t.direction === "in"
