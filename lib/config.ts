@@ -106,7 +106,8 @@ export function getAnthropicModel(): string {
 }
 
 export function getCronSecret(): string | undefined {
-  return process.env.CRON_SECRET;
+  const secret = process.env.CRON_SECRET?.trim();
+  return secret || undefined;
 }
 
 /** Developer app key for "Sign in with Moltbook" (starts with moltdev_). */
