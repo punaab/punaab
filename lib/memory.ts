@@ -1,15 +1,15 @@
-import { Redis } from "@upstash/redis";
+import { createRedisClient } from "./redis";
 
 const SEEN_POSTS_KEY = "moltbook:seen_post_ids";
 const LAST_POST_AT_KEY = "moltbook:last_post_at";
 const POSTS_THIS_HOUR_KEY = "moltbook:posts_this_hour";
 const ONE_HOUR_SECONDS = 3600;
 
-let redis: Redis | null = null;
+let redis: ReturnType<typeof createRedisClient> | null = null;
 
-function getRedis(): Redis {
+function getRedis(): ReturnType<typeof createRedisClient> {
   if (!redis) {
-    redis = Redis.fromEnv();
+    redis = createRedisClient();
   }
   return redis;
 }
