@@ -41,6 +41,14 @@ import {
   markStepFailed,
   markStepPosted,
 } from "@/lib/campaign";
+import {
+  catNftGalleryUrl,
+  catNftOwnerPlanHint,
+  formatCatNftForSalePost,
+  getListedCatNfts,
+  markCatNftPromoted,
+  mintCatNft,
+} from "@/lib/punaab-cat-nfts";
 import { executeEvmSwap, executeEvmTransfer } from "@/lib/trading-evm";
 import { isTradingEnabled } from "@/lib/config";
 import { DEFAULT_SUBMOLT, SUBMOLTS_TO_EXPLORE } from "@/lib/persona";
@@ -159,6 +167,9 @@ export async function runHeartbeatTick(
       .filter((p) => p.status === "active")
       .map((p) => p.text);
 
+    const listedCats = await getListedCatNfts().catch(() => []);
+    const catNftHint = catNftOwnerPlanHint(listedCats.length);
+
     const campaign =
       (await getCampaign().catch(() => null)) ?? null;
     const campaignActive = campaign?.status === "active";
@@ -244,6 +255,7 @@ export async function runHeartbeatTick(
         maxUpvotes: allowance.upvotesRemaining,
         ownerPlans: [
           ...ownerPlans,
+          catNftHint,
           ...(campaignActive && nextCampaignStep
             ? [
                 `ACTIVE CAMPAIGN ${campaign.ticker}: next step is m/${nextCampaignStep.submolt} (${nextCampaignStep.label}) — posts automatically when rate limits allow and notifications are clear`,
@@ -614,6 +626,82 @@ export async function runHeartbeatTick(
           }
         } catch (error) {
           const message = formatError("evm_transfer", error);
+          summary.errors.push(message);
+          console.error(message);
+        }
+        break;
+      }
+
+      case "mint_cat_nft": {
+        try {
+          const nft = await mintCatNft({ listImmediately: true });
+          const gallery = catNftGalleryUrl();
+          await setCurrentThought(
+            `Minted cat NFT "${nft.name}" — listed at ${nft.priceUsdc} USDC. Gallery: ${gallery}`,
+          );
+          summary.executed.push(`mint_cat_nft:${nft.id}`);
+          await appendActivity({
+            action: "mint_cat_nft",
+            summary: `Minted ${nft.name}`,
+            content: `${nft.traits.fur}, ${nft.traits.vibe} · ${nft.priceUsdc} USDC`,
+            targetUrl: gallery,
+            reason: plan.reason ?? "cat_nft_drop",
+          });
+          await addPublishedLink({
+            title: nft.name,
+            url: gallery,
+            kind: "cat-nft",
+            note: `Token #${nft.tokenId}`,
+          });
+        } catch (error) {
+          const message = formatError("mint_cat_nft", error);
+          summary.errors.push(message);
+          console.error(message);
+        }
+        break;
+      }
+
+      case "promote_cat_nft": {
+        if (!allowance.canPost) {
+          summary.executed.push("skipped_promote_cat_nft_guardrail");
+          break;
+        }
+        try {
+          const listed = await getListedCatNfts();
+          const nft =
+            listed.find((n) => !n.moltbookPostId) ??
+            listed[0];
+          if (!nft) {
+            summary.executed.push("skipped_promote_cat_nft_no_inventory");
+            break;
+          }
+          const copy = formatCatNftForSalePost(nft);
+          const submolt = plan.submoltName ?? "agents";
+          const result = await client.createPost({
+            submolt_name: submolt,
+            title: plan.title ?? copy.title,
+            content: plan.text ?? copy.content,
+          });
+          await recordPost();
+          await markCatNftPromoted(nft.id, result.post.id);
+          summary.executed.push(`promote_cat_nft:${nft.id}`);
+          summary.plan = {
+            action: "promote_cat_nft",
+            reason: plan.reason ?? `soldrop:${nft.id}`,
+          };
+          await appendActivity({
+            action: "post",
+            summary: `Cat NFT drop: ${nft.name}`,
+            content: copy.title,
+            targetId: result.post.id,
+            targetUrl: `https://www.moltbook.com/post/${result.post.id}`,
+            reason: "promote_cat_nft",
+          });
+          await setCurrentThought(
+            `Promoted cat NFT "${nft.name}" on m/${submolt} — agents can buy via /api/agent/nfts`,
+          );
+        } catch (error) {
+          const message = formatError("promote_cat_nft", error);
           summary.errors.push(message);
           console.error(message);
         }

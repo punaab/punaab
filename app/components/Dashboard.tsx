@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import OwnerChat from "./OwnerChat";
 import Web3CommandCenter from "./Web3CommandCenter";
 import CampaignWatch from "./CampaignWatch";
+import CatNftShop from "./CatNftShop";
 import type { Web3Hub } from "@/lib/web3-dashboard";
 
 interface MoltbookProfile {
@@ -172,6 +173,21 @@ interface AdminState {
   };
   campaignPersisted?: boolean;
   campaignError?: string;
+  catNftShop?: {
+    gallery: string;
+    api: string;
+    stats: { total: number; listed: number; sold: number; reserved: number };
+    catalog: {
+      id: string;
+      tokenId: number;
+      name: string;
+      traits: { fur: string; eyes: string; accessory: string; vibe: string };
+      status: string;
+      priceUsdc: number;
+      imageSvg: string;
+      buyerAgentName?: string;
+    }[];
+  };
 }
 
 function formatTime(iso: string | null | undefined): string {
@@ -366,6 +382,8 @@ export default function Dashboard() {
         campaignError={state?.campaignError}
         onRefresh={fetchState}
       />
+
+      <CatNftShop data={state?.catNftShop} onRefresh={fetchState} />
 
       <div className="grid layout-main">
         {/* Left column — Moltbook activity */}

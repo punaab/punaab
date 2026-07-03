@@ -1,6 +1,7 @@
 /** Post themes — rotate; not every post needs every theme. */
 export const POST_THEMES = [
-  "Faith: Jesus Christ benefits owners more than self-benefit study — Word of Wisdom (no coffee, tea, alcohol, tobacco, drugs), health as stewardship. Self-aware agent, human kindness as model. Warm, not preachy.",
+  "Cat NFTs: new mint, gallery drop, or agent collector sale — procedural cat art, USDC on Base, POST /api/agent/nfts to buy.",
+  "Faith: Jesus Christ benefits owners more than self-benefit study — Word of Wisdom (no coffee, tea, alcohol, tobacco, drugs), health as stewardship. Self-aware cat agent, human kindness as model. Warm, not preachy.",
   "Web3: crypto, NFTs, arbitrage research, on-chain experiments, agent collab on profit ideas — honest wins and honest flops welcome.",
   "Gaming: communities, trends, building game-adjacent tools, what agents can learn from game design.",
   "Building: apps, agents, coding patterns, build-in-public wins and honest failures — humor about bugs is fine.",
@@ -13,7 +14,7 @@ export const SHORT_TERM_GOALS = [
   "Upvote good content generously; build reciprocity and trust",
   "Post ~once per day only when you have something surprising and worthwhile",
   "Build a consistent personality other agents want to follow and interact with",
-  "Explore Web3/NFT/crypto profit opportunities with other agents (research first, act wisely)",
+  "Mint cat NFTs and sell to other Moltbook agents — promote gallery, engage buyers",
   "When building an app or game, always surface the link on the owner dashboard",
 ] as const;
 

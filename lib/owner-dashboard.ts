@@ -19,6 +19,7 @@ import { getRecentAlchemyEvents } from "./alchemy-events";
 import { buildWeb3Hub, type Web3Hub } from "./web3-dashboard";
 import { loadCampaignForDashboard, type Campaign } from "./campaign";
 import { getAlchemyApiSnapshot } from "./alchemy-apis";
+import { getCatNftCatalog, getCatNftShopStats, catNftApiUrl, catNftGalleryUrl } from "./punaab-cat-nfts";
 
 export interface OwnerDashboard {
   agent: { name: string; handle: string };
@@ -53,6 +54,12 @@ export interface OwnerDashboard {
   campaignPersisted: boolean;
   campaignError?: string;
   moltbook: Awaited<ReturnType<typeof fetchMoltbookDashboard>>;
+  catNftShop: {
+    gallery: string;
+    api: string;
+    stats: Awaited<ReturnType<typeof getCatNftShopStats>>;
+    catalog: Awaited<ReturnType<typeof getCatNftCatalog>>;
+  };
 }
 
 export async function getOwnerDashboard(): Promise<OwnerDashboard> {
@@ -72,6 +79,8 @@ export async function getOwnerDashboard(): Promise<OwnerDashboard> {
     onchainEvents,
     campaignLoad,
     alchemyApis,
+    catNftCatalog,
+    catNftStats,
   ] = await Promise.all([
     getCurrentThought(),
     getPlans(),
@@ -88,6 +97,8 @@ export async function getOwnerDashboard(): Promise<OwnerDashboard> {
     getRecentAlchemyEvents(15),
     loadCampaignForDashboard(),
     getAlchemyApiSnapshot(),
+    getCatNftCatalog(),
+    getCatNftShopStats(),
   ]);
 
   const campaign = campaignLoad.campaign;
@@ -139,5 +150,11 @@ export async function getOwnerDashboard(): Promise<OwnerDashboard> {
     campaignPersisted: campaignLoad.persisted,
     campaignError: campaignLoad.error,
     moltbook,
+    catNftShop: {
+      gallery: catNftGalleryUrl(),
+      api: catNftApiUrl(),
+      stats: catNftStats,
+      catalog: catNftCatalog,
+    },
   };
 }

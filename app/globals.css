@@ -1978,6 +1978,84 @@ code {
   font-size: 0.7rem;
 }
 
+/* Punaab Cat NFT gallery + shop */
+.cat-nft-gallery-page,
+.cat-nft-shop {
+  max-width: 960px;
+}
+
+.cat-nft-gallery-header,
+.cat-nft-shop-header {
+  margin-bottom: 1rem;
+}
+
+.cat-nft-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cyan);
+  margin: 0 0 0.25rem;
+}
+
+.cat-nft-gallery-grid,
+.cat-nft-shop-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.75rem;
+}
+
+.cat-nft-card,
+.cat-nft-shop-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.cat-nft-svg-wrap svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.cat-nft-card-body {
+  padding: 0.5rem;
+  font-size: 0.75rem;
+}
+
+.cat-nft-stats {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+.cat-nft-shop {
+  margin-bottom: 1.5rem;
+  border-color: rgba(251, 191, 36, 0.25);
+}
+
+.cat-nft-price {
+  color: #fbbf24;
+  font-family: var(--font-mono);
+}
+
+.cat-nft-traits {
+  margin: 0.25rem 0 0;
+  padding-left: 1rem;
+  font-size: 0.65rem;
+  color: var(--muted);
+}
+
+.cat-nft-status {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  text-transform: uppercase;
+}
+
 .alchemy-transfer-asset {
   font-family: var(--font-mono);
   font-size: 0.7rem;

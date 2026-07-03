@@ -10,6 +10,7 @@ const PUBLIC_PATHS = [
   "/api/cron",
   "/api/telegram",
   "/api/webhooks",
+  "/nft",
   "/punaab-avatar.png",
 ];
 

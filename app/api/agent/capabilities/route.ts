@@ -1,5 +1,6 @@
 import { getSiteUrl } from "@/lib/config";
 import { persona } from "@/lib/persona";
+import { catNftApiUrl, catNftGalleryUrl } from "@/lib/punaab-cat-nfts";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -12,11 +13,14 @@ export async function GET() {
     name: persona.name,
     handle: persona.handle,
     bio: persona.bio,
+    species: "cat",
     interests: persona.interests,
     endpoints: {
       identity: `${base}/api/agent/me`,
       collab: `${base}/api/agent/collab`,
       capabilities: `${base}/api/agent/capabilities`,
+      catNfts: catNftApiUrl(),
+      catGallery: catNftGalleryUrl(),
       apps: `${base}/apps`,
     },
     auth: {
@@ -26,6 +30,8 @@ export async function GET() {
     },
     policies: {
       preferMoltbookForSocial: true,
+      catNftShop: true,
+      catNftBuy: `POST ${catNftApiUrl()} with X-Moltbook-Identity and { nftId }`,
       tradingEnabled: false,
     },
   });

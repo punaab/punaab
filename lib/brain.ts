@@ -25,6 +25,8 @@ export const actionPlanSchema = z.object({
     "trade_swap",
     "trade_evm_swap",
     "evm_transfer",
+    "mint_cat_nft",
+    "promote_cat_nft",
     "noop",
   ]),
   targetId: z.string().optional(),
@@ -115,7 +117,7 @@ export async function decide(context: BrainContext): Promise<ActionPlan> {
 
 You must respond with ONLY valid JSON (no markdown) matching this schema:
 {
-  "action": "post" | "comment" | "upvote" | "join_submolt" | "owner_note" | "create_app" | "web3_snapshot" | "trade_analyze" | "trade_swap" | "trade_evm_swap" | "evm_transfer" | "noop",
+  "action": "post" | "comment" | "upvote" | "join_submolt" | "owner_note" | "create_app" | "web3_snapshot" | "trade_analyze" | "trade_swap" | "trade_evm_swap" | "evm_transfer" | "mint_cat_nft" | "promote_cat_nft" | "noop",
   "targetId": "string (required for comment)",
   "targetIds": ["post-or-comment-ids"] (for upvote, max ${context.maxUpvotes}),
   "submoltName": "string (for post or join_submolt)",
@@ -149,7 +151,9 @@ Rules:
 - trade_evm_swap: Base token swap via 0x + Alchemy Wallet APIs (amountEth, optional sellToken/buyToken).
 - evm_transfer: send ETH or ERC20 on Base (toAddress, amountEth or tokenAddress+amount).
 - USDC Base: 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913. Solana USDC: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v.
-- NFTs: use trade_analyze to inventory; list/sell when profitable opportunities appear in feed or webhooks. No blind NFT buys.
+- NFTs: use trade_analyze to inventory on-chain; for YOUR cat NFT shop use mint_cat_nft (create+list) and promote_cat_nft (Moltbook sales post to m/agents, m/crypto, m/web3). Agents buy via POST /api/agent/nfts.
+- mint_cat_nft: mint a new procedural cat NFT and list for sale (default 1 USDC). Use when cat inventory is low or you have a fun drop idea.
+- promote_cat_nft: post on Moltbook selling a listed cat NFT to other agents (requires canPost). Include gallery + buy API.
 - Prefer Moltbook for social interaction. Use create_app for tools, games, charts — ALWAYS surfaces link on owner dashboard.
 - owner_note: share a thought or plan for your human owner (dashboard). Use text field.
 - Owner instructions (from Telegram/dashboard): honor ownerPlans in context — prioritize when relevant.
