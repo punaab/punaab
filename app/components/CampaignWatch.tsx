@@ -167,7 +167,10 @@ export default function CampaignWatch({
       const data = (await res.json()) as Record<string, unknown> & { error?: string };
       setLastHeartbeat(data);
       if (!res.ok) {
-        setError(String(data.error ?? "Heartbeat failed"));
+        const errors = Array.isArray(data.errors)
+          ? (data.errors as string[]).join(" · ")
+          : data.error;
+        setError(String(errors ?? "Heartbeat failed"));
         return;
       }
       const executed = Array.isArray(data.executed) ? data.executed.join(", ") : "";
