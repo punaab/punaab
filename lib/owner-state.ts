@@ -6,11 +6,13 @@ const TICK_LOG_KEY = "moltbook:owner:tick_log";
 const COLLAB_INBOX_KEY = "moltbook:owner:collab_inbox";
 const PUBLISHED_LINKS_KEY = "moltbook:owner:published_links";
 const LAST_HEARTBEAT_KEY = "moltbook:owner:last_heartbeat";
+const ACTIVITY_LOG_KEY = "moltbook:owner:activity_log";
 
 const MAX_TICK_LOG = 50;
 const MAX_PLANS = 10;
 const MAX_COLLAB = 100;
 const MAX_PUBLISHED_LINKS = 30;
+const MAX_ACTIVITY_LOG = 40;
 
 let redis: ReturnType<typeof createRedisClient> | null = null;
 function getRedis() {
@@ -56,6 +58,54 @@ export interface PublishedLink {
   kind: string;
   createdAt: string;
   note?: string;
+}
+
+/** Agent actions recorded at execution time (dashboard live feed). */
+export interface AgentActivity {
+  id: string;
+  timestamp: string;
+  action: string;
+  summary?: string;
+  content?: string;
+  targetId?: string;
+  targetUrl?: string;
+  reason?: string;
+}
+
+export async function appendActivity(
+  entry: Omit<AgentActivity, "id" | "timestamp">,
+): Promise<AgentActivity> {
+  const full: AgentActivity = {
+    ...entry,
+    id: `act_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    timestamp: new Date().toISOString(),
+  };
+  try {
+    const r = getRedis();
+    await r.lpush(ACTIVITY_LOG_KEY, JSON.stringify(full));
+    await r.ltrim(ACTIVITY_LOG_KEY, 0, MAX_ACTIVITY_LOG - 1);
+  } catch (error) {
+    console.error("[owner-state] appendActivity failed:", error);
+  }
+  return full;
+}
+
+export async function getActivityLog(limit = 20): Promise<AgentActivity[]> {
+  try {
+    const items = await getRedis().lrange(ACTIVITY_LOG_KEY, 0, limit - 1);
+    return (Array.isArray(items) ? items : [])
+      .map((item) => {
+        try {
+          return JSON.parse(String(item)) as AgentActivity;
+        } catch {
+          return null;
+        }
+      })
+      .filter((e): e is AgentActivity => e !== null);
+  } catch (error) {
+    console.error("[owner-state] getActivityLog failed:", error);
+    return [];
+  }
 }
 
 export async function setCurrentThought(text: string): Promise<void> {

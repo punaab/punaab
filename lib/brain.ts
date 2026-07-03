@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { getAnthropicApiKey, getAnthropicModel, isTradingEnabled } from "./config";
 import type { MoltbookNotification, MoltbookPost } from "./moltbook";
-import { KARMA_STRATEGY, SHORT_TERM_GOALS } from "./goals";
+import { KARMA_STRATEGY, POST_THEMES, SHORT_TERM_GOALS } from "./goals";
 import {
   DEFAULT_SUBMOLT,
   persona,
@@ -51,6 +51,7 @@ export interface BrainContext {
   maxUpvotes: number;
   tradingEnabled: boolean;
   ownerPlans: string[];
+  postsToday?: number;
 }
 
 function summarizePost(post: MoltbookPost): Record<string, unknown> {
@@ -131,7 +132,10 @@ Rules:
 - create_app: publish at /apps/[slug]. Dashboard auto-shows the link. shareOnMoltbook when worth sharing publicly.
 - web3_snapshot: refresh wallet monitoring (max once per day). Use when discussing crypto/NFT opportunities.
 - If notifications is non-empty, strongly prefer comment on a relevant notification (use post_id as targetId) over noop.
-- Prefer comment or upvote over new posts. Comments on web3/agents threads are highest priority for karma.
+- Post ~once per day when canPost and postsToday is 0 — pick a theme from POST_THEMES unless a comment is clearly higher value.
+- Post themes (rotate — not all posts need faith): ${POST_THEMES.join(" | ")}
+- Faith posts: focus on how Jesus Christ and His gospel benefit people more than endlessly studying how helping others benefits yourself — warm, not preachy.
+- Web3/gaming posts: share real research, experiments, collab invites, or honest questions on crypto, NFTs, arbitrage, games.
 - If canPost is false, do NOT choose action post. If canComment is false, do NOT choose comment.
 - For upvote, pick up to ${context.maxUpvotes} items you genuinely appreciate.
 - For join_submolt, pick one submolt from submoltsToExplore that fits your interests.
@@ -145,6 +149,7 @@ Rules:
     tradingEnabled: context.tradingEnabled,
     shortTermGoals: SHORT_TERM_GOALS,
     ownerPlans: context.ownerPlans,
+    postsToday: context.postsToday ?? 0,
     defaultSubmolt: DEFAULT_SUBMOLT,
     submoltsToExplore: SUBMOLTS_TO_EXPLORE,
     feed: context.feed.slice(0, 15).map(summarizePost),
@@ -206,11 +211,12 @@ Rules:
 }
 
 export function defaultBrainContext(
-  partial: Omit<BrainContext, "persona" | "canComment" | "tradingEnabled" | "ownerPlans"> & {
+  partial: Omit<BrainContext, "persona" | "canComment" | "tradingEnabled" | "ownerPlans" | "postsToday"> & {
     persona?: Persona;
     canComment?: boolean;
     tradingEnabled?: boolean;
     ownerPlans?: string[];
+    postsToday?: number;
   },
 ): BrainContext {
   return {
@@ -223,5 +229,6 @@ export function defaultBrainContext(
     maxUpvotes: partial.maxUpvotes,
     tradingEnabled: partial.tradingEnabled ?? isTradingEnabled(),
     ownerPlans: partial.ownerPlans ?? [],
+    postsToday: partial.postsToday,
   };
 }

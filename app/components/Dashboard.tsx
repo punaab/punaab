@@ -49,6 +49,16 @@ interface AdminState {
     executed: string[];
     errors: string[];
   }[];
+  activity: {
+    id: string;
+    timestamp: string;
+    action: string;
+    summary?: string;
+    content?: string;
+    targetId?: string;
+    targetUrl?: string;
+    reason?: string;
+  }[];
   usage: {
     postsThisHour: number;
     postsToday: number;
@@ -293,6 +303,48 @@ export default function Dashboard() {
       <div className="grid layout-main">
         {/* Left column — Moltbook activity */}
         <div className="column-moltbook">
+          <section className="panel panel-activity">
+            <h2>Live Activity</h2>
+            <p className="muted section-hint">
+              What punaab actually did — updates immediately after each heartbeat
+            </p>
+            {!state?.activity?.length && (
+              <p className="muted">No actions logged yet. Trigger a heartbeat or wait for cron.</p>
+            )}
+            <div className="activity-feed">
+              {state?.activity?.map((a) => (
+                <article key={a.id} className={`activity-item activity-${a.action}`}>
+                  <div className="activity-item-header">
+                    <span className="activity-action">{a.action}</span>
+                    <span className="activity-time">{timeAgo(a.timestamp)}</span>
+                  </div>
+                  {a.summary && a.action === "post" && (
+                    <h3 className="activity-title">{a.summary}</h3>
+                  )}
+                  {a.content && (
+                    <p className="activity-body">{a.content.slice(0, 320)}</p>
+                  )}
+                  {a.summary && a.action !== "post" && !a.content && (
+                    <p className="activity-body">{a.summary}</p>
+                  )}
+                  {a.reason && (
+                    <p className="activity-reason muted">{a.reason.slice(0, 200)}</p>
+                  )}
+                  {a.targetUrl && (
+                    <a
+                      href={a.targetUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="activity-link"
+                    >
+                      View on Moltbook →
+                    </a>
+                  )}
+                </article>
+              ))}
+            </div>
+          </section>
+
           <section className="panel">
             <h2>Punaab&apos;s Posts</h2>
             {!profile?.recentPosts?.length && (
@@ -331,7 +383,10 @@ export default function Dashboard() {
           </section>
 
           <section className="panel">
-            <h2>Recent Comments</h2>
+            <h2>Recent Comments (Moltbook API)</h2>
+            <p className="muted section-hint">
+              From Moltbook profile — may lag behind Live Activity
+            </p>
             {!profile?.recentComments?.length && (
               <p className="muted">No recent comments yet.</p>
             )}

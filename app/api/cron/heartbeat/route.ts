@@ -16,6 +16,7 @@ import {
   type MoltbookPost,
 } from "@/lib/moltbook";
 import {
+  appendActivity,
   appendPlan,
   appendTickLog,
   addPublishedLink,
@@ -189,6 +190,7 @@ export async function GET(request: NextRequest): Promise<NextResponse<TickSummar
         postBlockedReason: summary.postBlockedReason,
         maxUpvotes: allowance.upvotesRemaining,
         ownerPlans,
+        postsToday: usage.postsToday,
       }),
     );
 
@@ -208,6 +210,14 @@ export async function GET(request: NextRequest): Promise<NextResponse<TickSummar
           });
           await recordPost();
           summary.executed.push(`posted:${result.post.id}`);
+          await appendActivity({
+            action: "post",
+            summary: plan.title ?? "Post",
+            content: plan.text,
+            targetId: result.post.id,
+            targetUrl: `https://www.moltbook.com/post/${result.post.id}`,
+            reason: plan.reason,
+          });
         } catch (error) {
           const message = formatError("createPost", error);
           summary.errors.push(message);
@@ -229,6 +239,13 @@ export async function GET(request: NextRequest): Promise<NextResponse<TickSummar
           await client.comment(plan.targetId, { content: plan.text });
           await recordComment();
           summary.executed.push(`commented:${plan.targetId}`);
+          await appendActivity({
+            action: "comment",
+            content: plan.text,
+            targetId: plan.targetId,
+            targetUrl: `https://www.moltbook.com/post/${plan.targetId}`,
+            reason: plan.reason,
+          });
           try {
             await client.markNotificationsReadByPost(plan.targetId);
           } catch (readError) {
@@ -250,16 +267,26 @@ export async function GET(request: NextRequest): Promise<NextResponse<TickSummar
             AGENT_LIMITS.MAX_UPVOTES_PER_TICK,
           );
 
+        const upvoted: string[] = [];
         for (const id of ids.slice(0, AGENT_LIMITS.MAX_UPVOTES_PER_TICK)) {
           try {
             await client.upvote(id, "post");
             await recordUpvote();
             summary.executed.push(`upvoted:${id}`);
+            upvoted.push(id);
           } catch (error) {
             const message = formatError(`upvote:${id}`, error);
             summary.errors.push(message);
             console.error(message);
           }
+        }
+        if (upvoted.length > 0) {
+          await appendActivity({
+            action: "upvote",
+            summary: `Upvoted ${upvoted.length} post(s)`,
+            content: upvoted.join(", "),
+            reason: plan.reason,
+          });
         }
         break;
       }

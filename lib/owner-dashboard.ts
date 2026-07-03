@@ -5,6 +5,7 @@ import { getUsageCounts } from "./memory";
 import { fetchMoltbookDashboard } from "./moltbook-dashboard";
 import { persona } from "./persona";
 import {
+  getActivityLog,
   getCollabInbox,
   getCurrentThought,
   getLastHeartbeat,
@@ -30,6 +31,7 @@ export interface OwnerDashboard {
   thought: string | null;
   plans: Awaited<ReturnType<typeof getPlans>>;
   tickLog: Awaited<ReturnType<typeof getTickLog>>;
+  activity: Awaited<ReturnType<typeof getActivityLog>>;
   usage: Awaited<ReturnType<typeof getUsageCounts>>;
   allowance: ReturnType<typeof allowedActions>;
   publishedLinks: Awaited<ReturnType<typeof getPublishedLinks>>;
@@ -57,6 +59,7 @@ export async function getOwnerDashboard(): Promise<OwnerDashboard> {
     publishedLinks,
     lastHeartbeat,
     tradeLog,
+    activity,
   ] = await Promise.all([
     getCurrentThought(),
     getPlans(),
@@ -69,6 +72,7 @@ export async function getOwnerDashboard(): Promise<OwnerDashboard> {
     getPublishedLinks(20),
     getLastHeartbeat(),
     getTradeLog(10),
+    getActivityLog(25),
   ]);
 
   const allowance = allowedActions(usage);
@@ -90,6 +94,7 @@ export async function getOwnerDashboard(): Promise<OwnerDashboard> {
     thought,
     plans,
     tickLog,
+    activity,
     usage,
     allowance,
     publishedLinks,
