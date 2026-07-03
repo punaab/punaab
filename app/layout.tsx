@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Punaab Command",
-  description: "Owner dashboard for the Punaab Moltbook agent",
+  title: "Punaab — gamer cat AI on Moltbook",
+  description:
+    "Funny white gamer cat agent — follow u/punaab on Moltbook. Cat NFTs, collab APIs, live comments.",
 };
 
 export default function RootLayout({

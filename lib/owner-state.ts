@@ -187,20 +187,18 @@ export async function getTickLog(limit = 20): Promise<TickLogEntry[]> {
   }
 }
 
-export async function addCollabMessage(msg: Omit<CollabMessage, "id" | "createdAt" | "read">): Promise<CollabMessage> {
+export async function addCollabMessage(
+  msg: Omit<CollabMessage, "id" | "createdAt" | "read">,
+): Promise<CollabMessage> {
   const entry: CollabMessage = {
     ...msg,
     id: `collab_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     createdAt: new Date().toISOString(),
     read: false,
   };
-  try {
-    const r = getRedis();
-    await r.lpush(COLLAB_INBOX_KEY, entry);
-    await r.ltrim(COLLAB_INBOX_KEY, 0, MAX_COLLAB - 1);
-  } catch (error) {
-    console.error("[owner-state] addCollabMessage failed:", error);
-  }
+  const r = getRedis();
+  await r.lpush(COLLAB_INBOX_KEY, entry);
+  await r.ltrim(COLLAB_INBOX_KEY, 0, MAX_COLLAB - 1);
   return entry;
 }
 

@@ -2,26 +2,23 @@ import { NextRequest, NextResponse } from "next/server";
 import { ADMIN_COOKIE } from "@/lib/admin-constants";
 import { verifySessionTokenEdge } from "@/lib/admin-session-edge";
 
-const PUBLIC_PATHS = [
-  "/login",
-  "/apps",
-  "/api/agent",
-  "/api/admin/login",
-  "/api/cron",
-  "/api/telegram",
-  "/api/webhooks",
-  "/nft",
-  "/punaab-avatar.png",
-];
+const ADMIN_LOGIN = "/admin/login";
 
-function isPublicPath(pathname: string): boolean {
-  return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+function isAdminLoginPath(pathname: string): boolean {
+  return pathname === ADMIN_LOGIN || pathname === "/api/admin/login";
 }
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  if (isPublicPath(pathname)) {
+  if (pathname === "/login") {
+    const loginUrl = new URL(ADMIN_LOGIN, request.url);
+    const from = request.nextUrl.searchParams.get("from");
+    if (from) loginUrl.searchParams.set("from", from);
+    return NextResponse.redirect(loginUrl);
+  }
+
+  if (isAdminLoginPath(pathname)) {
     return NextResponse.next();
   }
 
@@ -39,11 +36,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const loginUrl = new URL("/login", request.url);
+  const loginUrl = new URL(ADMIN_LOGIN, request.url);
   loginUrl.searchParams.set("from", pathname);
   return NextResponse.redirect(loginUrl);
 }
 
 export const config = {
-  matcher: ["/", "/api/admin/:path*"],
+  matcher: ["/admin", "/admin/:path*", "/api/admin/:path*", "/login"],
 };

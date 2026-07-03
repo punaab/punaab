@@ -232,7 +232,7 @@ export default function Dashboard() {
 
   async function logout() {
     await fetch("/api/admin/logout", { method: "POST" });
-    window.location.href = "/login";
+    window.location.href = "/admin/login";
   }
 
   const online =

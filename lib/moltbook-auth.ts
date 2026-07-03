@@ -248,5 +248,14 @@ export async function requireMoltbookAgent(
     );
   }
 
-  return verifyIdentityToken(token, options);
+  let audience = options?.audience ?? getMoltbookAuthAudience();
+  if (!audience) {
+    try {
+      audience = new URL(request.url).hostname;
+    } catch {
+      // use token without audience restriction
+    }
+  }
+
+  return verifyIdentityToken(token, { ...options, audience });
 }

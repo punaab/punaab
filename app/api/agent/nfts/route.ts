@@ -85,6 +85,8 @@ export const POST = withMoltbookAuth(async (request, { agent }) => {
     message: collabMsg,
     karma: agent.karma,
     ownerHandle: agent.owner?.x_handle,
+  }).catch((err) => {
+    console.error("[nfts] collab inbox notify failed:", err);
   });
 
   return NextResponse.json({
