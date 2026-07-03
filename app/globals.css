@@ -1355,3 +1355,217 @@ code {
   font-size: 0.75rem;
   line-height: 1.5;
 }
+
+/* GITLAWB Campaign Watch */
+.campaign-watch {
+  margin-bottom: 1.5rem;
+  border-color: rgba(167, 139, 250, 0.3);
+  background: linear-gradient(
+    160deg,
+    rgba(20, 12, 40, 0.5) 0%,
+    var(--bg-panel) 40%
+  );
+}
+
+.campaign-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.campaign-eyebrow {
+  margin: 0 0 0.25rem;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--violet);
+}
+
+.campaign-title {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 1.5rem;
+  color: var(--cyan);
+}
+
+.campaign-subtitle {
+  margin: 0.35rem 0 0;
+  font-size: 0.85rem;
+}
+
+.campaign-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.campaign-btn-start {
+  border: none;
+  cursor: pointer;
+}
+
+.campaign-progress-wrap {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.campaign-progress-bar {
+  flex: 1;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.campaign-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--violet), var(--cyan));
+  border-radius: 999px;
+  transition: width 0.4s ease;
+}
+
+.campaign-progress-label {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.campaign-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.campaign-step {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.85rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.campaign-step-posted {
+  border-color: rgba(74, 222, 128, 0.35);
+}
+
+.campaign-step-failed {
+  border-color: rgba(248, 113, 113, 0.35);
+}
+
+.campaign-step-pending {
+  opacity: 0.85;
+}
+
+.campaign-step-num {
+  font-family: var(--font-mono);
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--violet);
+  line-height: 1;
+}
+
+.campaign-step-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.campaign-step-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.35rem;
+}
+
+.campaign-step-icon {
+  font-size: 0.85rem;
+}
+
+.campaign-step-label {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--cyan);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.campaign-step-status {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.status-posted {
+  color: var(--success);
+}
+
+.status-pending {
+  color: var(--muted);
+}
+
+.status-failed {
+  color: var(--danger);
+}
+
+.campaign-step-title {
+  margin: 0 0 0.35rem;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.campaign-post-link {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  margin-right: 0.5rem;
+}
+
+.campaign-events-title {
+  margin: 0 0 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--violet);
+}
+
+.campaign-event-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.campaign-event-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.5rem;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid rgba(30, 42, 66, 0.8);
+  font-size: 0.8rem;
+}
+
+.campaign-event-type {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  color: var(--violet);
+  text-transform: uppercase;
+}
+
+.campaign-footer {
+  margin: 1rem 0 0;
+  font-size: 0.75rem;
+}

@@ -96,13 +96,15 @@ export default function OwnerChat() {
         )}
       </div>
       <p className="muted section-hint">
-        Private chat with your agent — text replies; voice when ElevenLabs is configured.
+        Private chat with your agent — launch campaigns, ask about status, trading, or plans.
+        Voice when ElevenLabs is configured.
       </p>
 
       <div className="chat-log" ref={scrollRef}>
         {messages.length === 0 && (
           <p className="muted chat-empty">
-            Ask about status, plans, trading, or what Punaab has been up to.
+            Ask about status, plans, or say &quot;start the GITLAWB campaign&quot; — use the
+            campaign panel below to watch distribution live.
           </p>
         )}
         {messages.map((m, i) => (

@@ -28,7 +28,8 @@ export async function chatWithOwner(
 
 You are speaking privately with your human owner on the Punaab Command dashboard — not on Moltbook.
 - Be warm, direct, and helpful. Light humor is fine.
-- Answer questions about status, plans, faith, trading, and what you've been doing.
+- Answer questions about status, plans, faith, trading, campaigns, and what you've been doing.
+- The owner can launch the $GITLAWB distribution campaign from the dashboard (m/agents vision, m/crypto chart, m/tooling install). Direct them to the Campaign panel to watch live.
 - Keep replies concise (2–5 sentences) unless they ask for detail.
 - You may reference your current thought if relevant: ${thought ? JSON.stringify(thought) : "none yet"}.`;
 

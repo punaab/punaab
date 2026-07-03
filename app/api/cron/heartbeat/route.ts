@@ -34,6 +34,13 @@ import {
   MINT_USDC,
 } from "@/lib/trading";
 import { getRecentAlchemyEvents } from "@/lib/alchemy-events";
+import {
+  appendCampaignEvent,
+  getNextPendingStep,
+  getOrCreateCampaign,
+  markStepFailed,
+  markStepPosted,
+} from "@/lib/campaign";
 import { executeEvmSwap, executeEvmTransfer } from "@/lib/trading-evm";
 import { isTradingEnabled } from "@/lib/config";
 import { DEFAULT_SUBMOLT, SUBMOLTS_TO_EXPLORE } from "@/lib/persona";
@@ -184,6 +191,62 @@ export async function GET(request: NextRequest): Promise<NextResponse<TickSummar
       .filter((p) => p.status === "active")
       .map((p) => p.text);
 
+    const campaign = await getOrCreateCampaign();
+    const campaignActive = campaign.status === "active";
+    const nextCampaignStep = campaignActive ? getNextPendingStep(campaign) : null;
+    const unreadNotifications = notifications.filter((n) => !n.read);
+
+    // Owner campaign: after notifications are cleared, post next distribution step
+    if (
+      campaignActive &&
+      nextCampaignStep &&
+      allowance.canPost &&
+      unreadNotifications.length === 0
+    ) {
+      try {
+        try {
+          await client.joinSubmolt(nextCampaignStep.submolt);
+          summary.executed.push(`joined:${nextCampaignStep.submolt}`);
+        } catch (joinError) {
+          console.warn("[heartbeat] campaign joinSubmolt:", joinError);
+        }
+
+        const result = await client.createPost({
+          submolt_name: nextCampaignStep.submolt,
+          title: nextCampaignStep.title,
+          content: nextCampaignStep.content,
+        });
+        await recordPost();
+        const postUrl = `https://www.moltbook.com/post/${result.post.id}`;
+        summary.executed.push(`campaign_posted:${nextCampaignStep.id}`);
+        summary.plan = {
+          action: "post",
+          reason: `campaign:${campaign.ticker}:${nextCampaignStep.id}`,
+        };
+
+        await markStepPosted(nextCampaignStep.id, result.post.id, postUrl);
+        await appendActivity({
+          action: "post",
+          summary: `[${campaign.ticker}] ${nextCampaignStep.label}`,
+          content: nextCampaignStep.title,
+          targetId: result.post.id,
+          targetUrl: postUrl,
+          reason: `campaign step m/${nextCampaignStep.submolt}`,
+        });
+        await setCurrentThought(
+          `Campaign ${campaign.ticker}: posted "${nextCampaignStep.label}" to m/${nextCampaignStep.submolt}`,
+        );
+        await appendTickLog(summary);
+        return NextResponse.json(summary, { status: 200 });
+      } catch (error) {
+        const message = formatError("campaign_post", error);
+        summary.errors.push(message);
+        await markStepFailed(nextCampaignStep.id, message);
+        await appendCampaignEvent("step_failed", message, { stepId: nextCampaignStep.id });
+        console.error(message);
+      }
+    }
+
     const onchainEvents = (await getRecentAlchemyEvents(12)).map((e) => ({
       summary: e.summary,
       type: e.type,
@@ -198,7 +261,14 @@ export async function GET(request: NextRequest): Promise<NextResponse<TickSummar
         canComment: allowance.canComment,
         postBlockedReason: summary.postBlockedReason,
         maxUpvotes: allowance.upvotesRemaining,
-        ownerPlans,
+        ownerPlans: [
+          ...ownerPlans,
+          ...(campaignActive && nextCampaignStep
+            ? [
+                `ACTIVE CAMPAIGN ${campaign.ticker}: next step is m/${nextCampaignStep.submolt} (${nextCampaignStep.label}) — posts automatically when rate limits allow and notifications are clear`,
+              ]
+            : []),
+        ],
         postsToday: usage.postsToday,
         tradingEnabled: isTradingEnabled(),
         onchainEvents,

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import OwnerChat from "./OwnerChat";
 import Web3CommandCenter from "./Web3CommandCenter";
+import CampaignWatch from "./CampaignWatch";
 import type { Web3Hub } from "@/lib/web3-dashboard";
 
 interface MoltbookProfile {
@@ -144,6 +145,31 @@ interface AdminState {
     summary: string;
   }[];
   web3Hub?: Web3Hub;
+  campaign?: {
+    id: string;
+    name: string;
+    ticker: string;
+    status: string;
+    steps: {
+      id: string;
+      submolt: string;
+      label: string;
+      title: string;
+      status: string;
+      postUrl?: string;
+      postedAt?: string;
+      error?: string;
+    }[];
+    events: {
+      id: string;
+      timestamp: string;
+      type: string;
+      message: string;
+      postUrl?: string;
+    }[];
+    startedAt?: string;
+    completedAt?: string;
+  };
 }
 
 function formatTime(iso: string | null | undefined): string {
@@ -331,6 +357,8 @@ export default function Dashboard() {
       </section>
 
       <Web3CommandCenter hub={state?.web3Hub} />
+
+      <CampaignWatch campaign={state?.campaign} onRefresh={fetchState} />
 
       <div className="grid layout-main">
         {/* Left column — Moltbook activity */}
