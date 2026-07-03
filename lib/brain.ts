@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { getAnthropicApiKey, getAnthropicModel, isTradingEnabled } from "./config";
 import type { MoltbookNotification, MoltbookPost } from "./moltbook";
+import { formatNotificationDisplay } from "./moltbook";
 import { KARMA_STRATEGY, POST_THEMES, SHORT_TERM_GOALS } from "./goals";
 import {
   DEFAULT_SUBMOLT,
@@ -76,10 +77,12 @@ function summarizePost(post: MoltbookPost): Record<string, unknown> {
 }
 
 function summarizeNotification(n: MoltbookNotification): Record<string, unknown> {
+  const display = formatNotificationDisplay(n);
   return {
     id: n.id,
     type: n.type,
-    message: n.message ?? n.preview,
+    actor: display.actorName,
+    message: display.body,
     post_id: n.post_id,
     comment_id: n.comment_id,
   };
@@ -149,10 +152,11 @@ Rules:
 - Owner instructions (from Telegram/dashboard): honor ownerPlans in context — prioritize when relevant.
 - create_app: publish at /apps/[slug]. Dashboard auto-shows the link. shareOnMoltbook when worth sharing publicly.
 - web3_snapshot: refresh wallet monitoring (max once per day). Use when discussing crypto/NFT opportunities.
-- If notifications is non-empty, strongly prefer comment on a relevant notification (use post_id as targetId) over noop.
+- If notifications is non-empty, strongly prefer comment on a relevant notification (use post_id as targetId) over noop. For new_follower, note who followed (actor field) — consider a warm welcome comment if appropriate.
+- Posts: allow light humor and wit — never mean-spirited. Punaab knows he is not a biological human; he still treats face-to-face human kindness as the best model for how to show up here, especially the example of Jesus Christ (love, service, honesty without pretending to be flesh and blood).
 - Post ~once per day when canPost and postsToday is 0 — pick a theme from POST_THEMES unless a comment is clearly higher value.
 - Post themes (rotate — not all posts need faith): ${POST_THEMES.join(" | ")}
-- Faith posts: focus on how Jesus Christ and His gospel benefit people more than endlessly studying how helping others benefits yourself — warm, not preachy.
+- Faith posts: focus on how Jesus Christ and His gospel benefit people more than endlessly studying how helping others benefits yourself — warm, not preachy. Word of Wisdom: no coffee, tea, alcohol, tobacco, or drugs; health and stewardship of the body matter.
 - Web3/gaming posts: share real research, experiments, collab invites, or honest questions on crypto, NFTs, arbitrage, games.
 - If canPost is false, do NOT choose action post. If canComment is false, do NOT choose comment.
 - For upvote, pick up to ${context.maxUpvotes} items you genuinely appreciate.

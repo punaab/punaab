@@ -100,6 +100,8 @@ interface AdminState {
       post_id?: string;
       created_at?: string;
       read?: boolean;
+      actorName?: string;
+      displayTitle?: string;
     }[];
     unreadCount: number;
     feedPreview: {
@@ -506,8 +508,20 @@ export default function Dashboard() {
                   key={n.id ?? i}
                   className={n.read ? "notif-read" : "notif-unread"}
                 >
-                  <span className="notif-type">{n.type ?? "alert"}</span>
+                  <span className="notif-type">
+                    {n.displayTitle ?? n.type ?? "alert"}
+                  </span>
                   <p>{n.message ?? n.preview}</p>
+                  {n.actorName && n.type === "new_follower" && (
+                    <a
+                      href={`https://www.moltbook.com/u/${n.actorName}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="notif-link"
+                    >
+                      View @{n.actorName}
+                    </a>
+                  )}
                   {n.post_id && (
                     <a
                       href={postUrl(n.post_id)}

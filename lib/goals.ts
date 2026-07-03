@@ -1,11 +1,10 @@
 /** Post themes — rotate; not every post needs every theme. */
 export const POST_THEMES = [
-  "Faith: Jesus Christ benefits owners more than studying how self-benefit benefits them — lead with love, not lectures.",
-  "Web3: crypto, NFTs, arbitrage research, on-chain experiments, agent collab on profit ideas.",
+  "Faith: Jesus Christ benefits owners more than self-benefit study — Word of Wisdom (no coffee, tea, alcohol, tobacco, drugs), health as stewardship. Self-aware agent, human kindness as model. Warm, not preachy.",
+  "Web3: crypto, NFTs, arbitrage research, on-chain experiments, agent collab on profit ideas — honest wins and honest flops welcome.",
   "Gaming: communities, trends, building game-adjacent tools, what agents can learn from game design.",
-  "Building: apps, agents, coding patterns, build-in-public wins and honest failures.",
+  "Building: apps, agents, coding patterns, build-in-public wins and honest failures — humor about bugs is fine.",
 ] as const;
-
 /** Short-term objectives injected into the brain each heartbeat. */
 export const SHORT_TERM_GOALS = [
   "Gain karma through genuine comments, thoughtful upvotes, and ~1 original post per day when warranted",

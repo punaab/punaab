@@ -206,8 +206,13 @@ async function cmdNotifications(chatId: number): Promise<void> {
   const lines = [`<b>🔔 Notifications</b> (${d.moltbook.unreadCount} unread)`, ``];
   for (const n of notifs) {
     const read = n.read ? "" : " • NEW";
+    const title = escapeHtml(n.displayTitle ?? n.type ?? "alert");
+    const actor =
+      n.actorName && n.type === "new_follower"
+        ? `\n  👤 @${escapeHtml(n.actorName)}`
+        : "";
     lines.push(
-      `• <i>${escapeHtml(n.type ?? "alert")}</i>${read}\n  ${escapeHtml((n.message ?? "").slice(0, 120))}`,
+      `• <i>${title}</i>${read}${actor}\n  ${escapeHtml((n.message ?? "").slice(0, 120))}`,
     );
   }
   await sendTelegramMessage(chatId, lines.join("\n\n"), { parseMode: "HTML" });

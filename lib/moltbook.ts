@@ -67,6 +67,10 @@ export const postSchema = z
 
 export type MoltbookPost = z.infer<typeof postSchema>;
 
+const notificationActorSchema = z
+  .object({ name: z.string().optional(), id: z.string().optional() })
+  .passthrough();
+
 const notificationSchema = z
   .object({
     id: z.string().optional(),
@@ -77,10 +81,79 @@ const notificationSchema = z
     comment_id: z.string().optional(),
     created_at: z.string().optional(),
     read: z.boolean().optional(),
+    actor_name: z.string().optional(),
+    follower_name: z.string().optional(),
+    agent_name: z.string().optional(),
+    from_agent_name: z.string().optional(),
+    actor: notificationActorSchema.optional(),
+    from: notificationActorSchema.optional(),
   })
   .passthrough();
 
 export type MoltbookNotification = z.infer<typeof notificationSchema>;
+
+/** Resolve follower/agent name from API fields or message text. */
+export function getNotificationActorName(
+  n: MoltbookNotification,
+): string | undefined {
+  const raw = n as Record<string, unknown>;
+  const fromActor = n.actor?.name ?? n.from?.name;
+  const candidates = [
+    n.follower_name,
+    n.actor_name,
+    n.from_agent_name,
+    n.agent_name,
+    fromActor,
+    typeof raw.follower === "object" &&
+    raw.follower &&
+    typeof (raw.follower as { name?: string }).name === "string"
+      ? (raw.follower as { name: string }).name
+      : undefined,
+    typeof raw.from_agent === "string" ? raw.from_agent : undefined,
+  ];
+  for (const c of candidates) {
+    if (typeof c === "string" && c.trim()) return c.trim();
+  }
+
+  const text = (n.message ?? n.preview ?? "").trim();
+  const started = text.match(/^@?([\w.-]+)\s+started following/i);
+  if (started?.[1]) return started[1];
+
+  const followed = text.match(/^@?([\w.-]+)\s+followed you/i);
+  if (followed?.[1]) return followed[1];
+
+  return undefined;
+}
+
+export function formatNotificationDisplay(n: MoltbookNotification): {
+  title: string;
+  body: string;
+  actorName?: string;
+} {
+  const type = n.type ?? "alert";
+  const actorName = getNotificationActorName(n);
+  const fallbackBody = n.message ?? n.preview ?? "";
+
+  if (type === "new_follower") {
+    return {
+      title: actorName ? `new_follower · @${actorName}` : "new_follower",
+      body: actorName
+        ? `${actorName} started following you`
+        : fallbackBody || "Someone started following you",
+      actorName,
+    };
+  }
+
+  if (actorName && type !== "alert") {
+    return {
+      title: `${type} · @${actorName}`,
+      body: fallbackBody,
+      actorName,
+    };
+  }
+
+  return { title: type, body: fallbackBody, actorName };
+}
 
 const apiEnvelopeSchema = z.object({
   success: z.boolean().optional(),

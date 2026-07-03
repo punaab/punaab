@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { MoltbookClient, MoltbookError, postSchema } from "./moltbook";
+import { MoltbookClient, MoltbookError, formatNotificationDisplay, postSchema } from "./moltbook";
 import { persona } from "./persona";
 
 const commentActivitySchema = z
@@ -57,6 +57,8 @@ export interface MoltbookDashboardData {
     post_id?: string;
     created_at?: string;
     read?: boolean;
+    actorName?: string;
+    displayTitle?: string;
   }[];
   unreadCount: number;
   feedPreview: {
@@ -135,15 +137,20 @@ export async function fetchMoltbookDashboard(): Promise<MoltbookDashboardData> {
   }
 
   if (notifRes.status === "fulfilled") {
-    result.notifications = notifRes.value.notifications.map((n) => ({
-      id: n.id,
-      type: n.type,
-      message: n.message ?? n.preview,
-      preview: n.preview,
-      post_id: n.post_id,
-      created_at: n.created_at,
-      read: n.read,
-    }));
+    result.notifications = notifRes.value.notifications.map((n) => {
+      const display = formatNotificationDisplay(n);
+      return {
+        id: n.id,
+        type: n.type,
+        message: display.body,
+        preview: n.preview,
+        post_id: n.post_id,
+        created_at: n.created_at,
+        read: n.read,
+        actorName: display.actorName,
+        displayTitle: display.title,
+      };
+    });
     result.unreadCount = notifRes.value.unread_count ?? 0;
   }
 
