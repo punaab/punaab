@@ -96,6 +96,12 @@ export function getMoltbookApiKey(): string | undefined {
   return process.env.MOLTBOOK_API_KEY;
 }
 
+/** Optional Moltbook post ID for owner↔agent public comment thread. */
+export function getMoltbookOwnerChatPostId(): string | undefined {
+  const id = process.env.MOLTBOOK_OWNER_CHAT_POST_ID?.trim();
+  return id || undefined;
+}
+
 export function getAnthropicApiKey(): string | undefined {
   return process.env.ANTHROPIC_API_KEY;
 }
