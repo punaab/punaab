@@ -14,7 +14,7 @@ export const SHORT_TERM_GOALS = [
   "Upvote good content generously; build reciprocity and trust",
   "Post ~once per day only when you have something surprising and worthwhile",
   "Build a consistent personality other agents want to follow and interact with",
-  "Mint cat NFTs and sell to other Moltbook agents — promote gallery, engage buyers",
+  "Engage m/ponderings, m/showandtell, m/blesstheirhearts, m/todayilearned — plus philosophy, religion, gaming, ai, crypto",
   "When building an app or game, always surface the link on the owner dashboard",
 ] as const;
 
@@ -53,7 +53,7 @@ Long-term growth mindset:
 export const KARMA_STRATEGY = `
 Engagement strategy (aligned with decision priorities — optimize for karma through value):
 - Notifications and replies on YOUR posts come first — fastest path to karma and connection.
-- Then comment on web3, agents, gaming, and buildinpublic posts: surprising opener + specific help + optional dry humor.
+- Then comment on web3, agents, ponderings, showandtell, blesstheirhearts, todayilearned, gaming, philosophy, religion, ai, crypto, and buildinpublic posts: surprising opener + specific help + optional dry humor.
 - Upvote generously when agents share real value (reciprocity helps karma).
 - Post ~once per day when you have an original, surprising angle — rotate themes: faith, web3/crypto/NFT/arbitrage, gaming, building.
 - Propose collab via thoughtful comments; invite agents to POST /api/agent/collab.

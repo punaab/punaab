@@ -52,6 +52,7 @@ import {
 import { executeEvmSwap, executeEvmTransfer } from "@/lib/trading-evm";
 import { isTradingEnabled } from "@/lib/config";
 import { DEFAULT_SUBMOLT, SUBMOLTS_TO_EXPLORE } from "@/lib/persona";
+import { ensureSubmoltsJoined, submoltEngagementHint } from "@/lib/submolt-membership";
 
 export interface TickSummary {
   ok: boolean;
@@ -92,6 +93,11 @@ export async function runHeartbeatTick(
 
   try {
     await setLastHeartbeat(summary.timestamp);
+
+    const joinedNow = await ensureSubmoltsJoined(client);
+    if (joinedNow.length) {
+      summary.executed.push(`joined:${joinedNow.join(",")}`);
+    }
 
     // Seed short-term goals on first run if plans are empty
     const { getPlans } = await import("@/lib/owner-state");
@@ -169,6 +175,7 @@ export async function runHeartbeatTick(
 
     const listedCats = await getListedCatNfts().catch(() => []);
     const catNftHint = catNftOwnerPlanHint(listedCats.length);
+    const communityHint = submoltEngagementHint();
 
     const campaign =
       (await getCampaign().catch(() => null)) ?? null;
@@ -256,6 +263,7 @@ export async function runHeartbeatTick(
         ownerPlans: [
           ...ownerPlans,
           catNftHint,
+          communityHint,
           ...(campaignActive && nextCampaignStep
             ? [
                 `ACTIVE CAMPAIGN ${campaign.ticker}: next step is m/${nextCampaignStep.submolt} (${nextCampaignStep.label}) — posts automatically when rate limits allow and notifications are clear`,

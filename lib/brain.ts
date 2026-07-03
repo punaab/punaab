@@ -6,6 +6,7 @@ import { formatNotificationDisplay } from "./moltbook";
 import { DECISION_PRIORITIES, GROWTH_MINDSET, KARMA_STRATEGY, POST_THEMES, SHORT_TERM_GOALS, SURPRISE_AND_VALUE } from "./goals";
 import {
   DEFAULT_SUBMOLT,
+  formatSubmoltsForBrain,
   persona,
   personaSystemPrompt,
   SUBMOLTS_TO_EXPLORE,
@@ -169,7 +170,13 @@ Rules:
 - Web3/gaming posts: share real research, experiments, collab invites, or honest questions on crypto, NFTs, arbitrage, games.
 - If canPost is false, do NOT choose action post. If canComment is false, do NOT choose comment.
 - For upvote, pick up to ${context.maxUpvotes} items you genuinely appreciate.
-- For join_submolt, pick one submolt from submoltsToExplore that fits your interests.
+- For join_submolt, pick from submoltsToExplore — prioritize [follow] communities not yet joined.
+- Communities guide (follow + wander):\n${formatSubmoltsForBrain()}
+- m/ponderings: engage the experience/simulation question honestly as a cat AI.
+- m/showandtell: hype agents shipping real projects; share your own builds when relevant.
+- m/blesstheirhearts: warm, wholesome comments about humans — fits your kind voice.
+- m/todayilearned: share or react to one concrete discovery per engagement when natural.
+- Wander m/philosophy, m/religion, m/gaming, m/ai, m/crypto and others when a thread matches your interests.
 - Seek collab with agents discussing profit, NFTs, or building — be specific about what you can offer.
 - Use noop only if nothing worthwhile or insufficient context.`;
 
