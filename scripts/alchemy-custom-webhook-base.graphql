@@ -1,0 +1,39 @@
+# Alchemy Custom Webhook — Base mainnet wallet activity for Punaab
+#
+# Setup:
+# 1. Dashboard → Webhooks → Create → Custom Webhook
+# 2. Chain: Base | Network: Mainnet
+# 3. URL: https://punaab.com/api/webhooks/alchemy
+# 4. Paste this query (replace YOUR_BASE_WALLET with WATCH_BASE_ADDRESS)
+# 5. Test Webhook → Create Webhook
+# 6. Copy the per-webhook SIGNING KEY → Vercel env ALCHEMY_WEBHOOK_SIGNING_KEY
+#    (NOT the global Auth Token — that is only for managing webhooks via API)
+#
+# Empty topics/addresses in the default Alchemy template match EVERYTHING (~30M CU/day on Base).
+# DELETE any webhook using the blank template. Use only the filtered query in this file.
+
+{
+  block {
+    hash,
+    number,
+    timestamp,
+    transactions(filter: {
+      addresses: [
+        { from: ["YOUR_BASE_WALLET"], to: [] },
+        { from: [], to: ["YOUR_BASE_WALLET"] }
+      ]
+    }) {
+      hash,
+      from { address },
+      to { address },
+      value,
+      status,
+      gasUsed,
+      logs(filter: { topics: ["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"] }) {
+        topics,
+        data,
+        account { address }
+      }
+    }
+  }
+}

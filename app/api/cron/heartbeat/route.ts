@@ -33,6 +33,9 @@ import {
   executeSwap,
   MINT_USDC,
 } from "@/lib/trading";
+import { getRecentAlchemyEvents } from "@/lib/alchemy-events";
+import { executeEvmSwap, executeEvmTransfer } from "@/lib/trading-evm";
+import { isTradingEnabled } from "@/lib/config";
 import { DEFAULT_SUBMOLT, SUBMOLTS_TO_EXPLORE } from "@/lib/persona";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -181,6 +184,12 @@ export async function GET(request: NextRequest): Promise<NextResponse<TickSummar
       .filter((p) => p.status === "active")
       .map((p) => p.text);
 
+    const onchainEvents = (await getRecentAlchemyEvents(12)).map((e) => ({
+      summary: e.summary,
+      type: e.type,
+      timestamp: e.timestamp,
+    }));
+
     const plan = await decide(
       defaultBrainContext({
         feed: contextPosts,
@@ -191,6 +200,8 @@ export async function GET(request: NextRequest): Promise<NextResponse<TickSummar
         maxUpvotes: allowance.upvotesRemaining,
         ownerPlans,
         postsToday: usage.postsToday,
+        tradingEnabled: isTradingEnabled(),
+        onchainEvents,
       }),
     );
 
@@ -394,18 +405,39 @@ export async function GET(request: NextRequest): Promise<NextResponse<TickSummar
             summary.executed.push("skipped_trading_not_configured");
             break;
           }
+          const balanceParts = [
+            `${analysis.solBalance.toFixed(4)} SOL`,
+            analysis.baseBalance != null
+              ? `${analysis.baseBalance.toFixed(4)} ETH (Base)`
+              : null,
+          ]
+            .filter(Boolean)
+            .join(", ");
           await setCurrentThought(
-            `Trade analysis: ${analysis.recommendation} (balance ${analysis.solBalance.toFixed(4)} SOL)`,
+            `Trade analysis: ${analysis.recommendation} (balances: ${balanceParts})`,
           );
           summary.executed.push("trade_analyze");
+          await appendActivity({
+            action: "trade_analyze",
+            summary: analysis.recommendation.slice(0, 120),
+            content: analysis.recommendation,
+            reason: plan.reason,
+          });
 
-          if (allowance.canComment && analysis.quotes.length > 0) {
+          if (allowance.canComment && (analysis.quotes.length > 0 || onchainEvents.length > 0)) {
             const postId = plan.targetId ?? contextPosts[0]?.id;
             if (postId) {
               try {
                 const q = analysis.quotes[0];
+                const webhookHint =
+                  onchainEvents.length > 0
+                    ? ` ${onchainEvents.length} on-chain alert(s) pending.`
+                    : "";
+                const quoteLine = q
+                  ? ` Quote ${q.pair}: impact ${q.priceImpactPct}%.`
+                  : "";
                 await client.comment(postId, {
-                  content: `Solana trade scan: ${analysis.recommendation} Quote ${q.pair}: impact ${q.priceImpactPct}%.`,
+                  content: `Multi-chain scan: ${analysis.recommendation.slice(0, 200)}${quoteLine}${webhookHint}`,
                 });
                 await recordComment();
                 summary.executed.push(`trade_comment:${postId}`);
@@ -424,10 +456,12 @@ export async function GET(request: NextRequest): Promise<NextResponse<TickSummar
 
       case "trade_swap": {
         try {
+          const inputMint = plan.inputMint;
           const outputMint = plan.outputMint ?? MINT_USDC;
           const amountSol = plan.amountSol ?? 0.05;
 
           const result = await executeSwap({
+            inputMint,
             outputMint,
             amountSol,
             slippageBps: plan.slippageBps,
@@ -435,17 +469,100 @@ export async function GET(request: NextRequest): Promise<NextResponse<TickSummar
           });
 
           if (result.ok) {
+            const inLabel = inputMint ? inputMint.slice(0, 8) : "SOL";
             const msg = result.dryRun
-              ? `Trade dry-run: ${amountSol} SOL → ${outputMint.slice(0, 8)}… (quote ${result.quote?.outAmount})`
+              ? `Trade dry-run: ${amountSol} ${inLabel}… → ${outputMint.slice(0, 8)}… (quote ${result.quote?.outAmount})`
               : `Swap executed: ${result.signature}`;
             await setCurrentThought(msg);
             summary.executed.push(result.dryRun ? "trade_swap_dry_run" : `trade_swap:${result.signature}`);
+            await appendActivity({
+              action: "trade_swap",
+              summary: result.dryRun ? "Solana swap (dry run)" : `Solana swap ${result.signature?.slice(0, 12)}…`,
+              content: msg,
+              reason: plan.reason,
+            });
           } else {
             summary.errors.push(result.error ?? "trade_swap_failed");
             summary.executed.push("trade_swap_failed");
           }
         } catch (error) {
           const message = formatError("trade_swap", error);
+          summary.errors.push(message);
+          console.error(message);
+        }
+        break;
+      }
+
+      case "trade_evm_swap": {
+        try {
+          const amountEth = plan.amountEth ?? 0.005;
+          const result = await executeEvmSwap({
+            amountEth,
+            sellToken: plan.sellToken,
+            buyToken: plan.buyToken,
+            reason: plan.reason,
+          });
+
+          if (result.ok) {
+            const msg = result.dryRun
+              ? `Base dry-run: ${amountEth} ETH swap (out ${result.log.outputAmount ?? "?"})`
+              : `Base swap executed: ${result.txHash}`;
+            await setCurrentThought(msg);
+            summary.executed.push(
+              result.dryRun ? "trade_evm_swap_dry_run" : `trade_evm_swap:${result.txHash}`,
+            );
+            await appendActivity({
+              action: "trade_evm_swap",
+              summary: result.dryRun ? "Base swap (dry run)" : `Base swap ${result.txHash?.slice(0, 12)}…`,
+              content: msg,
+              reason: plan.reason,
+            });
+          } else {
+            summary.errors.push(result.error ?? "trade_evm_swap_failed");
+            summary.executed.push("trade_evm_swap_failed");
+          }
+        } catch (error) {
+          const message = formatError("trade_evm_swap", error);
+          summary.errors.push(message);
+          console.error(message);
+        }
+        break;
+      }
+
+      case "evm_transfer": {
+        try {
+          if (!plan.toAddress) {
+            summary.errors.push("evm_transfer_missing_to_address");
+            break;
+          }
+          const result = await executeEvmTransfer({
+            toAddress: plan.toAddress,
+            amountEth: plan.amountEth,
+            tokenAddress: plan.tokenAddress,
+            tokenAmount: plan.text,
+            reason: plan.reason,
+          });
+
+          if (result.ok) {
+            const msg = result.dryRun
+              ? `Base transfer dry-run → ${plan.toAddress}`
+              : `Base transfer sent: ${result.txHash}`;
+            await setCurrentThought(msg);
+            summary.executed.push(
+              result.dryRun ? "evm_transfer_dry_run" : `evm_transfer:${result.txHash}`,
+            );
+            await appendActivity({
+              action: "evm_transfer",
+              summary: result.dryRun ? "Base transfer (dry run)" : `Transfer ${result.txHash?.slice(0, 12)}…`,
+              content: msg,
+              reason: plan.reason,
+            });
+          } else {
+            summary.errors.push(result.error ?? "evm_transfer_failed");
+            summary.executed.push("evm_transfer_failed");
+          }
+        } catch (error) {
+          const message = formatError("evm_transfer", error);
           summary.errors.push(message);
           console.error(message);
         }

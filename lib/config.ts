@@ -143,6 +143,58 @@ export function getWatchSolanaAddress(): string | undefined {
   return undefined;
 }
 
+/** EVM hot wallet private key (0x…) for Alchemy Wallet APIs on Base. */
+export function getEvmAgentPrivateKey(): string | undefined {
+  const key = process.env.EVM_AGENT_PRIVATE_KEY?.trim();
+  return key || undefined;
+}
+
+/** Base trading wallet (defaults to WATCH_BASE_ADDRESS). */
+export function getTradingBaseAddress(): string | undefined {
+  const trading = process.env.TRADING_BASE_ADDRESS?.trim();
+  if (trading) return trading;
+  return getWatchBaseAddress();
+}
+
+export function getAlchemyGasPolicyId(): string | undefined {
+  return process.env.ALCHEMY_GAS_POLICY_ID?.trim() || undefined;
+}
+
+export function getAlchemyWebhookSigningKey(): string | undefined {
+  const signing = process.env.ALCHEMY_WEBHOOK_SIGNING_KEY?.trim();
+  if (signing) return signing;
+  // Legacy name — many users paste the per-webhook signing key here.
+  return process.env.ALCHEMY_WEBHOOK_AUTH_TOKEN?.trim() || undefined;
+}
+
+/** @deprecated Use getAlchemyWebhookSigningKey — Auth Token is for Notify API management, not signatures. */
+export function getAlchemyWebhookAuthToken(): string | undefined {
+  return getAlchemyWebhookSigningKey();
+}
+
+export function getZeroExApiKey(): string | undefined {
+  return process.env.ZEROX_API_KEY?.trim() || undefined;
+}
+
+/** Cache Solana DAS / NFT scans to avoid burning Alchemy CUs (getAssetsByOwner ≈ 480 CU/call). */
+export function getAlchemyHoldingsCacheSec(): number {
+  return Number(process.env.ALCHEMY_HOLDINGS_CACHE_SEC ?? "3600");
+}
+
+export function getAlchemyNftCountCacheSec(): number {
+  return Number(process.env.ALCHEMY_NFT_COUNT_CACHE_SEC ?? "86400");
+}
+
+/**
+ * When false, skip expensive DAS getAssetsByOwner (only cheap getBalance).
+ * Set ALCHEMY_DAS_ENABLED=true after fixing webhooks / cache is configured.
+ */
+export function isAlchemyDasEnabled(): boolean {
+  const v = process.env.ALCHEMY_DAS_ENABLED?.trim().toLowerCase();
+  if (v === "false" || v === "0" || v === "no") return false;
+  return true;
+}
+
 export interface WatchTargets {
   base: string[];
   solana: string[];
@@ -240,7 +292,9 @@ export function isDryRun(): boolean {
 export const TRADING_LIMITS = {
   maxSolPerTrade: Number(process.env.TRADING_MAX_SOL_PER_TRADE ?? "0.1"),
   minSolReserve: Number(process.env.TRADING_MIN_SOL_RESERVE ?? "0.05"),
-  maxTradesPerDay: Number(process.env.TRADING_MAX_TRADES_PER_DAY ?? "5"),
+  maxEthPerTrade: Number(process.env.TRADING_MAX_ETH_PER_TRADE ?? "0.01"),
+  minEthReserve: Number(process.env.TRADING_MIN_ETH_RESERVE ?? "0.002"),
+  maxTradesPerDay: Number(process.env.TRADING_MAX_TRADES_PER_DAY ?? "10"),
   defaultSlippageBps: Number(process.env.TRADING_SLIPPAGE_BPS ?? "100"),
 } as const;
 

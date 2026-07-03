@@ -14,7 +14,8 @@ import {
   getTickLog,
 } from "./owner-state";
 import { getWeb3Snapshot } from "./web3-monitor";
-import { getTradeLog, hasTradeSigner } from "./trading";
+import { getTradeLog, hasAnyTradeSigner } from "./trading";
+import { getRecentAlchemyEvents } from "./alchemy-events";
 
 export interface OwnerDashboard {
   agent: { name: string; handle: string };
@@ -43,6 +44,7 @@ export interface OwnerDashboard {
     hasSigner: boolean;
     log: Awaited<ReturnType<typeof getTradeLog>>;
   };
+  onchainEvents: Awaited<ReturnType<typeof getRecentAlchemyEvents>>;
   moltbook: Awaited<ReturnType<typeof fetchMoltbookDashboard>>;
 }
 
@@ -60,6 +62,7 @@ export async function getOwnerDashboard(): Promise<OwnerDashboard> {
     lastHeartbeat,
     tradeLog,
     activity,
+    onchainEvents,
   ] = await Promise.all([
     getCurrentThought(),
     getPlans(),
@@ -73,6 +76,7 @@ export async function getOwnerDashboard(): Promise<OwnerDashboard> {
     getLastHeartbeat(),
     getTradeLog(10),
     getActivityLog(25),
+    getRecentAlchemyEvents(15),
   ]);
 
   const allowance = allowedActions(usage);
@@ -103,9 +107,10 @@ export async function getOwnerDashboard(): Promise<OwnerDashboard> {
     web3,
     trading: {
       enabled: isTradingEnabled(),
-      hasSigner: hasTradeSigner(),
+      hasSigner: hasAnyTradeSigner(),
       log: tradeLog,
     },
+    onchainEvents,
     moltbook,
   };
 }

@@ -9,6 +9,7 @@ const PUBLIC_PATHS = [
   "/api/admin/login",
   "/api/cron",
   "/api/telegram",
+  "/api/webhooks",
   "/punaab-avatar.png",
 ];
 

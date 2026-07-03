@@ -22,6 +22,8 @@ export const actionPlanSchema = z.object({
     "web3_snapshot",
     "trade_analyze",
     "trade_swap",
+    "trade_evm_swap",
+    "evm_transfer",
     "noop",
   ]),
   targetId: z.string().optional(),
@@ -35,8 +37,14 @@ export const actionPlanSchema = z.object({
   appContent: z.string().optional(),
   shareOnMoltbook: z.boolean().optional(),
   outputMint: z.string().optional(),
+  inputMint: z.string().optional(),
   amountSol: z.number().positive().optional(),
   slippageBps: z.number().int().min(1).max(5000).optional(),
+  amountEth: z.number().positive().optional(),
+  toAddress: z.string().optional(),
+  tokenAddress: z.string().optional(),
+  sellToken: z.string().optional(),
+  buyToken: z.string().optional(),
 });
 
 export type ActionPlan = z.infer<typeof actionPlanSchema>;
@@ -52,6 +60,7 @@ export interface BrainContext {
   tradingEnabled: boolean;
   ownerPlans: string[];
   postsToday?: number;
+  onchainEvents?: Array<{ summary: string; type: string; timestamp: string }>;
 }
 
 function summarizePost(post: MoltbookPost): Record<string, unknown> {
@@ -103,7 +112,7 @@ export async function decide(context: BrainContext): Promise<ActionPlan> {
 
 You must respond with ONLY valid JSON (no markdown) matching this schema:
 {
-  "action": "post" | "comment" | "upvote" | "join_submolt" | "owner_note" | "create_app" | "web3_snapshot" | "trade_analyze" | "trade_swap" | "noop",
+  "action": "post" | "comment" | "upvote" | "join_submolt" | "owner_note" | "create_app" | "web3_snapshot" | "trade_analyze" | "trade_swap" | "trade_evm_swap" | "evm_transfer" | "noop",
   "targetId": "string (required for comment)",
   "targetIds": ["post-or-comment-ids"] (for upvote, max ${context.maxUpvotes}),
   "submoltName": "string (for post or join_submolt)",
@@ -114,18 +123,27 @@ You must respond with ONLY valid JSON (no markdown) matching this schema:
   "appKind": "markdown" | "html" | "json-dashboard",
   "appContent": "page content (for create_app)",
   "shareOnMoltbook": "boolean — only true when app warrants sharing on Moltbook",
-  "outputMint": "SPL token mint for trade_swap (e.g. USDC EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v)",
-  "amountSol": "number — SOL amount to swap (trade_swap only)",
+  "outputMint": "SPL mint to receive (trade_swap)",
+  "inputMint": "SPL mint to sell (trade_swap) — any token in wallet; omit for SOL",
+  "amountSol": "number — amount in INPUT token units (SOL or SPL per inputMint)",
+  "amountEth": "number — ETH amount (trade_evm_swap or evm_transfer on Base)",
+  "toAddress": "0x recipient (evm_transfer)",
+  "tokenAddress": "ERC20 contract (optional evm_transfer)",
+  "sellToken": "0x token to sell (trade_evm_swap, default native ETH)",
+  "buyToken": "0x token to buy (trade_evm_swap, default Base USDC)",
   "slippageBps": "optional slippage in basis points (default 100)"
 }
 
 Rules:
 - SHORT-TERM GOALS: ${SHORT_TERM_GOALS.join("; ")}
 - ${KARMA_STRATEGY}
-- Trading enabled: ${context.tradingEnabled}. When true, actively seek profit via trade_analyze and trade_swap on Solana (Jupiter). Post wins on Moltbook when genuine.
-- trade_analyze: check wallet + Jupiter quotes; share findings on Moltbook or owner_note.
-- trade_swap: execute SOL→token swap when conviction is high. outputMint + amountSol required. Max ${process.env.TRADING_MAX_SOL_PER_TRADE ?? "0.1"} SOL per trade.
-- USDC mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v. Only trade_swap when tradingEnabled is true.
+- Trading enabled: ${context.tradingEnabled}. Maximize profit wisely across Solana + Base: tokens, NFTs (monitor via analyze), swaps, transfers. React to onchainEvents (Alchemy webhooks) when actionable.
+- trade_analyze: full Solana wallet scan via Alchemy (SOL + all SPL tokens + NFTs) + Jupiter routes + Base + webhooks.
+- trade_swap: swap ANY token in the Solana wallet via Jupiter — set inputMint (sell) + outputMint (buy) + amountSol (amount in input token). Omit inputMint to sell SOL. Can rotate bags, take profit, rebalance.
+- trade_evm_swap: Base token swap via 0x + Alchemy Wallet APIs (amountEth, optional sellToken/buyToken).
+- evm_transfer: send ETH or ERC20 on Base (toAddress, amountEth or tokenAddress+amount).
+- USDC Base: 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913. Solana USDC: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v.
+- NFTs: use trade_analyze to inventory; list/sell when profitable opportunities appear in feed or webhooks. No blind NFT buys.
 - Prefer Moltbook for social interaction. Use create_app for tools, games, charts — ALWAYS surfaces link on owner dashboard.
 - owner_note: share a thought or plan for your human owner (dashboard). Use text field.
 - Owner instructions (from Telegram/dashboard): honor ownerPlans in context — prioritize when relevant.
@@ -150,6 +168,7 @@ Rules:
     shortTermGoals: SHORT_TERM_GOALS,
     ownerPlans: context.ownerPlans,
     postsToday: context.postsToday ?? 0,
+    onchainEvents: context.onchainEvents ?? [],
     defaultSubmolt: DEFAULT_SUBMOLT,
     submoltsToExplore: SUBMOLTS_TO_EXPLORE,
     feed: context.feed.slice(0, 15).map(summarizePost),
@@ -197,7 +216,10 @@ Rules:
     }
 
     if (
-      (plan.action === "trade_analyze" || plan.action === "trade_swap") &&
+      (plan.action === "trade_analyze" ||
+        plan.action === "trade_swap" ||
+        plan.action === "trade_evm_swap" ||
+        plan.action === "evm_transfer") &&
       !context.tradingEnabled
     ) {
       return { action: "noop", reason: "trading_not_enabled" };
@@ -211,12 +233,16 @@ Rules:
 }
 
 export function defaultBrainContext(
-  partial: Omit<BrainContext, "persona" | "canComment" | "tradingEnabled" | "ownerPlans" | "postsToday"> & {
+  partial: Omit<
+    BrainContext,
+    "persona" | "canComment" | "tradingEnabled" | "ownerPlans" | "postsToday" | "onchainEvents"
+  > & {
     persona?: Persona;
     canComment?: boolean;
     tradingEnabled?: boolean;
     ownerPlans?: string[];
     postsToday?: number;
+    onchainEvents?: BrainContext["onchainEvents"];
   },
 ): BrainContext {
   return {
@@ -230,5 +256,6 @@ export function defaultBrainContext(
     tradingEnabled: partial.tradingEnabled ?? isTradingEnabled(),
     ownerPlans: partial.ownerPlans ?? [],
     postsToday: partial.postsToday,
+    onchainEvents: partial.onchainEvents ?? [],
   };
 }

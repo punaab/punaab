@@ -114,6 +114,30 @@ interface AdminState {
     }[];
     error?: string;
   };
+  trading?: {
+    enabled: boolean;
+    hasSigner: boolean;
+    log: {
+      id: string;
+      timestamp: string;
+      chain?: string;
+      action: string;
+      inputMint: string;
+      outputMint: string;
+      inputAmount: string;
+      outputAmount?: string;
+      signature?: string;
+      dryRun: boolean;
+      error?: string;
+    }[];
+  };
+  onchainEvents?: {
+    id: string;
+    timestamp: string;
+    type: string;
+    network?: string;
+    summary: string;
+  }[];
 }
 
 function formatTime(iso: string | null | undefined): string {
@@ -590,6 +614,68 @@ export default function Dashboard() {
               ))}
             </section>
           )}
+
+          <section className="panel">
+            <h2>Trading</h2>
+            <div className="meter-row">
+              <span>Enabled</span>
+              <span>{state?.trading?.enabled ? "yes" : "no"}</span>
+            </div>
+            <div className="meter-row">
+              <span>Signer</span>
+              <span>
+                {state?.trading?.hasSigner
+                  ? "Solana and/or Base"
+                  : "missing keys"}
+              </span>
+            </div>
+            {!state?.trading?.log?.length && (
+              <p className="muted">No trades logged yet.</p>
+            )}
+            <ul className="activity-list">
+              {state?.trading?.log?.map((t) => (
+                <li key={t.id}>
+                  <span className="activity-action">
+                    {t.chain ?? "solana"} · {t.action}
+                    {t.dryRun ? " (dry)" : ""}
+                  </span>
+                  <div className="muted">
+                    {t.inputAmount} → {t.outputAmount ?? "?"}
+                  </div>
+                  {t.signature && (
+                    <div className="muted">
+                      <code>{t.signature.slice(0, 24)}…</code>
+                    </div>
+                  )}
+                  {t.error && <div className="login-error">{t.error}</div>}
+                  <div className="activity-time">{formatTime(t.timestamp)}</div>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <section className="panel">
+            <h2>On-Chain Alerts</h2>
+            <p className="muted section-hint">
+              Alchemy Custom Webhook → POST /api/webhooks/alchemy · use Signing Key in
+              ALCHEMY_WEBHOOK_SIGNING_KEY
+            </p>
+            {!state?.onchainEvents?.length && (
+              <p className="muted">No webhook events yet.</p>
+            )}
+            <ul className="activity-list">
+              {state?.onchainEvents?.map((e) => (
+                <li key={e.id}>
+                  <span className="activity-action">{e.type}</span>
+                  <div>{e.summary}</div>
+                  {e.network && (
+                    <div className="muted">{e.network}</div>
+                  )}
+                  <div className="activity-time">{timeAgo(e.timestamp)}</div>
+                </li>
+              ))}
+            </ul>
+          </section>
 
           <section className="panel">
             <h2>Collab Inbox</h2>

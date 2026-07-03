@@ -3,6 +3,7 @@ import {
   getWatchTargets,
   hasWatchAddresses,
 } from "./config";
+import { getSolBalanceViaAlchemy } from "./solana-alchemy";
 import { createRedisClient } from "./redis";
 
 const WEB3_SNAPSHOT_KEY = "moltbook:web3:snapshot";
@@ -93,12 +94,8 @@ async function fetchEvmBalance(
 async function fetchSolanaBalance(
   address: string,
 ): Promise<{ balance: string; rawBalance: string }> {
-  const lamports = await jsonRpc<number>(
-    rpcUrl("solana-mainnet"),
-    "getBalance",
-    [address, { commitment: "finalized" }],
-  );
-  const sol = lamports / 1e9;
+  const sol = await getSolBalanceViaAlchemy(address);
+  const lamports = Math.floor(sol * 1e9);
   return { balance: sol.toFixed(6), rawBalance: lamports.toString() };
 }
 

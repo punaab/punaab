@@ -282,7 +282,7 @@ async function cmdTrades(chatId: number): Promise<void> {
   const lines = [
     `<b>📈 Trading</b>`,
     `Enabled: ${d.trading.enabled ? "yes" : "no"}`,
-    `Signer: ${d.trading.hasSigner ? "configured" : "missing (set SOLANA_AGENT_PRIVATE_KEY)"}`,
+    `Signer: ${d.trading.hasSigner ? "configured" : "missing (SOLANA_AGENT_PRIVATE_KEY or EVM_AGENT_PRIVATE_KEY)"}`,
     ``,
   ];
 
@@ -290,9 +290,10 @@ async function cmdTrades(chatId: number): Promise<void> {
     lines.push("No trades yet.");
   } else {
     for (const t of d.trading.log.slice(0, 5)) {
+      const chain = t.chain ?? "solana";
       const sig = t.signature ? `\n  <code>${escapeHtml(t.signature.slice(0, 20))}…</code>` : "";
       lines.push(
-        `• ${escapeHtml(t.action)} ${t.dryRun ? "(dry)" : ""} — ${escapeHtml(t.inputAmount)} → ${escapeHtml(t.outputAmount ?? "?")}${sig}`,
+        `• [${escapeHtml(chain)}] ${escapeHtml(t.action)} ${t.dryRun ? "(dry)" : ""} — ${escapeHtml(t.inputAmount)} → ${escapeHtml(t.outputAmount ?? "?")}${sig}`,
       );
     }
   }
