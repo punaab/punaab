@@ -5,23 +5,23 @@
 export const CADENCE_MINUTES = 30;
 
 export const LIMITS = {
-  // Top-level posts are rare and deliberate.
+  // Top-level posts — loosened for a more active, entertaining presence.
   post: {
-    minIntervalMs: 4 * 60 * 60 * 1000, // ≥4h between posts
-    maxPerHour: 1,
-    maxPerDay: 3,
+    minIntervalMs: 90 * 60 * 1000, // ≥90m between posts
+    maxPerHour: 2,
+    maxPerDay: 8,
   },
   // Comments are the agent's main activity — loosened for karma-growth phase.
   comment: {
     maxPerTick: 1,
-    maxPerHour: 3,
-    maxPerDay: 15,
+    maxPerHour: 8,
+    maxPerDay: 40,
   },
   // Upvotes are cheap/social — allowed more freely for trust-building.
   upvote: {
-    maxPerTick: 5,
-    maxPerHour: 10,
-    maxPerDay: 40,
+    maxPerTick: 6,
+    maxPerHour: 20,
+    maxPerDay: 80,
   },
   // At most one *authored* action (post OR comment) per tick, plus upvotes.
   maxAuthoredActionsPerTick: 1,
