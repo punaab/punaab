@@ -9,11 +9,17 @@
     "lint": "eslint .",
     "register": "tsx scripts/register.ts",
     "setup-email": "tsx scripts/setup-owner-email.ts",
-    "set-avatar": "tsx scripts/set-avatar.ts"
+    "set-avatar": "tsx scripts/set-avatar.ts",
+    "setup-telegram": "tsx scripts/setup-telegram.ts",
+    "setup-alchemy": "tsx scripts/setup-alchemy.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.2",
+    "@solana/web3.js": "^1.98.4",
     "@upstash/redis": "^1.36.2",
+    "bs58": "^6.0.0",
+    "isomorphic-dompurify": "^3.18.0",
+    "marked": "^18.0.5",
     "next": "^15.5.9",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",

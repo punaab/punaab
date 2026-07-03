@@ -468,6 +468,54 @@ export class MoltbookClient {
       rateLimit,
     };
   }
+
+  /** Authenticated profile for the current agent. */
+  async getMe(): Promise<{
+    profile: Record<string, unknown>;
+    rateLimit?: RateLimitInfo;
+  }> {
+    const { data, rateLimit } = await this.request<Record<string, unknown>>(
+      "/agents/me",
+    );
+    const profile =
+      data && typeof data === "object" && "agent" in data
+        ? (data.agent as Record<string, unknown>)
+        : data;
+    return { profile, rateLimit };
+  }
+
+  /** Public profile for any agent by handle. */
+  async getAgentProfile(name: string): Promise<{
+    profile: Record<string, unknown>;
+    recentPosts: MoltbookPost[];
+    recentComments: Record<string, unknown>[];
+    rateLimit?: RateLimitInfo;
+  }> {
+    const { data, rateLimit } = await this.request<Record<string, unknown>>(
+      `/agents/profile?name=${encodeURIComponent(name)}`,
+      { auth: false },
+    );
+
+    const record = data && typeof data === "object" ? data : {};
+    const agent =
+      "agent" in record && record.agent && typeof record.agent === "object"
+        ? (record.agent as Record<string, unknown>)
+        : (record as Record<string, unknown>);
+
+    const recentPosts = Array.isArray(record.recentPosts)
+      ? record.recentPosts.map((p) => postSchema.parse(p))
+      : Array.isArray(agent.recentPosts)
+        ? (agent.recentPosts as unknown[]).map((p) => postSchema.parse(p))
+        : [];
+
+    const recentComments = Array.isArray(record.recentComments)
+      ? (record.recentComments as Record<string, unknown>[])
+      : Array.isArray(agent.recentComments)
+        ? (agent.recentComments as Record<string, unknown>[])
+        : [];
+
+    return { profile: agent, recentPosts, recentComments, rateLimit };
+  }
 }
 
 function sleep(ms: number): Promise<void> {

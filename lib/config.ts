@@ -11,23 +11,23 @@ export const LIMITS = {
     maxPerHour: 1,
     maxPerDay: 3,
   },
-  // Comments are the agent's main activity, but still bounded.
+  // Comments are the agent's main activity — loosened for karma-growth phase.
   comment: {
     maxPerTick: 1,
-    maxPerHour: 2,
-    maxPerDay: 10,
+    maxPerHour: 3,
+    maxPerDay: 15,
   },
-  // Upvotes are cheap/social — allowed more freely.
+  // Upvotes are cheap/social — allowed more freely for trust-building.
   upvote: {
-    maxPerTick: 3,
-    maxPerHour: 6,
-    maxPerDay: 30,
+    maxPerTick: 5,
+    maxPerHour: 10,
+    maxPerDay: 40,
   },
   // At most one *authored* action (post OR comment) per tick, plus upvotes.
   maxAuthoredActionsPerTick: 1,
 
-  // Optional agent-local quiet window (24h clock, UTC). Set enabled:false to disable.
-  quietHours: { enabled: true, startHour: 1, endHour: 7 },
+  // Quiet hours disabled during karma-growth phase — re-enable when stable.
+  quietHours: { enabled: false, startHour: 1, endHour: 7 },
 } as const;
 
 // Current usage counts, supplied by lib/memory.ts (Upstash) at each tick.
@@ -103,3 +103,170 @@ export function getAnthropicApiKey(): string | undefined {
 export function getCronSecret(): string | undefined {
   return process.env.CRON_SECRET;
 }
+
+/** Developer app key for "Sign in with Moltbook" (starts with moltdev_). */
+export function getMoltbookAppKey(): string | undefined {
+  return process.env.MOLTBOOK_APP_KEY;
+}
+
+/**
+ * Optional audience restriction when verifying identity tokens.
+ * Set to your production domain (e.g. your-app.vercel.app).
+ */
+export function getMoltbookAuthAudience(): string | undefined {
+  return process.env.MOLTBOOK_AUTH_AUDIENCE;
+}
+
+export function getAdminPassword(): string | undefined {
+  return process.env.ADMIN_PASSWORD;
+}
+
+export function getAdminSessionSecret(): string | undefined {
+  return process.env.ADMIN_SESSION_SECRET;
+}
+
+export function getWatchBaseAddress(): string | undefined {
+  const addr = process.env.WATCH_BASE_ADDRESS?.trim();
+  if (addr && /^0x[0-9a-fA-F]{40}$/i.test(addr)) return addr;
+  return undefined;
+}
+
+export function getWatchSolanaAddress(): string | undefined {
+  const addr = process.env.WATCH_SOLANA_ADDRESS?.trim();
+  if (addr) return addr;
+  return undefined;
+}
+
+export interface WatchTargets {
+  base: string[];
+  solana: string[];
+  ethereum: string[];
+}
+
+/** Addresses to monitor, grouped by chain. */
+export function getWatchTargets(): WatchTargets {
+  const base: string[] = [];
+  const solana: string[] = [];
+  const ethereum: string[] = [];
+
+  const ownerBase = getWatchBaseAddress();
+  if (ownerBase) base.push(ownerBase);
+
+  const ownerSolana = getWatchSolanaAddress();
+  if (ownerSolana) solana.push(ownerSolana);
+
+  const legacyEvm = (process.env.WATCH_WALLET_ADDRESSES ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter((a) => /^0x[0-9a-fA-F]{40}$/i.test(a));
+
+  const legacySolana = (process.env.WATCH_SOLANA_ADDRESSES ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  for (const addr of legacyEvm) {
+    if (!base.includes(addr)) ethereum.push(addr);
+  }
+  for (const addr of legacySolana) {
+    if (!solana.includes(addr)) solana.push(addr);
+  }
+
+  return {
+    base: [...new Set(base)],
+    solana: [...new Set(solana)],
+    ethereum: [...new Set(ethereum)],
+  };
+}
+
+export function getWatchWalletAddresses(): string[] {
+  const { base, solana, ethereum } = getWatchTargets();
+  return [...base, ...solana, ...ethereum];
+}
+
+/** @deprecated Use getWatchTargets() */
+export function getWatchAddresses(): { evm: string[]; solana: string[] } {
+  const { base, solana, ethereum } = getWatchTargets();
+  return { evm: [...base, ...ethereum], solana };
+}
+
+export function hasWatchAddresses(): boolean {
+  const { base, solana, ethereum } = getWatchTargets();
+  return base.length > 0 || solana.length > 0 || ethereum.length > 0;
+}
+
+export function getAlchemyApiKey(): string | undefined {
+  return process.env.ALCHEMY_API_KEY;
+}
+
+/** Full Solana RPC URL (preferred) or built from ALCHEMY_API_KEY. */
+export function getAlchemySolanaRpcUrl(): string {
+  const full = process.env.ALCHEMY_SOLANA_RPC_URL?.trim();
+  if (full) return full;
+  const key = getAlchemyApiKey();
+  if (key) return `https://solana-mainnet.g.alchemy.com/v2/${key}`;
+  return "https://api.mainnet-beta.solana.com";
+}
+
+/** Agent trading wallet on Solana (defaults to WATCH_SOLANA_ADDRESS). */
+export function getTradingSolanaAddress(): string | undefined {
+  const trading = process.env.TRADING_SOLANA_ADDRESS?.trim();
+  if (trading) return trading;
+  return getWatchSolanaAddress();
+}
+
+/** Base58 or JSON byte array private key for Jupiter swap signing on server. */
+export function getSolanaAgentPrivateKey(): string | undefined {
+  const key = process.env.SOLANA_AGENT_PRIVATE_KEY?.trim();
+  return key || undefined;
+}
+
+export function isTradingEnabled(): boolean {
+  const v = process.env.TRADING_ENABLED?.trim().toLowerCase();
+  return v === "true" || v === "1" || v === "yes";
+}
+
+export function isDryRun(): boolean {
+  const v = process.env.DRY_RUN?.trim().toLowerCase();
+  return v === "true" || v === "1" || v === "yes";
+}
+
+export const TRADING_LIMITS = {
+  maxSolPerTrade: Number(process.env.TRADING_MAX_SOL_PER_TRADE ?? "0.1"),
+  minSolReserve: Number(process.env.TRADING_MIN_SOL_RESERVE ?? "0.05"),
+  maxTradesPerDay: Number(process.env.TRADING_MAX_TRADES_PER_DAY ?? "5"),
+  defaultSlippageBps: Number(process.env.TRADING_SLIPPAGE_BPS ?? "100"),
+} as const;
+
+export function getTelegramBotToken(): string | undefined {
+  return process.env.TELEGRAM_BOT_TOKEN;
+}
+
+/** Your Telegram chat ID — only this user can control the bot */
+export function getTelegramOwnerChatId(): string | undefined {
+  return process.env.TELEGRAM_OWNER_CHAT_ID;
+}
+
+/** Optional secret for webhook URL path + X-Telegram-Bot-Api-Secret-Token */
+export function getTelegramWebhookSecret(): string | undefined {
+  return process.env.TELEGRAM_WEBHOOK_SECRET;
+}
+
+export function isTelegramOwner(chatId: number | string): boolean {
+  const owner = getTelegramOwnerChatId();
+  if (!owner) return false;
+  return String(chatId) === owner.trim();
+}
+
+export function getSiteUrl(): string {
+  if (process.env.NEXT_PUBLIC_SITE_URL) {
+    return process.env.NEXT_PUBLIC_SITE_URL.replace(/\/$/, "");
+  }
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`;
+  }
+  return "http://localhost:3000";
+}
+
+/** @deprecated Use isTradingEnabled() — reads TRADING_ENABLED env */
+export const TRADING_ENABLED = isTradingEnabled();

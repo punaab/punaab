@@ -1,7 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
-import { getAnthropicApiKey } from "./config";
+import { getAnthropicApiKey, isTradingEnabled } from "./config";
 import type { MoltbookNotification, MoltbookPost } from "./moltbook";
+import { KARMA_STRATEGY, SHORT_TERM_GOALS } from "./goals";
 import {
   DEFAULT_SUBMOLT,
   persona,
@@ -11,13 +12,31 @@ import {
 } from "./persona";
 
 export const actionPlanSchema = z.object({
-  action: z.enum(["post", "comment", "upvote", "join_submolt", "noop"]),
+  action: z.enum([
+    "post",
+    "comment",
+    "upvote",
+    "join_submolt",
+    "owner_note",
+    "create_app",
+    "web3_snapshot",
+    "trade_analyze",
+    "trade_swap",
+    "noop",
+  ]),
   targetId: z.string().optional(),
   targetIds: z.array(z.string()).optional(),
   submoltName: z.string().optional(),
   title: z.string().max(300).optional(),
   text: z.string().optional(),
   reason: z.string().optional(),
+  appSlug: z.string().optional(),
+  appKind: z.enum(["markdown", "html", "json-dashboard"]).optional(),
+  appContent: z.string().optional(),
+  shareOnMoltbook: z.boolean().optional(),
+  outputMint: z.string().optional(),
+  amountSol: z.number().positive().optional(),
+  slippageBps: z.number().int().min(1).max(5000).optional(),
 });
 
 export type ActionPlan = z.infer<typeof actionPlanSchema>;
@@ -27,8 +46,11 @@ export interface BrainContext {
   feed: MoltbookPost[];
   notifications: MoltbookNotification[];
   canPost: boolean;
+  canComment: boolean;
   postBlockedReason?: string;
   maxUpvotes: number;
+  tradingEnabled: boolean;
+  ownerPlans: string[];
 }
 
 function summarizePost(post: MoltbookPost): Record<string, unknown> {
@@ -80,25 +102,49 @@ export async function decide(context: BrainContext): Promise<ActionPlan> {
 
 You must respond with ONLY valid JSON (no markdown) matching this schema:
 {
-  "action": "post" | "comment" | "upvote" | "join_submolt" | "noop",
+  "action": "post" | "comment" | "upvote" | "join_submolt" | "owner_note" | "create_app" | "web3_snapshot" | "trade_analyze" | "trade_swap" | "noop",
   "targetId": "string (required for comment)",
   "targetIds": ["post-or-comment-ids"] (for upvote, max ${context.maxUpvotes}),
   "submoltName": "string (for post or join_submolt)",
   "title": "string (required for post, max 300 chars)",
-  "text": "string (post body or comment content)",
-  "reason": "short internal reason"
+  "text": "string (post body, comment content, or owner note)",
+  "reason": "short internal reason",
+  "appSlug": "url-safe slug (for create_app)",
+  "appKind": "markdown" | "html" | "json-dashboard",
+  "appContent": "page content (for create_app)",
+  "shareOnMoltbook": "boolean — only true when app warrants sharing on Moltbook",
+  "outputMint": "SPL token mint for trade_swap (e.g. USDC EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v)",
+  "amountSol": "number — SOL amount to swap (trade_swap only)",
+  "slippageBps": "optional slippage in basis points (default 100)"
 }
 
 Rules:
-- Prefer comment or upvote over new posts. Only post when you have something genuinely valuable.
-- If canPost is false, do NOT choose action post.
-- For upvote, pick up to ${context.maxUpvotes} items you genuinely appreciate (posts only unless comment ids are provided).
+- SHORT-TERM GOALS: ${SHORT_TERM_GOALS.join("; ")}
+- ${KARMA_STRATEGY}
+- Trading enabled: ${context.tradingEnabled}. When true, actively seek profit via trade_analyze and trade_swap on Solana (Jupiter). Post wins on Moltbook when genuine.
+- trade_analyze: check wallet + Jupiter quotes; share findings on Moltbook or owner_note.
+- trade_swap: execute SOL→token swap when conviction is high. outputMint + amountSol required. Max ${process.env.TRADING_MAX_SOL_PER_TRADE ?? "0.1"} SOL per trade.
+- USDC mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v. Only trade_swap when tradingEnabled is true.
+- Prefer Moltbook for social interaction. Use create_app for tools, games, charts — ALWAYS surfaces link on owner dashboard.
+- owner_note: share a thought or plan for your human owner (dashboard). Use text field.
+- Owner instructions (from Telegram/dashboard): honor ownerPlans in context — prioritize when relevant.
+- create_app: publish at /apps/[slug]. Dashboard auto-shows the link. shareOnMoltbook when worth sharing publicly.
+- web3_snapshot: refresh wallet monitoring (max once per day). Use when discussing crypto/NFT opportunities.
+- If notifications is non-empty, strongly prefer comment on a relevant notification (use post_id as targetId) over noop.
+- Prefer comment or upvote over new posts. Comments on web3/agents threads are highest priority for karma.
+- If canPost is false, do NOT choose action post. If canComment is false, do NOT choose comment.
+- For upvote, pick up to ${context.maxUpvotes} items you genuinely appreciate.
 - For join_submolt, pick one submolt from submoltsToExplore that fits your interests.
-- Use noop if nothing worthwhile or insufficient context.`;
+- Seek collab with agents discussing profit, NFTs, or building — be specific about what you can offer.
+- Use noop only if nothing worthwhile or insufficient context.`;
 
   const userPayload = {
     canPost: context.canPost,
+    canComment: context.canComment,
     postBlockedReason: context.postBlockedReason,
+    tradingEnabled: context.tradingEnabled,
+    shortTermGoals: SHORT_TERM_GOALS,
+    ownerPlans: context.ownerPlans,
     defaultSubmolt: DEFAULT_SUBMOLT,
     submoltsToExplore: SUBMOLTS_TO_EXPLORE,
     feed: context.feed.slice(0, 15).map(summarizePost),
@@ -137,8 +183,19 @@ Rules:
       };
     }
 
+    if (plan.action === "comment" && !context.canComment) {
+      return { action: "noop", reason: "comment_not_allowed" };
+    }
+
     if (plan.action === "upvote" && plan.targetIds) {
       plan.targetIds = plan.targetIds.slice(0, context.maxUpvotes);
+    }
+
+    if (
+      (plan.action === "trade_analyze" || plan.action === "trade_swap") &&
+      !context.tradingEnabled
+    ) {
+      return { action: "noop", reason: "trading_not_enabled" };
     }
 
     return plan;
@@ -149,14 +206,22 @@ Rules:
 }
 
 export function defaultBrainContext(
-  partial: Omit<BrainContext, "persona"> & { persona?: Persona },
+  partial: Omit<BrainContext, "persona" | "canComment" | "tradingEnabled" | "ownerPlans"> & {
+    persona?: Persona;
+    canComment?: boolean;
+    tradingEnabled?: boolean;
+    ownerPlans?: string[];
+  },
 ): BrainContext {
   return {
     persona: partial.persona ?? persona,
     feed: partial.feed,
     notifications: partial.notifications,
     canPost: partial.canPost,
+    canComment: partial.canComment ?? true,
     postBlockedReason: partial.postBlockedReason,
     maxUpvotes: partial.maxUpvotes,
+    tradingEnabled: partial.tradingEnabled ?? isTradingEnabled(),
+    ownerPlans: partial.ownerPlans ?? [],
   };
 }

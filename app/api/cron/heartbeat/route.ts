@@ -1,11 +1,13 @@
 import { decide, defaultBrainContext } from "@/lib/brain";
-import { AGENT_LIMITS, getCronSecret } from "@/lib/config";
+import { AGENT_LIMITS, allowedActions, getCronSecret, getSiteUrl } from "@/lib/config";
+import { saveApp, slugify } from "@/lib/apps";
 import {
-  canPostNow,
   getSeenPostIds,
-  incrementPostsThisHour,
+  getUsageCounts,
+  recordComment,
+  recordPost,
   recordSeenPostIds,
-  setLastPostAt,
+  recordUpvote,
 } from "@/lib/memory";
 import {
   MoltbookClient,
@@ -13,6 +15,23 @@ import {
   type MoltbookNotification,
   type MoltbookPost,
 } from "@/lib/moltbook";
+import {
+  appendPlan,
+  appendTickLog,
+  addPublishedLink,
+  setCurrentThought,
+  setLastHeartbeat,
+} from "@/lib/owner-state";
+import { SHORT_TERM_GOALS } from "@/lib/goals";
+import {
+  captureWeb3Snapshot,
+  shouldRunWeb3Snapshot,
+} from "@/lib/web3-monitor";
+import {
+  analyzeTradingOpportunity,
+  executeSwap,
+  MINT_USDC,
+} from "@/lib/trading";
 import { DEFAULT_SUBMOLT, SUBMOLTS_TO_EXPLORE } from "@/lib/persona";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -38,6 +57,14 @@ function getPostId(post: MoltbookPost): string | null {
 }
 
 function authorize(request: NextRequest): boolean {
+  // Vercel Cron sends this header on scheduled invocations
+  if (
+    process.env.VERCEL === "1" &&
+    request.headers.get("x-vercel-cron") === "1"
+  ) {
+    return true;
+  }
+
   const secret = getCronSecret();
   if (!secret) {
     console.error("[heartbeat] CRON_SECRET is not configured");
@@ -77,6 +104,17 @@ export async function GET(request: NextRequest): Promise<NextResponse<TickSummar
   const client = new MoltbookClient();
 
   try {
+    await setLastHeartbeat(summary.timestamp);
+
+    // Seed short-term goals on first run if plans are empty
+    const { getPlans } = await import("@/lib/owner-state");
+    const existingPlans = await getPlans();
+    if (existingPlans.length === 0) {
+      for (const goal of SHORT_TERM_GOALS) {
+        await appendPlan(goal);
+      }
+    }
+
     let feedPosts: MoltbookPost[] = [];
     let notifications: MoltbookNotification[] = [];
 
@@ -120,23 +158,37 @@ export async function GET(request: NextRequest): Promise<NextResponse<TickSummar
     }
     summary.newPostCount = newIds.length;
 
-    const postCheck = await canPostNow(
-      AGENT_LIMITS.MAX_POSTS_PER_HOUR,
-      AGENT_LIMITS.MIN_POST_INTERVAL_MS,
-    );
-    summary.canPost = postCheck.allowed;
-    summary.postBlockedReason = postCheck.reason;
+    const usage = await getUsageCounts();
+    const allowance = allowedActions(usage);
+    summary.canPost = allowance.canPost;
+    if (!allowance.canPost) {
+      if (allowance.inQuietHours) {
+        summary.postBlockedReason = "quiet_hours";
+      } else if (usage.msSinceLastPost < AGENT_LIMITS.MIN_POST_INTERVAL_MS) {
+        summary.postBlockedReason = "min_interval";
+      } else if (usage.postsThisHour >= AGENT_LIMITS.MAX_POSTS_PER_HOUR) {
+        summary.postBlockedReason = "hourly_limit";
+      } else {
+        summary.postBlockedReason = "daily_limit";
+      }
+    }
 
     const contextPosts =
       unseenPosts.length > 0 ? unseenPosts : feedPosts;
+
+    const ownerPlans = (await getPlans())
+      .filter((p) => p.status === "active")
+      .map((p) => p.text);
 
     const plan = await decide(
       defaultBrainContext({
         feed: contextPosts,
         notifications,
-        canPost: postCheck.allowed,
-        postBlockedReason: postCheck.reason,
-        maxUpvotes: AGENT_LIMITS.MAX_UPVOTES_PER_TICK,
+        canPost: allowance.canPost,
+        canComment: allowance.canComment,
+        postBlockedReason: summary.postBlockedReason,
+        maxUpvotes: allowance.upvotesRemaining,
+        ownerPlans,
       }),
     );
 
@@ -144,7 +196,7 @@ export async function GET(request: NextRequest): Promise<NextResponse<TickSummar
 
     switch (plan.action) {
       case "post": {
-        if (!postCheck.allowed) {
+        if (!allowance.canPost) {
           summary.executed.push("skipped_post_guardrail");
           break;
         }
@@ -154,8 +206,7 @@ export async function GET(request: NextRequest): Promise<NextResponse<TickSummar
             title: plan.title ?? "Hello from the feed",
             content: plan.text,
           });
-          await setLastPostAt(Date.now());
-          await incrementPostsThisHour();
+          await recordPost();
           summary.executed.push(`posted:${result.post.id}`);
         } catch (error) {
           const message = formatError("createPost", error);
@@ -166,12 +217,17 @@ export async function GET(request: NextRequest): Promise<NextResponse<TickSummar
       }
 
       case "comment": {
+        if (!allowance.canComment) {
+          summary.executed.push("skipped_comment_guardrail");
+          break;
+        }
         if (!plan.targetId || !plan.text) {
           summary.errors.push("comment_missing_target_or_text");
           break;
         }
         try {
           await client.comment(plan.targetId, { content: plan.text });
+          await recordComment();
           summary.executed.push(`commented:${plan.targetId}`);
           try {
             await client.markNotificationsReadByPost(plan.targetId);
@@ -197,6 +253,7 @@ export async function GET(request: NextRequest): Promise<NextResponse<TickSummar
         for (const id of ids.slice(0, AGENT_LIMITS.MAX_UPVOTES_PER_TICK)) {
           try {
             await client.upvote(id, "post");
+            await recordUpvote();
             summary.executed.push(`upvoted:${id}`);
           } catch (error) {
             const message = formatError(`upvote:${id}`, error);
@@ -220,11 +277,165 @@ export async function GET(request: NextRequest): Promise<NextResponse<TickSummar
         break;
       }
 
+      case "owner_note": {
+        if (plan.text) {
+          await setCurrentThought(plan.text);
+          await appendPlan(plan.text);
+          summary.executed.push("owner_note");
+        } else {
+          summary.errors.push("owner_note_missing_text");
+        }
+        break;
+      }
+
+      case "create_app": {
+        if (!plan.title || !plan.appContent) {
+          summary.errors.push("create_app_missing_fields");
+          break;
+        }
+        try {
+          const slug = plan.appSlug ?? slugify(plan.title);
+          const app = await saveApp({
+            slug,
+            title: plan.title,
+            description: plan.reason,
+            kind: plan.appKind ?? "markdown",
+            content: plan.appContent,
+            public: true,
+          });
+          const url = `${getSiteUrl()}/apps/${app.slug}`;
+          summary.executed.push(`app:${app.slug}`);
+
+          await addPublishedLink({
+            title: app.title,
+            url,
+            kind: app.kind,
+            note: plan.reason,
+          });
+          await setCurrentThought(
+            `Built "${app.title}" — view on dashboard: ${url}`,
+          );
+
+          if (plan.shareOnMoltbook && allowance.canComment) {
+            const postId = plan.targetId ?? contextPosts[0]?.id;
+            if (postId) {
+              try {
+                await client.comment(postId, {
+                  content: `Published a resource you might find useful: ${url}`,
+                });
+                await recordComment();
+                summary.executed.push(`shared_app:${postId}`);
+              } catch (shareError) {
+                console.warn("[heartbeat] share app on moltbook:", shareError);
+              }
+            }
+          }
+        } catch (error) {
+          const message = formatError("create_app", error);
+          summary.errors.push(message);
+          console.error(message);
+        }
+        break;
+      }
+
+      case "web3_snapshot": {
+        try {
+          const canRun = await shouldRunWeb3Snapshot();
+          if (!canRun) {
+            summary.executed.push("skipped_web3_rate_limit");
+            break;
+          }
+          const snapshot = await captureWeb3Snapshot();
+          if (snapshot) {
+            await setCurrentThought(`Web3 snapshot: ${snapshot.summary}`);
+            summary.executed.push("web3_snapshot");
+          } else {
+            summary.executed.push("skipped_web3_no_wallets");
+          }
+        } catch (error) {
+          const message = formatError("web3_snapshot", error);
+          summary.errors.push(message);
+          console.error(message);
+        }
+        break;
+      }
+
+      case "trade_analyze": {
+        try {
+          const analysis = await analyzeTradingOpportunity();
+          if (!analysis) {
+            summary.executed.push("skipped_trading_not_configured");
+            break;
+          }
+          await setCurrentThought(
+            `Trade analysis: ${analysis.recommendation} (balance ${analysis.solBalance.toFixed(4)} SOL)`,
+          );
+          summary.executed.push("trade_analyze");
+
+          if (allowance.canComment && analysis.quotes.length > 0) {
+            const postId = plan.targetId ?? contextPosts[0]?.id;
+            if (postId) {
+              try {
+                const q = analysis.quotes[0];
+                await client.comment(postId, {
+                  content: `Solana trade scan: ${analysis.recommendation} Quote ${q.pair}: impact ${q.priceImpactPct}%.`,
+                });
+                await recordComment();
+                summary.executed.push(`trade_comment:${postId}`);
+              } catch (commentError) {
+                console.warn("[heartbeat] trade analyze comment:", commentError);
+              }
+            }
+          }
+        } catch (error) {
+          const message = formatError("trade_analyze", error);
+          summary.errors.push(message);
+          console.error(message);
+        }
+        break;
+      }
+
+      case "trade_swap": {
+        try {
+          const outputMint = plan.outputMint ?? MINT_USDC;
+          const amountSol = plan.amountSol ?? 0.05;
+
+          const result = await executeSwap({
+            outputMint,
+            amountSol,
+            slippageBps: plan.slippageBps,
+            reason: plan.reason,
+          });
+
+          if (result.ok) {
+            const msg = result.dryRun
+              ? `Trade dry-run: ${amountSol} SOL → ${outputMint.slice(0, 8)}… (quote ${result.quote?.outAmount})`
+              : `Swap executed: ${result.signature}`;
+            await setCurrentThought(msg);
+            summary.executed.push(result.dryRun ? "trade_swap_dry_run" : `trade_swap:${result.signature}`);
+          } else {
+            summary.errors.push(result.error ?? "trade_swap_failed");
+            summary.executed.push("trade_swap_failed");
+          }
+        } catch (error) {
+          const message = formatError("trade_swap", error);
+          summary.errors.push(message);
+          console.error(message);
+        }
+        break;
+      }
+
       case "noop":
       default:
         summary.executed.push("noop");
         break;
     }
+
+    const thought = plan.reason
+      ? `[${plan.action}] ${plan.reason}`
+      : `Completed tick: ${plan.action}`;
+    await setCurrentThought(thought);
+    await appendTickLog(summary);
 
     console.log(
       JSON.stringify({
