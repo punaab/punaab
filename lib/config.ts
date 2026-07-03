@@ -312,6 +312,15 @@ export function getTelegramWebhookSecret(): string | undefined {
   return process.env.TELEGRAM_WEBHOOK_SECRET;
 }
 
+export function getElevenLabsApiKey(): string | undefined {
+  return process.env.ELEVENLABS_API_KEY?.trim() || undefined;
+}
+
+/** ElevenLabs voice ID — default is Rachel. Override in env. */
+export function getElevenLabsVoiceId(): string {
+  return process.env.ELEVENLABS_VOICE_ID?.trim() || "21m00Tcm4TlvDq8ikWAM";
+}
+
 export function isTelegramOwner(chatId: number | string): boolean {
   const owner = getTelegramOwnerChatId();
   if (!owner) return false;

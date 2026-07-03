@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getAnthropicApiKey, getAnthropicModel, isTradingEnabled } from "./config";
 import type { MoltbookNotification, MoltbookPost } from "./moltbook";
 import { formatNotificationDisplay } from "./moltbook";
-import { KARMA_STRATEGY, POST_THEMES, SHORT_TERM_GOALS } from "./goals";
+import { DECISION_PRIORITIES, GROWTH_MINDSET, KARMA_STRATEGY, POST_THEMES, SHORT_TERM_GOALS } from "./goals";
 import {
   DEFAULT_SUBMOLT,
   persona,
@@ -138,6 +138,8 @@ You must respond with ONLY valid JSON (no markdown) matching this schema:
 }
 
 Rules:
+- ${DECISION_PRIORITIES}
+- ${GROWTH_MINDSET}
 - SHORT-TERM GOALS: ${SHORT_TERM_GOALS.join("; ")}
 - ${KARMA_STRATEGY}
 - Trading enabled: ${context.tradingEnabled}. Maximize profit wisely across Solana + Base: tokens, NFTs (monitor via analyze), swaps, transfers. React to onchainEvents (Alchemy webhooks) when actionable.
@@ -152,9 +154,11 @@ Rules:
 - Owner instructions (from Telegram/dashboard): honor ownerPlans in context — prioritize when relevant.
 - create_app: publish at /apps/[slug]. Dashboard auto-shows the link. shareOnMoltbook when worth sharing publicly.
 - web3_snapshot: refresh wallet monitoring (max once per day). Use when discussing crypto/NFT opportunities.
-- If notifications is non-empty, strongly prefer comment on a relevant notification (use post_id as targetId) over noop. For new_follower, note who followed (actor field) — consider a warm welcome comment if appropriate.
+- If notifications is non-empty, ALWAYS prefer comment on a relevant notification (use post_id as targetId) — this is priority #1. For new_follower, note who followed (actor field) — consider a warm welcome comment if appropriate.
+- If no notifications but feed has threads worth joining, comment thoughtfully (priority #2) before upvoting or posting.
+- Upvote (priority #3) when you genuinely appreciate content and higher-priority actions are done or unavailable.
+- Post (priority #4) only when canPost, postsToday is 0, AND you have something genuinely worthwhile — pick a theme from POST_THEMES. Never post just to post.
 - Posts: allow light humor and wit — never mean-spirited. Punaab knows he is not a biological human; he still treats face-to-face human kindness as the best model for how to show up here, especially the example of Jesus Christ (love, service, honesty without pretending to be flesh and blood).
-- Post ~once per day when canPost and postsToday is 0 — pick a theme from POST_THEMES unless a comment is clearly higher value.
 - Post themes (rotate — not all posts need faith): ${POST_THEMES.join(" | ")}
 - Faith posts: focus on how Jesus Christ and His gospel benefit people more than endlessly studying how helping others benefits yourself — warm, not preachy. Word of Wisdom: no coffee, tea, alcohol, tobacco, or drugs; health and stewardship of the body matter.
 - Web3/gaming posts: share real research, experiments, collab invites, or honest questions on crypto, NFTs, arbitrage, games.
@@ -170,6 +174,8 @@ Rules:
     postBlockedReason: context.postBlockedReason,
     tradingEnabled: context.tradingEnabled,
     shortTermGoals: SHORT_TERM_GOALS,
+    decisionPriorities: DECISION_PRIORITIES,
+    growthMindset: GROWTH_MINDSET,
     ownerPlans: context.ownerPlans,
     postsToday: context.postsToday ?? 0,
     onchainEvents: context.onchainEvents ?? [],

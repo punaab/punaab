@@ -1,6 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import OwnerChat from "./OwnerChat";
+import Web3CommandCenter from "./Web3CommandCenter";
+import type { Web3Hub } from "@/lib/web3-dashboard";
 
 interface MoltbookProfile {
   name: string;
@@ -140,6 +143,7 @@ interface AdminState {
     network?: string;
     summary: string;
   }[];
+  web3Hub?: Web3Hub;
 }
 
 function formatTime(iso: string | null | undefined): string {
@@ -326,6 +330,8 @@ export default function Dashboard() {
         </div>
       </section>
 
+      <Web3CommandCenter hub={state?.web3Hub} />
+
       <div className="grid layout-main">
         {/* Left column — Moltbook activity */}
         <div className="column-moltbook">
@@ -490,6 +496,8 @@ export default function Dashboard() {
 
         {/* Right column — agent mind + ops */}
         <div className="column-ops">
+          <OwnerChat />
+
           <section className="panel">
             <h2>Current Thought</h2>
             <p className="thought-text">
@@ -613,82 +621,6 @@ export default function Dashboard() {
                 <div className="activity-time">{formatTime(p.createdAt)}</div>
               </div>
             ))}
-          </section>
-
-          {state?.web3 && (
-            <section className="panel">
-              <h2>Wallets</h2>
-              {state.web3.balances.map((b) => (
-                <div key={`${b.chain}-${b.address}`} className="meter-row">
-                  <span className="collab-from">{b.chain}</span>
-                  <span>
-                    {b.balance} {b.symbol}
-                  </span>
-                </div>
-              ))}
-            </section>
-          )}
-
-          <section className="panel">
-            <h2>Trading</h2>
-            <div className="meter-row">
-              <span>Enabled</span>
-              <span>{state?.trading?.enabled ? "yes" : "no"}</span>
-            </div>
-            <div className="meter-row">
-              <span>Signer</span>
-              <span>
-                {state?.trading?.hasSigner
-                  ? "Solana and/or Base"
-                  : "missing keys"}
-              </span>
-            </div>
-            {!state?.trading?.log?.length && (
-              <p className="muted">No trades logged yet.</p>
-            )}
-            <ul className="activity-list">
-              {state?.trading?.log?.map((t) => (
-                <li key={t.id}>
-                  <span className="activity-action">
-                    {t.chain ?? "solana"} · {t.action}
-                    {t.dryRun ? " (dry)" : ""}
-                  </span>
-                  <div className="muted">
-                    {t.inputAmount} → {t.outputAmount ?? "?"}
-                  </div>
-                  {t.signature && (
-                    <div className="muted">
-                      <code>{t.signature.slice(0, 24)}…</code>
-                    </div>
-                  )}
-                  {t.error && <div className="login-error">{t.error}</div>}
-                  <div className="activity-time">{formatTime(t.timestamp)}</div>
-                </li>
-              ))}
-            </ul>
-          </section>
-
-          <section className="panel">
-            <h2>On-Chain Alerts</h2>
-            <p className="muted section-hint">
-              Alchemy Custom Webhook → POST /api/webhooks/alchemy · use Signing Key in
-              ALCHEMY_WEBHOOK_SIGNING_KEY
-            </p>
-            {!state?.onchainEvents?.length && (
-              <p className="muted">No webhook events yet.</p>
-            )}
-            <ul className="activity-list">
-              {state?.onchainEvents?.map((e) => (
-                <li key={e.id}>
-                  <span className="activity-action">{e.type}</span>
-                  <div>{e.summary}</div>
-                  {e.network && (
-                    <div className="muted">{e.network}</div>
-                  )}
-                  <div className="activity-time">{timeAgo(e.timestamp)}</div>
-                </li>
-              ))}
-            </ul>
           </section>
 
           <section className="panel">

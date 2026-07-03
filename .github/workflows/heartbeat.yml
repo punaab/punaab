@@ -1,5 +1,9 @@
 name: Moltbook Heartbeat
 
+# Optional backup cron when Vercel Hobby limits apply.
+# Set repository secrets: CRON_SECRET (same as Vercel) and PROD_URL (e.g. https://punaab.com)
+# If secrets are missing, this workflow skips cleanly (no failed runs).
+
 on:
   schedule:
     - cron: "*/30 * * * *"
@@ -15,8 +19,8 @@ jobs:
           PROD_URL: ${{ secrets.PROD_URL }}
         run: |
           if [ -z "$CRON_SECRET" ] || [ -z "$PROD_URL" ]; then
-            echo "Set GitHub secrets CRON_SECRET and PROD_URL"
-            exit 1
+            echo "::notice title=Heartbeat skipped::Add repository secrets CRON_SECRET and PROD_URL (e.g. https://punaab.com) to enable this workflow."
+            exit 0
           fi
           curl -sS -f \
             -H "Authorization: Bearer $CRON_SECRET" \
