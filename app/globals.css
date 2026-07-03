@@ -1958,6 +1958,26 @@ code {
   white-space: nowrap;
 }
 
+.alchemy-nft-collections {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.alchemy-collections-title {
+  margin: 0 0 0.5rem;
+  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.alchemy-api-hint {
+  margin: 0 0 0.65rem;
+  font-size: 0.7rem;
+}
+
 .alchemy-transfer-asset {
   font-family: var(--font-mono);
   font-size: 0.7rem;

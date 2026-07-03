@@ -134,9 +134,18 @@ export default function AlchemyApiPanels({ data, onRefresh }: Props) {
         {/* NFT API */}
         <section className="alchemy-api-panel">
           <header className="alchemy-api-panel-head">
-            <span className="alchemy-api-badge nft">NFT API</span>
-            <span className="alchemy-api-count">{nftCount} total</span>
+            <span className="alchemy-api-badge nft">NFT API v3</span>
+            <span className="alchemy-api-count">
+              {nftCount} NFTs · {data.nfts.collectionCount || data.nfts.collections.length}{" "}
+              collections
+            </span>
           </header>
+          {data.nfts.spamExcluded && (
+            <p className="muted alchemy-api-hint">
+              Spam filtered via <code>excludeFilters=SPAM</code> on getNFTsForOwner /
+              getCollectionsForOwner / getContractsForOwner
+            </p>
+          )}
           {data.nfts.error && (
             <p className="login-error alchemy-api-error">{data.nfts.error}</p>
           )}
@@ -149,7 +158,7 @@ export default function AlchemyApiPanels({ data, onRefresh }: Props) {
           )}
           <div className="alchemy-nft-grid">
             {data.nfts.items.map((n) => (
-              <div key={`${n.contract}-${n.tokenId}`} className="alchemy-nft-card">
+              <div key={`${n.network}-${n.contract}-${n.tokenId}`} className="alchemy-nft-card">
                 {n.imageUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={n.imageUrl} alt={n.name} className="alchemy-nft-img" />
@@ -161,10 +170,35 @@ export default function AlchemyApiPanels({ data, onRefresh }: Props) {
                   {n.collectionName && (
                     <span className="muted alchemy-api-meta">{n.collectionName}</span>
                   )}
+                  <span className="muted alchemy-api-meta">
+                    {n.network.replace("-mainnet", "")}
+                    {n.tokenType ? ` · ${n.tokenType}` : ""}
+                    {n.isSpam ? " · spam" : ""}
+                  </span>
                 </div>
               </div>
             ))}
           </div>
+
+          {data.nfts.collections.length > 0 && (
+            <div className="alchemy-nft-collections">
+              <h4 className="alchemy-collections-title">Collections by owner</h4>
+              <ul className="alchemy-api-list">
+                {data.nfts.collections.map((c) => (
+                  <li key={`${c.network}-${c.contract}`} className="alchemy-api-row">
+                    <div className="alchemy-api-row-top">
+                      <span className="alchemy-token-symbol">{c.name}</span>
+                      <span className="alchemy-token-balance">×{c.balance}</span>
+                    </div>
+                    <div className="muted alchemy-api-meta">
+                      {c.network.replace("-mainnet", "")} · {c.endpoint}
+                      {c.isSpam ? " · spam" : ""}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </section>
 
         {/* Token API */}

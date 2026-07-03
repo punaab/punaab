@@ -15,13 +15,22 @@ import {
   getWatchTargets,
 } from "./config";
 import { fetchSolanaWalletHoldings } from "./solana-alchemy";
+import {
+  type EvmNftNetwork,
+  getCollectionsForOwner,
+  getContractsForOwner,
+  getNFTsForOwner,
+  isSpamFlag,
+  type NftV3Collection,
+  type NftV3Contract,
+  type NftV3Owned,
+} from "./alchemy-nft-v3";
 
 const PORTFOLIO_BASE = "https://api.g.alchemy.com/data/v1";
 
-type EvmNftNetwork = "base-mainnet" | "eth-mainnet";
 type EvmRpcNetwork = EvmNftNetwork;
 
-const NFT_V3_HOST: Record<EvmNftNetwork, string> = {
+const RPC_HOST: Record<EvmRpcNetwork, string> = {
   "base-mainnet": "base-mainnet.g.alchemy.com",
   "eth-mainnet": "eth-mainnet.g.alchemy.com",
 };
@@ -62,6 +71,18 @@ export interface NftRow {
   name: string;
   imageUrl?: string;
   collectionName?: string;
+  tokenType?: string;
+  isSpam?: boolean;
+}
+
+export interface NftCollectionRow {
+  network: string;
+  contract: string;
+  name: string;
+  balance: number;
+  imageUrl?: string;
+  isSpam?: boolean;
+  endpoint: "getCollectionsForOwner" | "getContractsForOwner";
 }
 
 export interface TokenApiRow {
@@ -101,6 +122,9 @@ export interface AlchemyApiSnapshot {
   nfts: {
     items: NftRow[];
     totalCount: number;
+    collections: NftCollectionRow[];
+    collectionCount: number;
+    spamExcluded?: boolean;
     error?: string;
   };
   tokens: {
@@ -120,7 +144,7 @@ function emptySnapshot(configured: boolean, cacheSec: number): AlchemyApiSnapsho
     cacheSec,
     configured,
     portfolio: { tokens: [] },
-    nfts: { items: [], totalCount: 0 },
+    nfts: { items: [], totalCount: 0, collections: [], collectionCount: 0 },
     tokens: { items: [] },
     transfers: { items: [] },
   };
@@ -170,7 +194,7 @@ async function evmJsonRpc<T>(
   method: string,
   params: unknown,
 ): Promise<T> {
-  const host = NFT_V3_HOST[network];
+  const host = RPC_HOST[network];
   const res = await fetch(`https://${host}/v2/${apiKey}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -197,20 +221,6 @@ function resolvePrimaryAddresses(): { base?: string; solana?: string } {
 
 const EVM_PORTFOLIO_NETWORKS = ["base-mainnet", "eth-mainnet"] as const;
 
-interface NftV3Owned {
-  contract?: {
-    address?: string;
-    name?: string;
-    openSeaMetadata?: { collectionName?: string };
-  };
-  tokenId?: string;
-  name?: string;
-  title?: string;
-  image?: { cachedUrl?: string; originalUrl?: string };
-  raw?: { metadata?: { image?: string } };
-  collection?: { name?: string };
-}
-
 function mapNftV3Row(network: EvmNftNetwork, owner: string, n: NftV3Owned): NftRow {
   const imageUrl =
     n.image?.cachedUrl ??
@@ -227,36 +237,89 @@ function mapNftV3Row(network: EvmNftNetwork, owner: string, n: NftV3Owned): NftR
       n.collection?.name ??
       n.contract?.openSeaMetadata?.collectionName ??
       n.contract?.name,
+    tokenType: n.tokenType,
+    isSpam: isSpamFlag(n.contract?.isSpam),
   };
 }
 
-/** NFT API v3 — getNFTsForOwner per Alchemy quickstart (one EVM chain per request). */
-async function fetchNftV3ForOwner(
-  apiKey: string,
-  network: EvmNftNetwork,
-  owner: string,
-  pageSize = 12,
-): Promise<{ items: NftRow[]; totalCount: number }> {
-  const host = NFT_V3_HOST[network];
-  const url = new URL(`https://${host}/nft/v3/${apiKey}/getNFTsForOwner`);
-  url.searchParams.set("owner", owner);
-  url.searchParams.set("withMetadata", "true");
-  url.searchParams.set("pageSize", String(pageSize));
+function mapEthCollection(c: NftV3Collection): NftCollectionRow {
+  const balance = Number(c.totalBalance ?? c.numDistinctTokensOwned ?? 1);
+  return {
+    network: "eth-mainnet",
+    contract: c.contract?.address ?? "",
+    name: c.name ?? c.contract?.name ?? "Collection",
+    balance: Number.isFinite(balance) ? balance : 1,
+    imageUrl: c.image?.cachedUrl ?? c.image?.originalUrl,
+    isSpam: isSpamFlag(c.isSpam),
+    endpoint: "getCollectionsForOwner",
+  };
+}
 
-  const res = await fetch(url.toString());
-  if (!res.ok) {
-    const text = await res.text();
-    throw formatAlchemyHttpError(`NFT v3 ${network}`, res.status, text);
+function mapBaseContract(network: EvmNftNetwork, c: NftV3Contract): NftCollectionRow {
+  const balance = Number(c.totalBalance ?? c.numDistinctTokensOwned ?? 1);
+  return {
+    network,
+    contract: c.address ?? "",
+    name: c.name ?? c.openSeaMetadata?.collectionName ?? "Collection",
+    balance: Number.isFinite(balance) ? balance : 1,
+    imageUrl: c.openSeaMetadata?.imageUrl,
+    isSpam: isSpamFlag(c.isSpam),
+    endpoint: "getContractsForOwner",
+  };
+}
+
+async function fetchEvmNfts(
+  apiKey: string,
+  evm: string,
+): Promise<{
+  items: NftRow[];
+  totalCount: number;
+  collections: NftCollectionRow[];
+  collectionCount: number;
+  spamExcluded: boolean;
+}> {
+  const items: NftRow[] = [];
+  const collections: NftCollectionRow[] = [];
+  let totalCount = 0;
+  let collectionCount = 0;
+  let spamExcluded = true;
+  const errors: string[] = [];
+
+  for (const network of EVM_PORTFOLIO_NETWORKS) {
+    try {
+      const result = await getNFTsForOwner(apiKey, network, evm, 8);
+      items.push(...result.ownedNfts.map((n) => mapNftV3Row(network, evm, n)));
+      totalCount += result.totalCount;
+      if (!result.spamExcluded) spamExcluded = false;
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : `${network}_nft_failed`);
+    }
+
+    try {
+      if (network === "eth-mainnet") {
+        const cols = await getCollectionsForOwner(apiKey, evm, 6);
+        collections.push(...cols.collections.map(mapEthCollection));
+        collectionCount += cols.totalCount;
+      } else {
+        const cols = await getContractsForOwner(apiKey, network, evm, 6);
+        collections.push(...cols.contracts.map((c) => mapBaseContract(network, c)));
+        collectionCount += cols.totalCount;
+      }
+    } catch (error) {
+      console.warn(`[alchemy-apis] NFT collections ${network}:`, error);
+    }
   }
 
-  const data = (await res.json()) as {
-    totalCount?: number;
-    ownedNfts?: NftV3Owned[];
-  };
-  const owned = data.ownedNfts ?? [];
+  if (errors.length && items.length === 0 && collections.length === 0) {
+    throw new Error(errors.join(" · "));
+  }
+
   return {
-    totalCount: data.totalCount ?? owned.length,
-    items: owned.map((n) => mapNftV3Row(network, owner, n)),
+    items: items.slice(0, 12),
+    totalCount,
+    collections: collections.slice(0, 8),
+    collectionCount,
+    spamExcluded,
   };
 }
 
@@ -293,31 +356,6 @@ async function fetchPortfolioNftsSolana(
   }));
 
   return { items, totalCount: data.data?.totalCount ?? items.length };
-}
-
-async function fetchEvmNfts(
-  apiKey: string,
-  evm: string,
-): Promise<{ items: NftRow[]; totalCount: number }> {
-  const items: NftRow[] = [];
-  let totalCount = 0;
-  const errors: string[] = [];
-
-  for (const network of EVM_PORTFOLIO_NETWORKS) {
-    try {
-      const result = await fetchNftV3ForOwner(apiKey, network, evm, 8);
-      items.push(...result.items);
-      totalCount += result.totalCount;
-    } catch (error) {
-      errors.push(error instanceof Error ? error.message : `${network}_nft_failed`);
-    }
-  }
-
-  if (errors.length && items.length === 0) {
-    throw new Error(errors.join(" · "));
-  }
-
-  return { items: items.slice(0, 12), totalCount };
 }
 
 async function fetchPortfolioTokens(
@@ -409,9 +447,18 @@ async function fetchPortfolioNfts(
   apiKey: string,
   base?: string,
   solana?: string,
-): Promise<{ items: NftRow[]; totalCount: number }> {
+): Promise<{
+  items: NftRow[];
+  totalCount: number;
+  collections: NftCollectionRow[];
+  collectionCount: number;
+  spamExcluded?: boolean;
+}> {
   const items: NftRow[] = [];
+  const collections: NftCollectionRow[] = [];
   let totalCount = 0;
+  let collectionCount = 0;
+  let spamExcluded: boolean | undefined;
   const errors: string[] = [];
 
   if (base) {
@@ -419,6 +466,9 @@ async function fetchPortfolioNfts(
       const evm = await fetchEvmNfts(apiKey, base);
       items.push(...evm.items);
       totalCount += evm.totalCount;
+      collections.push(...evm.collections);
+      collectionCount += evm.collectionCount;
+      spamExcluded = evm.spamExcluded;
     } catch (error) {
       errors.push(error instanceof Error ? error.message : "evm_nft_failed");
     }
@@ -435,14 +485,20 @@ async function fetchPortfolioNfts(
   }
 
   if (!base && !solana) {
-    return { items: [], totalCount: 0 };
+    return { items: [], totalCount: 0, collections: [], collectionCount: 0 };
   }
 
-  if (errors.length && items.length === 0) {
+  if (errors.length && items.length === 0 && collections.length === 0) {
     throw new Error(errors.join(" · "));
   }
 
-  return { items: items.slice(0, 12), totalCount };
+  return {
+    items: items.slice(0, 12),
+    totalCount,
+    collections: collections.slice(0, 8),
+    collectionCount,
+    spamExcluded,
+  };
 }
 
 async function fetchTokenApiBalances(
@@ -662,7 +718,13 @@ async function fetchAlchemyApiSnapshotUncached(): Promise<AlchemyApiSnapshot> {
     (async () => {
       try {
         const nftData = await fetchPortfolioNfts(apiKey, base, solana);
-        snapshot.nfts = { ...nftData };
+        snapshot.nfts = {
+          items: nftData.items,
+          totalCount: nftData.totalCount,
+          collections: nftData.collections,
+          collectionCount: nftData.collectionCount,
+          spamExcluded: nftData.spamExcluded,
+        };
       } catch (error) {
         snapshot.nfts.error = error instanceof Error ? error.message : "nft_failed";
       }

@@ -29,6 +29,7 @@ import {
   TRADING_LIMITS,
 } from "./config";
 import { getCached } from "./alchemy-cache";
+import { countNFTsForOwner } from "./alchemy-nft-v3";
 import { appendTradeLog, canExecuteTrade, incrementTradesToday, type TradeLogEntry } from "./trading";
 
 const BASE_CHAIN_ID = 8453;
@@ -90,11 +91,7 @@ export async function fetchBaseNftCount(address: string): Promise<number> {
 
   return getCached(`moltbook:alchemy:base-nfts:${address}`, getAlchemyNftCountCacheSec(), async () => {
     try {
-      const url = `https://base-mainnet.g.alchemy.com/nft/v3/${apiKey}/getNFTsForOwner?owner=${address}&withMetadata=false&pageSize=1`;
-      const res = await fetch(url);
-      if (!res.ok) return 0;
-      const data = (await res.json()) as { totalCount?: number; ownedNfts?: unknown[] };
-      return data.totalCount ?? data.ownedNfts?.length ?? 0;
+      return await countNFTsForOwner(apiKey, "base-mainnet", address);
     } catch {
       return 0;
     }
