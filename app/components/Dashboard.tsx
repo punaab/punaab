@@ -356,7 +356,7 @@ export default function Dashboard() {
         </div>
       </section>
 
-      <Web3CommandCenter hub={state?.web3Hub} />
+      <Web3CommandCenter hub={state?.web3Hub} onRefresh={fetchState} />
 
       <CampaignWatch campaign={state?.campaign} onRefresh={fetchState} />
 

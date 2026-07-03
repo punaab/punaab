@@ -14,6 +14,7 @@ import type { AlchemyWebhookEvent } from "./alchemy-events";
 import type { AgentActivity } from "./owner-state";
 import type { TradeLogEntry } from "./trading";
 import type { Web3Snapshot } from "./web3-monitor";
+import type { AlchemyApiSnapshot } from "./alchemy-apis";
 
 export interface Web3Hub {
   webhookUrl: string;
@@ -36,6 +37,7 @@ export interface Web3Hub {
     log: TradeLogEntry[];
   };
   agentActivity: AgentActivity[];
+  alchemy: AlchemyApiSnapshot | null;
 }
 
 export function buildWeb3Hub(params: {
@@ -43,6 +45,7 @@ export function buildWeb3Hub(params: {
   onchainEvents: AlchemyWebhookEvent[];
   trading: Web3Hub["trading"];
   activity: AgentActivity[];
+  alchemy: AlchemyApiSnapshot | null;
 }): Web3Hub {
   const web3Actions = new Set([
     "trade_analyze",
@@ -69,6 +72,7 @@ export function buildWeb3Hub(params: {
     onchainEvents: params.onchainEvents,
     trading: params.trading,
     agentActivity: params.activity.filter((a) => web3Actions.has(a.action)),
+    alchemy: params.alchemy,
   };
 }
 

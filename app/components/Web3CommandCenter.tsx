@@ -2,6 +2,7 @@
 
 import type { Web3Hub } from "@/lib/web3-dashboard";
 import { explorerUrl, txExplorerUrl } from "@/lib/web3-dashboard";
+import AlchemyApiPanels from "./AlchemyApiPanels";
 
 function shortAddr(addr: string): string {
   if (addr.length < 12) return addr;
@@ -34,9 +35,10 @@ function chainClass(chain: string): string {
 
 interface Props {
   hub: Web3Hub | null | undefined;
+  onRefresh?: () => void;
 }
 
-export default function Web3CommandCenter({ hub }: Props) {
+export default function Web3CommandCenter({ hub, onRefresh }: Props) {
   if (!hub) return null;
 
   const balances = hub.snapshot?.balances ?? [];
@@ -53,7 +55,7 @@ export default function Web3CommandCenter({ hub }: Props) {
           <p className="web3-eyebrow">On-chain operations</p>
           <h2 className="web3-title">Web3 Command</h2>
           <p className="web3-subtitle muted">
-            Cached balances & webhook feed — no live Alchemy polling on page load
+            Alchemy Portfolio · NFT · Token · Transfers — cached server-side
           </p>
         </div>
         <div className="web3-status-pills">
@@ -248,10 +250,11 @@ export default function Web3CommandCenter({ hub }: Props) {
         </div>
       </div>
 
+      <AlchemyApiPanels data={hub.alchemy} onRefresh={onRefresh} />
+
       <footer className="web3-footer muted">
-        CU-safe: dashboard reads Redis only. Holdings DAS cached{" "}
-        {hub.infra.holdingsCacheSec}s. Use filtered Custom Webhooks — never empty
-        address/topic filters.
+        CU-safe: Alchemy APIs cached {hub.infra.holdingsCacheSec}s (Refresh APIs busts cache).
+        Use filtered Custom Webhooks — never empty address/topic filters.
       </footer>
     </section>
   );

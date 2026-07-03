@@ -18,6 +18,7 @@ import { getTradeLog, hasAnyTradeSigner } from "./trading";
 import { getRecentAlchemyEvents } from "./alchemy-events";
 import { buildWeb3Hub, type Web3Hub } from "./web3-dashboard";
 import { getOrCreateCampaign, type Campaign } from "./campaign";
+import { getAlchemyApiSnapshot } from "./alchemy-apis";
 
 export interface OwnerDashboard {
   agent: { name: string; handle: string };
@@ -68,6 +69,7 @@ export async function getOwnerDashboard(): Promise<OwnerDashboard> {
     activity,
     onchainEvents,
     campaign,
+    alchemyApis,
   ] = await Promise.all([
     getCurrentThought(),
     getPlans(),
@@ -83,6 +85,7 @@ export async function getOwnerDashboard(): Promise<OwnerDashboard> {
     getActivityLog(25),
     getRecentAlchemyEvents(15),
     getOrCreateCampaign(),
+    getAlchemyApiSnapshot(),
   ]);
 
   const allowance = allowedActions(usage);
@@ -126,6 +129,7 @@ export async function getOwnerDashboard(): Promise<OwnerDashboard> {
         log: tradeLog,
       },
       activity,
+      alchemy: alchemyApis,
     }),
     campaign,
     moltbook,

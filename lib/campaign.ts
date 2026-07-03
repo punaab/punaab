@@ -138,11 +138,7 @@ export async function getCampaign(): Promise<Campaign | null> {
 }
 
 export async function saveCampaign(campaign: Campaign): Promise<void> {
-  try {
-    await getRedis().set(CAMPAIGN_KEY, JSON.stringify(campaign));
-  } catch (error) {
-    console.error("[campaign] saveCampaign failed:", error);
-  }
+  await getRedis().set(CAMPAIGN_KEY, JSON.stringify(campaign));
 }
 
 export async function getOrCreateCampaign(): Promise<Campaign> {

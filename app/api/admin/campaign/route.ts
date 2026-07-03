@@ -35,20 +35,28 @@ export async function POST(request: NextRequest) {
   }
 
   const action = body.action ?? "start";
-  let campaign;
 
-  switch (action) {
-    case "pause":
-      campaign = await pauseCampaign();
-      break;
-    case "reset":
-      campaign = await resetCampaign();
-      break;
-    case "start":
-    default:
-      campaign = await startCampaign(body.steps);
-      break;
+  try {
+    let campaign;
+    switch (action) {
+      case "pause":
+        campaign = await pauseCampaign();
+        break;
+      case "reset":
+        campaign = await resetCampaign();
+        break;
+      case "start":
+      default:
+        campaign = await startCampaign(body.steps);
+        break;
+    }
+    return NextResponse.json({ campaign, ok: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "campaign_save_failed";
+    const redisHint = message.includes("Redis")
+      ? message
+      : `Could not save campaign state. Ensure Upstash/KV Redis is configured on Vercel. (${message})`;
+    console.error("[campaign] action failed:", error);
+    return NextResponse.json({ error: redisHint, ok: false }, { status: 503 });
   }
-
-  return NextResponse.json({ campaign });
 }
