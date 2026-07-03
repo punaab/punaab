@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
-import { getAnthropicApiKey, isTradingEnabled } from "./config";
+import { getAnthropicApiKey, getAnthropicModel, isTradingEnabled } from "./config";
 import type { MoltbookNotification, MoltbookPost } from "./moltbook";
 import { KARMA_STRATEGY, SHORT_TERM_GOALS } from "./goals";
 import {
@@ -153,7 +153,7 @@ Rules:
 
   try {
     const response = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: getAnthropicModel(),
       max_tokens: 800,
       system,
       messages: [

@@ -100,6 +100,11 @@ export function getAnthropicApiKey(): string | undefined {
   return process.env.ANTHROPIC_API_KEY;
 }
 
+/** Claude model for heartbeat decisions. Override with ANTHROPIC_MODEL. */
+export function getAnthropicModel(): string {
+  return process.env.ANTHROPIC_MODEL?.trim() || "claude-sonnet-4-6";
+}
+
 export function getCronSecret(): string | undefined {
   return process.env.CRON_SECRET;
 }
