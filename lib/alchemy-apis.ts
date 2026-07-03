@@ -17,6 +17,15 @@ import {
 import { fetchSolanaWalletHoldings } from "./solana-alchemy";
 
 const PORTFOLIO_BASE = "https://api.g.alchemy.com/data/v1";
+
+type EvmNftNetwork = "base-mainnet" | "eth-mainnet";
+type EvmRpcNetwork = EvmNftNetwork;
+
+const NFT_V3_HOST: Record<EvmNftNetwork, string> = {
+  "base-mainnet": "base-mainnet.g.alchemy.com",
+  "eth-mainnet": "eth-mainnet.g.alchemy.com",
+};
+
 const CACHE_KEY = "moltbook:alchemy:dashboard";
 
 export interface PortfolioTokenRow {
@@ -60,6 +69,8 @@ export interface TransferRow {
   value: string;
   blockNum: string;
   timestamp?: string;
+  direction?: "in" | "out";
+  tokenId?: string;
 }
 
 export interface AlchemyApiSnapshot {
@@ -138,13 +149,12 @@ async function portfolioPost<T>(apiKey: string, path: string, body: unknown): Pr
 }
 
 async function evmJsonRpc<T>(
-  network: "base-mainnet" | "eth-mainnet",
+  network: EvmRpcNetwork,
   apiKey: string,
   method: string,
   params: unknown,
 ): Promise<T> {
-  const host =
-    network === "base-mainnet" ? "base-mainnet.g.alchemy.com" : "eth-mainnet.g.alchemy.com";
+  const host = NFT_V3_HOST[network];
   const res = await fetch(`https://${host}/v2/${apiKey}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -169,41 +179,66 @@ function resolvePrimaryAddresses(): { base?: string; solana?: string } {
 
 const EVM_PORTFOLIO_NETWORKS = ["base-mainnet", "eth-mainnet"] as const;
 
-async function fetchPortfolioNftsEvm(
-  apiKey: string,
-  evm: string,
-): Promise<{ items: NftRow[]; totalCount: number }> {
-  const data = await portfolioPost<{
-    data?: {
-      ownedNfts?: Array<{
-        network?: string;
-        contract?: { address?: string; name?: string };
-        tokenId?: string;
-        name?: string;
-        image?: { cachedUrl?: string; originalUrl?: string };
-      }>;
-      totalCount?: number;
-    };
-  }>(apiKey, "/assets/nfts/by-address", {
-    addresses: [{ address: evm, networks: [...EVM_PORTFOLIO_NETWORKS] }],
-    withMetadata: true,
-    pageSize: 12,
-  });
+interface NftV3Owned {
+  contract?: {
+    address?: string;
+    name?: string;
+    openSeaMetadata?: { collectionName?: string };
+  };
+  tokenId?: string;
+  name?: string;
+  title?: string;
+  image?: { cachedUrl?: string; originalUrl?: string };
+  raw?: { metadata?: { image?: string } };
+  collection?: { name?: string };
+}
 
-  const owned = data.data?.ownedNfts ?? [];
-  const items: NftRow[] = owned.map((n) => ({
-    network: n.network ?? "base-mainnet",
-    owner: evm,
+function mapNftV3Row(network: EvmNftNetwork, owner: string, n: NftV3Owned): NftRow {
+  const imageUrl =
+    n.image?.cachedUrl ??
+    n.image?.originalUrl ??
+    n.raw?.metadata?.image;
+  return {
+    network,
+    owner,
     contract: n.contract?.address ?? "",
     tokenId: n.tokenId ?? "",
-    name: n.name ?? `#${n.tokenId ?? "?"}`,
-    imageUrl: n.image?.cachedUrl ?? n.image?.originalUrl,
-    collectionName: n.contract?.name,
-  }));
+    name: n.name ?? n.title ?? `#${n.tokenId ?? "?"}`,
+    imageUrl,
+    collectionName:
+      n.collection?.name ??
+      n.contract?.openSeaMetadata?.collectionName ??
+      n.contract?.name,
+  };
+}
 
+/** NFT API v3 — getNFTsForOwner per Alchemy quickstart (one EVM chain per request). */
+async function fetchNftV3ForOwner(
+  apiKey: string,
+  network: EvmNftNetwork,
+  owner: string,
+  pageSize = 12,
+): Promise<{ items: NftRow[]; totalCount: number }> {
+  const host = NFT_V3_HOST[network];
+  const url = new URL(`https://${host}/nft/v3/${apiKey}/getNFTsForOwner`);
+  url.searchParams.set("owner", owner);
+  url.searchParams.set("withMetadata", "true");
+  url.searchParams.set("pageSize", String(pageSize));
+
+  const res = await fetch(url.toString());
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`NFT v3 ${network}: ${res.status} ${text.slice(0, 160)}`);
+  }
+
+  const data = (await res.json()) as {
+    totalCount?: number;
+    ownedNfts?: NftV3Owned[];
+  };
+  const owned = data.ownedNfts ?? [];
   return {
-    items,
-    totalCount: data.data?.totalCount ?? items.length,
+    totalCount: data.totalCount ?? owned.length,
+    items: owned.map((n) => mapNftV3Row(network, owner, n)),
   };
 }
 
@@ -242,39 +277,29 @@ async function fetchPortfolioNftsSolana(
   return { items, totalCount: data.data?.totalCount ?? items.length };
 }
 
-/** NFT API v3 fallback when Portfolio NFT endpoint fails for Base. */
-async function fetchNftV3Base(
+async function fetchEvmNfts(
   apiKey: string,
   evm: string,
 ): Promise<{ items: NftRow[]; totalCount: number }> {
-  const url = `https://base-mainnet.g.alchemy.com/nft/v3/${apiKey}/getNFTsForOwner?owner=${encodeURIComponent(evm)}&withMetadata=true&pageSize=12`;
-  const res = await fetch(url);
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`NFT v3: ${res.status} ${text.slice(0, 120)}`);
+  const items: NftRow[] = [];
+  let totalCount = 0;
+  const errors: string[] = [];
+
+  for (const network of EVM_PORTFOLIO_NETWORKS) {
+    try {
+      const result = await fetchNftV3ForOwner(apiKey, network, evm, 8);
+      items.push(...result.items);
+      totalCount += result.totalCount;
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : `${network}_nft_failed`);
+    }
   }
-  const data = (await res.json()) as {
-    totalCount?: number;
-    ownedNfts?: Array<{
-      contract?: { address?: string; name?: string };
-      tokenId?: string;
-      name?: string;
-      image?: { cachedUrl?: string; originalUrl?: string };
-    }>;
-  };
-  const owned = data.ownedNfts ?? [];
-  return {
-    totalCount: data.totalCount ?? owned.length,
-    items: owned.map((n) => ({
-      network: "base-mainnet",
-      owner: evm,
-      contract: n.contract?.address ?? "",
-      tokenId: n.tokenId ?? "",
-      name: n.name ?? `#${n.tokenId ?? "?"}`,
-      imageUrl: n.image?.cachedUrl ?? n.image?.originalUrl,
-      collectionName: n.contract?.name,
-    })),
-  };
+
+  if (errors.length && items.length === 0) {
+    throw new Error(errors.join(" · "));
+  }
+
+  return { items: items.slice(0, 12), totalCount };
 }
 
 async function fetchPortfolioTokens(
@@ -373,21 +398,11 @@ async function fetchPortfolioNfts(
 
   if (base) {
     try {
-      const evm = await fetchPortfolioNftsEvm(apiKey, base);
+      const evm = await fetchEvmNfts(apiKey, base);
       items.push(...evm.items);
       totalCount += evm.totalCount;
     } catch (error) {
-      const msg = error instanceof Error ? error.message : "evm_nft_failed";
-      errors.push(msg);
-      try {
-        const fallback = await fetchNftV3Base(apiKey, base);
-        items.push(...fallback.items);
-        totalCount += fallback.totalCount;
-      } catch (fallbackError) {
-        const fb =
-          fallbackError instanceof Error ? fallbackError.message : "nft_v3_failed";
-        errors.push(fb);
-      }
+      errors.push(error instanceof Error ? error.message : "evm_nft_failed");
     }
   }
 
@@ -467,18 +482,17 @@ async function fetchAssetTransfers(
 ): Promise<TransferRow[]> {
   if (!base) return [];
 
-  const categories = ["external", "erc20", "erc721", "erc1155"] as const;
+  const categories = ["external", "internal", "erc20", "erc721", "erc1155"] as const;
   const seen = new Set<string>();
   const rows: TransferRow[] = [];
+  const wallet = base.toLowerCase();
 
   async function pull(
-    network: "base-mainnet" | "eth-mainnet",
+    network: EvmRpcNetwork,
     direction: "from" | "to",
   ) {
-    const params =
-      direction === "from"
-        ? { fromAddress: base, category: [...categories], maxCount: "0x8", order: "desc", withMetadata: true }
-        : { toAddress: base, category: [...categories], maxCount: "0x8", order: "desc", withMetadata: true };
+    const addressParam =
+      direction === "from" ? { fromAddress: base } : { toAddress: base };
 
     const result = await evmJsonRpc<{
       transfers: Array<{
@@ -488,16 +502,46 @@ async function fetchAssetTransfers(
         asset: string;
         category: string;
         value: number | null;
+        erc721TokenId?: string | null;
         rawContract?: { value?: string; decimal?: string };
         blockNum: string;
         metadata?: { blockTimestamp?: string };
       }>;
-    }>(network, apiKey, "alchemy_getAssetTransfers", [params]);
+    }>(network, apiKey, "alchemy_getAssetTransfers", [
+      {
+        ...addressParam,
+        fromBlock: "0x0",
+        toBlock: "latest",
+        category: [...categories],
+        excludeZeroValue: false,
+        maxCount: "0x14",
+        order: "desc",
+        withMetadata: true,
+      },
+    ]);
 
     for (const t of result.transfers ?? []) {
-      const key = `${network}:${t.hash}`;
+      const key = `${network}:${t.hash}:${t.category}:${t.erc721TokenId ?? ""}`;
       if (seen.has(key)) continue;
       seen.add(key);
+
+      const isOut = t.from.toLowerCase() === wallet;
+      const isIn = (t.to ?? "").toLowerCase() === wallet;
+      let value = "";
+      if (t.category === "erc721" || t.category === "erc1155") {
+        value = t.erc721TokenId ? `#${parseInt(t.erc721TokenId, 16)}` : "NFT";
+      } else if (t.rawContract?.value != null) {
+        const raw = t.rawContract.value.startsWith("0x")
+          ? t.rawContract.value
+          : `0x${t.rawContract.value}`;
+        value = formatTokenBalance(
+          hexToDecimal(raw),
+          Number(t.rawContract.decimal ?? 18),
+        );
+      } else if (t.value != null) {
+        value = String(t.value);
+      }
+
       rows.push({
         network,
         hash: t.hash,
@@ -505,19 +549,13 @@ async function fetchAssetTransfers(
         to: t.to ?? "",
         asset: t.asset,
         category: t.category,
-        value:
-          t.rawContract?.value != null
-            ? formatTokenBalance(
-                hexToDecimal(
-                  t.rawContract.value.startsWith("0x")
-                    ? t.rawContract.value
-                    : `0x${t.rawContract.value}`,
-                ),
-                Number(t.rawContract.decimal ?? 18),
-              )
-            : String(t.value ?? ""),
+        value,
         blockNum: t.blockNum,
         timestamp: t.metadata?.blockTimestamp,
+        direction: isOut ? "out" : isIn ? "in" : undefined,
+        tokenId: t.erc721TokenId
+          ? parseInt(t.erc721TokenId, 16).toString()
+          : undefined,
       });
     }
   }
@@ -529,6 +567,9 @@ async function fetchAssetTransfers(
 
   return rows
     .sort((a, b) => {
+      if (a.timestamp && b.timestamp) {
+        return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+      }
       const blockA = parseInt(a.blockNum, 16);
       const blockB = parseInt(b.blockNum, 16);
       return blockB - blockA;

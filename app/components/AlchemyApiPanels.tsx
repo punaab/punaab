@@ -9,6 +9,12 @@ function shortAddr(addr: string): string {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
 }
 
+function chainExplorerKey(network: string): string {
+  if (network.includes("solana")) return "solana";
+  if (network.includes("base")) return "base";
+  return "ethereum";
+}
+
 function timeAgo(iso: string | undefined): string {
   if (!iso) return "";
   const diff = Date.now() - new Date(iso).getTime();
@@ -123,8 +129,9 @@ export default function AlchemyApiPanels({ data, onRefresh }: Props) {
           )}
           {!data.nfts.items.length && !data.nfts.error && (
             <p className="muted alchemy-api-empty">
-              No NFTs owned — crypto deposits show under Portfolio / Token / Transfers, not
-              here.
+              {data.nfts.totalCount > 0
+                ? `${data.nfts.totalCount} NFTs on-chain — refresh or check Portfolio`
+                : "No NFTs on Base/Ethereum/Solana for this wallet — token deposits show under Portfolio / Token / Transfers."}
             </p>
           )}
           <div className="alchemy-nft-grid">
@@ -184,19 +191,34 @@ export default function AlchemyApiPanels({ data, onRefresh }: Props) {
             <p className="login-error alchemy-api-error">{data.transfers.error}</p>
           )}
           {!transferCount && !data.transfers.error && (
-            <p className="muted alchemy-api-empty">No outbound transfers found</p>
+            <p className="muted alchemy-api-empty">
+              No transfers found on Base or Ethereum for this wallet
+            </p>
           )}
           <ul className="alchemy-api-list alchemy-transfer-list">
             {data.transfers.items.map((t) => {
-              const txUrl = txExplorerUrl("base", t.hash);
+              const txUrl = txExplorerUrl(chainExplorerKey(t.network), t.hash);
+              const counterparty =
+                t.direction === "in"
+                  ? `from ${shortAddr(t.from)}`
+                  : t.direction === "out"
+                    ? `to ${shortAddr(t.to)}`
+                    : `→ ${shortAddr(t.to)}`;
               return (
-                <li key={t.hash} className="alchemy-api-row">
+                <li key={`${t.network}-${t.hash}-${t.category}-${t.tokenId ?? ""}`} className="alchemy-api-row">
                   <div className="alchemy-api-row-top">
-                    <span className="alchemy-transfer-asset">{t.asset}</span>
+                    <span className="alchemy-transfer-asset">
+                      {t.asset}
+                      {t.direction && (
+                        <span className={`alchemy-transfer-dir dir-${t.direction}`}>
+                          {t.direction}
+                        </span>
+                      )}
+                    </span>
                     <span className="alchemy-token-balance">{t.value || "—"}</span>
                   </div>
                   <div className="muted alchemy-api-meta">
-                    {t.category} → {shortAddr(t.to)}
+                    {t.category} · {t.network.replace("-mainnet", "")} · {counterparty}
                     {t.timestamp && ` · ${timeAgo(t.timestamp)}`}
                   </div>
                   {txUrl && (

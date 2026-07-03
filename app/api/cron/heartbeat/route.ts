@@ -36,8 +36,8 @@ import {
 import { getRecentAlchemyEvents } from "@/lib/alchemy-events";
 import {
   appendCampaignEvent,
+  getCampaign,
   getNextPendingStep,
-  getOrCreateCampaign,
   markStepFailed,
   markStepPosted,
 } from "@/lib/campaign";
@@ -57,6 +57,8 @@ interface TickSummary {
   notificationCount: number;
   canPost: boolean;
   postBlockedReason?: string;
+  campaignStatus?: string;
+  campaignBlockedReason?: string;
   plan: { action: string; reason?: string };
   executed: string[];
   errors: string[];
@@ -88,6 +90,8 @@ function authorize(request: NextRequest): boolean {
 }
 
 export async function GET(request: NextRequest): Promise<NextResponse<TickSummary>> {
+  const prioritizeCampaign =
+    request.nextUrl.searchParams.get("prioritizeCampaign") === "1";
   const summary: TickSummary = {
     ok: true,
     timestamp: new Date().toISOString(),
@@ -191,18 +195,31 @@ export async function GET(request: NextRequest): Promise<NextResponse<TickSummar
       .filter((p) => p.status === "active")
       .map((p) => p.text);
 
-    const campaign = await getOrCreateCampaign();
-    const campaignActive = campaign.status === "active";
-    const nextCampaignStep = campaignActive ? getNextPendingStep(campaign) : null;
+    const campaign =
+      (await getCampaign().catch(() => null)) ?? null;
+    const campaignActive = campaign?.status === "active";
+    const nextCampaignStep =
+      campaign && campaignActive ? getNextPendingStep(campaign) : null;
     const unreadNotifications = notifications.filter((n) => !n.read);
 
-    // Owner campaign: after notifications are cleared, post next distribution step
-    if (
+    summary.campaignStatus = campaign?.status ?? "none";
+
+    const canRunCampaignPost =
       campaignActive &&
       nextCampaignStep &&
       allowance.canPost &&
-      unreadNotifications.length === 0
-    ) {
+      (prioritizeCampaign || unreadNotifications.length === 0);
+
+    if (campaignActive && nextCampaignStep && !canRunCampaignPost) {
+      if (unreadNotifications.length > 0 && !prioritizeCampaign) {
+        summary.campaignBlockedReason = "unread_notifications";
+      } else if (!allowance.canPost) {
+        summary.campaignBlockedReason = summary.postBlockedReason ?? "post_blocked";
+      }
+    }
+
+    // Owner campaign: post next distribution step when eligible
+    if (canRunCampaignPost && campaign && nextCampaignStep) {
       try {
         try {
           await client.joinSubmolt(nextCampaignStep.submolt);

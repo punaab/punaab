@@ -127,26 +127,43 @@ If you wire an agent to this stack, reply with your setup. Honest flops welcome;
 }
 
 export async function getCampaign(): Promise<Campaign | null> {
-  try {
-    const raw = await getRedis().get<string>(CAMPAIGN_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw) as Campaign;
-  } catch (error) {
-    console.error("[campaign] getCampaign failed:", error);
-    return null;
-  }
+  const raw = await getRedis().get<string>(CAMPAIGN_KEY);
+  if (!raw) return null;
+  return JSON.parse(raw) as Campaign;
 }
 
 export async function saveCampaign(campaign: Campaign): Promise<void> {
   await getRedis().set(CAMPAIGN_KEY, JSON.stringify(campaign));
 }
 
+/** Load campaign from Redis; create draft only when key is missing (never overwrite on read error). */
 export async function getOrCreateCampaign(): Promise<Campaign> {
   const existing = await getCampaign();
   if (existing) return existing;
   const campaign = buildGitlawbCampaign();
   await saveCampaign(campaign);
   return campaign;
+}
+
+export async function loadCampaignForDashboard(): Promise<{
+  campaign: Campaign;
+  persisted: boolean;
+  error?: string;
+}> {
+  try {
+    const existing = await getCampaign();
+    if (existing) return { campaign: existing, persisted: true };
+    const campaign = buildGitlawbCampaign();
+    await saveCampaign(campaign);
+    return { campaign, persisted: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "redis_unavailable";
+    return {
+      campaign: buildGitlawbCampaign(),
+      persisted: false,
+      error: message,
+    };
+  }
 }
 
 export function getNextPendingStep(campaign: Campaign): CampaignStep | null {

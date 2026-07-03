@@ -1445,6 +1445,92 @@ code {
   );
 }
 
+.campaign-status-ribbon {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  padding: 0.65rem 0.85rem;
+  margin: -1rem -1.25rem 1rem;
+  border-radius: 6px 6px 0 0;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+}
+
+.campaign-status-active {
+  background: rgba(74, 222, 128, 0.12);
+  border-bottom-color: rgba(74, 222, 128, 0.35);
+}
+
+.campaign-status-paused {
+  background: rgba(251, 191, 36, 0.1);
+}
+
+.campaign-status-complete {
+  background: rgba(96, 165, 250, 0.12);
+}
+
+.campaign-status-draft {
+  background: rgba(100, 116, 139, 0.1);
+}
+
+.campaign-status-text {
+  font-weight: 700;
+  color: var(--success);
+}
+
+.campaign-status-draft .campaign-status-text {
+  color: var(--muted);
+}
+
+.campaign-status-paused .campaign-status-text {
+  color: #fbbf24;
+}
+
+.campaign-next-hint {
+  color: var(--cyan);
+}
+
+.campaign-started-at {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.65rem;
+}
+
+.campaign-step-next {
+  border-color: rgba(62, 232, 240, 0.45);
+  box-shadow: 0 0 12px rgba(62, 232, 240, 0.1);
+}
+
+.campaign-next-badge {
+  font-family: var(--font-mono);
+  font-size: 0.55rem;
+  letter-spacing: 0.1em;
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+  background: rgba(62, 232, 240, 0.2);
+  color: var(--cyan);
+  animation: web3-pulse 2s ease-in-out infinite;
+}
+
+.campaign-step-wait {
+  margin: 0.25rem 0 0;
+  font-size: 0.75rem;
+}
+
+.campaign-btn-heartbeat {
+  border-color: rgba(62, 232, 240, 0.35);
+  color: var(--cyan);
+}
+
+.campaign-footer {
+  margin: 1rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
 .campaign-header {
   display: flex;
   flex-wrap: wrap;
@@ -1875,6 +1961,27 @@ code {
 .alchemy-transfer-asset {
   font-family: var(--font-mono);
   font-size: 0.7rem;
+  color: #fbbf24;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.alchemy-transfer-dir {
+  font-size: 0.55rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+}
+
+.alchemy-transfer-dir.dir-in {
+  background: rgba(74, 222, 128, 0.15);
+  color: var(--success);
+}
+
+.alchemy-transfer-dir.dir-out {
+  background: rgba(251, 191, 36, 0.12);
   color: #fbbf24;
 }
 

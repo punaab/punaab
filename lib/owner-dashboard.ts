@@ -17,7 +17,7 @@ import { getWeb3Snapshot } from "./web3-monitor";
 import { getTradeLog, hasAnyTradeSigner } from "./trading";
 import { getRecentAlchemyEvents } from "./alchemy-events";
 import { buildWeb3Hub, type Web3Hub } from "./web3-dashboard";
-import { getOrCreateCampaign, type Campaign } from "./campaign";
+import { loadCampaignForDashboard, type Campaign } from "./campaign";
 import { getAlchemyApiSnapshot } from "./alchemy-apis";
 
 export interface OwnerDashboard {
@@ -50,6 +50,8 @@ export interface OwnerDashboard {
   onchainEvents: Awaited<ReturnType<typeof getRecentAlchemyEvents>>;
   web3Hub: Web3Hub;
   campaign: Campaign;
+  campaignPersisted: boolean;
+  campaignError?: string;
   moltbook: Awaited<ReturnType<typeof fetchMoltbookDashboard>>;
 }
 
@@ -68,7 +70,7 @@ export async function getOwnerDashboard(): Promise<OwnerDashboard> {
     tradeLog,
     activity,
     onchainEvents,
-    campaign,
+    campaignLoad,
     alchemyApis,
   ] = await Promise.all([
     getCurrentThought(),
@@ -84,9 +86,11 @@ export async function getOwnerDashboard(): Promise<OwnerDashboard> {
     getTradeLog(15),
     getActivityLog(25),
     getRecentAlchemyEvents(15),
-    getOrCreateCampaign(),
+    loadCampaignForDashboard(),
     getAlchemyApiSnapshot(),
   ]);
+
+  const campaign = campaignLoad.campaign;
 
   const allowance = allowedActions(usage);
   const lastTick = tickLog[0] ?? null;
@@ -132,6 +136,8 @@ export async function getOwnerDashboard(): Promise<OwnerDashboard> {
       alchemy: alchemyApis,
     }),
     campaign,
+    campaignPersisted: campaignLoad.persisted,
+    campaignError: campaignLoad.error,
     moltbook,
   };
 }

@@ -170,6 +170,8 @@ interface AdminState {
     startedAt?: string;
     completedAt?: string;
   };
+  campaignPersisted?: boolean;
+  campaignError?: string;
 }
 
 function formatTime(iso: string | null | undefined): string {
@@ -358,7 +360,12 @@ export default function Dashboard() {
 
       <Web3CommandCenter hub={state?.web3Hub} onRefresh={fetchState} />
 
-      <CampaignWatch campaign={state?.campaign} onRefresh={fetchState} />
+      <CampaignWatch
+        campaign={state?.campaign}
+        campaignPersisted={state?.campaignPersisted}
+        campaignError={state?.campaignError}
+        onRefresh={fetchState}
+      />
 
       <div className="grid layout-main">
         {/* Left column — Moltbook activity */}

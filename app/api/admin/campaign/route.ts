@@ -1,6 +1,6 @@
 import { isAdminAuthenticatedFromCookies } from "@/lib/admin-auth";
 import {
-  getOrCreateCampaign,
+  loadCampaignForDashboard,
   pauseCampaign,
   resetCampaign,
   startCampaign,
@@ -15,8 +15,12 @@ export async function GET() {
   if (!(await isAdminAuthenticatedFromCookies())) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  const campaign = await getOrCreateCampaign();
-  return NextResponse.json({ campaign });
+  const loaded = await loadCampaignForDashboard();
+  return NextResponse.json({
+    campaign: loaded.campaign,
+    persisted: loaded.persisted,
+    error: loaded.error,
+  });
 }
 
 export async function POST(request: NextRequest) {

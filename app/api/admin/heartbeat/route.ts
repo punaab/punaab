@@ -24,7 +24,7 @@ export async function POST() {
 
   const base = getSiteUrl().replace(/\/$/, "");
   try {
-    const res = await fetch(`${base}/api/cron/heartbeat`, {
+    const res = await fetch(`${base}/api/cron/heartbeat?prioritizeCampaign=1`, {
       method: "GET",
       headers: { Authorization: `Bearer ${secret}` },
       cache: "no-store",
