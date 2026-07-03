@@ -122,7 +122,10 @@ export default function AlchemyApiPanels({ data, onRefresh }: Props) {
             <p className="login-error alchemy-api-error">{data.nfts.error}</p>
           )}
           {!data.nfts.items.length && !data.nfts.error && (
-            <p className="muted alchemy-api-empty">No NFTs in preview (showing up to 12)</p>
+            <p className="muted alchemy-api-empty">
+              No NFTs owned — crypto deposits show under Portfolio / Token / Transfers, not
+              here.
+            </p>
           )}
           <div className="alchemy-nft-grid">
             {data.nfts.items.map((n) => (

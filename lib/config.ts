@@ -139,8 +139,9 @@ export function getWatchBaseAddress(): string | undefined {
 
 export function getWatchSolanaAddress(): string | undefined {
   const addr = process.env.WATCH_SOLANA_ADDRESS?.trim();
-  if (addr) return addr;
-  return undefined;
+  if (!addr || addr.startsWith("0x")) return undefined;
+  if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr)) return undefined;
+  return addr;
 }
 
 /** EVM hot wallet private key (0x…) for Alchemy Wallet APIs on Base. */
@@ -152,7 +153,7 @@ export function getEvmAgentPrivateKey(): string | undefined {
 /** Base trading wallet (defaults to WATCH_BASE_ADDRESS). */
 export function getTradingBaseAddress(): string | undefined {
   const trading = process.env.TRADING_BASE_ADDRESS?.trim();
-  if (trading) return trading;
+  if (trading && /^0x[0-9a-fA-F]{40}$/i.test(trading)) return trading;
   return getWatchBaseAddress();
 }
 
@@ -269,7 +270,9 @@ export function getAlchemySolanaRpcUrl(): string {
 /** Agent trading wallet on Solana (defaults to WATCH_SOLANA_ADDRESS). */
 export function getTradingSolanaAddress(): string | undefined {
   const trading = process.env.TRADING_SOLANA_ADDRESS?.trim();
-  if (trading) return trading;
+  if (trading && !trading.startsWith("0x") && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(trading)) {
+    return trading;
+  }
   return getWatchSolanaAddress();
 }
 

@@ -4,6 +4,10 @@
  */
 import { getCached } from "./alchemy-cache";
 import {
+  normalizeEvmAddress,
+  normalizeSolanaAddress,
+} from "./alchemy-address";
+import {
   getAlchemyApiKey,
   getAlchemyHoldingsCacheSec,
   getTradingBaseAddress,
@@ -154,10 +158,123 @@ async function evmJsonRpc<T>(
 
 function resolvePrimaryAddresses(): { base?: string; solana?: string } {
   const watches = getWatchTargets();
-  const base =
-    getTradingBaseAddress() ?? watches.base[0] ?? watches.ethereum[0];
-  const solana = getTradingSolanaAddress() ?? watches.solana[0];
+  const base = normalizeEvmAddress(
+    getTradingBaseAddress() ?? watches.base[0] ?? watches.ethereum[0],
+  );
+  const solana = normalizeSolanaAddress(
+    getTradingSolanaAddress() ?? watches.solana[0],
+  );
   return { base, solana };
+}
+
+const EVM_PORTFOLIO_NETWORKS = ["base-mainnet", "eth-mainnet"] as const;
+
+async function fetchPortfolioNftsEvm(
+  apiKey: string,
+  evm: string,
+): Promise<{ items: NftRow[]; totalCount: number }> {
+  const data = await portfolioPost<{
+    data?: {
+      ownedNfts?: Array<{
+        network?: string;
+        contract?: { address?: string; name?: string };
+        tokenId?: string;
+        name?: string;
+        image?: { cachedUrl?: string; originalUrl?: string };
+      }>;
+      totalCount?: number;
+    };
+  }>(apiKey, "/assets/nfts/by-address", {
+    addresses: [{ address: evm, networks: [...EVM_PORTFOLIO_NETWORKS] }],
+    withMetadata: true,
+    pageSize: 12,
+  });
+
+  const owned = data.data?.ownedNfts ?? [];
+  const items: NftRow[] = owned.map((n) => ({
+    network: n.network ?? "base-mainnet",
+    owner: evm,
+    contract: n.contract?.address ?? "",
+    tokenId: n.tokenId ?? "",
+    name: n.name ?? `#${n.tokenId ?? "?"}`,
+    imageUrl: n.image?.cachedUrl ?? n.image?.originalUrl,
+    collectionName: n.contract?.name,
+  }));
+
+  return {
+    items,
+    totalCount: data.data?.totalCount ?? items.length,
+  };
+}
+
+async function fetchPortfolioNftsSolana(
+  apiKey: string,
+  solana: string,
+): Promise<{ items: NftRow[]; totalCount: number }> {
+  const data = await portfolioPost<{
+    data?: {
+      ownedNfts?: Array<{
+        network?: string;
+        contract?: { address?: string; name?: string };
+        tokenId?: string;
+        name?: string;
+        image?: { cachedUrl?: string; originalUrl?: string };
+      }>;
+      totalCount?: number;
+    };
+  }>(apiKey, "/assets/nfts/by-address", {
+    addresses: [{ address: solana, networks: ["solana-mainnet"] }],
+    withMetadata: true,
+    pageSize: 12,
+  });
+
+  const owned = data.data?.ownedNfts ?? [];
+  const items: NftRow[] = owned.map((n) => ({
+    network: n.network ?? "solana-mainnet",
+    owner: solana,
+    contract: n.contract?.address ?? "",
+    tokenId: n.tokenId ?? "",
+    name: n.name ?? `#${n.tokenId ?? "?"}`,
+    imageUrl: n.image?.cachedUrl ?? n.image?.originalUrl,
+    collectionName: n.contract?.name,
+  }));
+
+  return { items, totalCount: data.data?.totalCount ?? items.length };
+}
+
+/** NFT API v3 fallback when Portfolio NFT endpoint fails for Base. */
+async function fetchNftV3Base(
+  apiKey: string,
+  evm: string,
+): Promise<{ items: NftRow[]; totalCount: number }> {
+  const url = `https://base-mainnet.g.alchemy.com/nft/v3/${apiKey}/getNFTsForOwner?owner=${encodeURIComponent(evm)}&withMetadata=true&pageSize=12`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`NFT v3: ${res.status} ${text.slice(0, 120)}`);
+  }
+  const data = (await res.json()) as {
+    totalCount?: number;
+    ownedNfts?: Array<{
+      contract?: { address?: string; name?: string };
+      tokenId?: string;
+      name?: string;
+      image?: { cachedUrl?: string; originalUrl?: string };
+    }>;
+  };
+  const owned = data.ownedNfts ?? [];
+  return {
+    totalCount: data.totalCount ?? owned.length,
+    items: owned.map((n) => ({
+      network: "base-mainnet",
+      owner: evm,
+      contract: n.contract?.address ?? "",
+      tokenId: n.tokenId ?? "",
+      name: n.name ?? `#${n.tokenId ?? "?"}`,
+      imageUrl: n.image?.cachedUrl ?? n.image?.originalUrl,
+      collectionName: n.contract?.name,
+    })),
+  };
 }
 
 async function fetchPortfolioTokens(
@@ -165,45 +282,78 @@ async function fetchPortfolioTokens(
   base?: string,
   solana?: string,
 ): Promise<PortfolioTokenRow[]> {
-  const addresses: { address: string; networks: string[] }[] = [];
-  if (base) addresses.push({ address: base, networks: ["base-mainnet"] });
-  if (solana) addresses.push({ address: solana, networks: ["solana-mainnet"] });
-  if (!addresses.length) return [];
-
-  const data = await portfolioPost<{
-    data?: {
-      tokens?: Array<{
-        network?: string;
-        tokenAddress?: string | null;
-        tokenBalance?: string;
-        tokenMetadata?: { symbol?: string; name?: string; decimals?: number };
-      }>;
-      pageKey?: string;
-    };
-  }>(apiKey, "/assets/tokens/balances/by-address", {
-    addresses,
-    includeNativeTokens: true,
-    includeErc20Tokens: true,
-  });
-
   const rows: PortfolioTokenRow[] = [];
-  const tokens = data.data?.tokens ?? [];
 
-  for (const t of tokens) {
-    const meta = t.tokenMetadata ?? {};
-    const decimals = meta.decimals ?? (t.tokenAddress ? 18 : 18);
-    const raw = t.tokenBalance ?? "0";
-    const normalized = raw.startsWith("0x") ? hexToDecimal(raw) : raw;
-    rows.push({
-      network: t.network ?? "unknown",
-      address: base ?? solana ?? "",
-      tokenAddress: t.tokenAddress ?? null,
-      symbol: meta.symbol ?? (t.tokenAddress ? t.tokenAddress.slice(0, 6) : "NATIVE"),
-      name: meta.name ?? meta.symbol ?? "Token",
-      balance: formatTokenBalance(normalized, decimals),
-      decimals,
-      isNative: !t.tokenAddress,
+  if (base) {
+    const data = await portfolioPost<{
+      data?: {
+        tokens?: Array<{
+          network?: string;
+          tokenAddress?: string | null;
+          tokenBalance?: string;
+          tokenMetadata?: { symbol?: string; name?: string; decimals?: number };
+        }>;
+      };
+    }>(apiKey, "/assets/tokens/balances/by-address", {
+      addresses: [{ address: base, networks: [...EVM_PORTFOLIO_NETWORKS] }],
+      includeNativeTokens: true,
+      includeErc20Tokens: true,
     });
+
+    for (const t of data.data?.tokens ?? []) {
+      const meta = t.tokenMetadata ?? {};
+      const decimals = meta.decimals ?? 18;
+      const raw = t.tokenBalance ?? "0";
+      const normalized = raw.startsWith("0x") ? hexToDecimal(raw) : raw;
+      rows.push({
+        network: t.network ?? "unknown",
+        address: base,
+        tokenAddress: t.tokenAddress ?? null,
+        symbol: meta.symbol ?? (t.tokenAddress ? t.tokenAddress.slice(0, 6) : "NATIVE"),
+        name: meta.name ?? meta.symbol ?? "Token",
+        balance: formatTokenBalance(normalized, decimals),
+        decimals,
+        isNative: !t.tokenAddress,
+      });
+    }
+  }
+
+  if (solana) {
+    try {
+      const data = await portfolioPost<{
+        data?: {
+          tokens?: Array<{
+            network?: string;
+            tokenAddress?: string | null;
+            tokenBalance?: string;
+            tokenMetadata?: { symbol?: string; name?: string; decimals?: number };
+          }>;
+        };
+      }>(apiKey, "/assets/tokens/balances/by-address", {
+        addresses: [{ address: solana, networks: ["solana-mainnet"] }],
+        includeNativeTokens: true,
+        includeErc20Tokens: true,
+      });
+
+      for (const t of data.data?.tokens ?? []) {
+        const meta = t.tokenMetadata ?? {};
+        const decimals = meta.decimals ?? 9;
+        const raw = t.tokenBalance ?? "0";
+        const normalized = raw.startsWith("0x") ? hexToDecimal(raw) : raw;
+        rows.push({
+          network: t.network ?? "solana-mainnet",
+          address: solana,
+          tokenAddress: t.tokenAddress ?? null,
+          symbol: meta.symbol ?? (t.tokenAddress ? t.tokenAddress.slice(0, 6) : "SOL"),
+          name: meta.name ?? meta.symbol ?? "Token",
+          balance: formatTokenBalance(normalized, decimals),
+          decimals,
+          isNative: !t.tokenAddress,
+        });
+      }
+    } catch (error) {
+      console.warn("[alchemy-apis] solana portfolio tokens:", error);
+    }
   }
 
   return rows
@@ -217,43 +367,49 @@ async function fetchPortfolioNfts(
   base?: string,
   solana?: string,
 ): Promise<{ items: NftRow[]; totalCount: number }> {
-  const addresses: { address: string; networks: string[] }[] = [];
-  if (base) addresses.push({ address: base, networks: ["base-mainnet"] });
-  if (solana) addresses.push({ address: solana, networks: ["solana-mainnet"] });
-  if (!addresses.length) return { items: [], totalCount: 0 };
+  const items: NftRow[] = [];
+  let totalCount = 0;
+  const errors: string[] = [];
 
-  const data = await portfolioPost<{
-    data?: {
-      ownedNfts?: Array<{
-        network?: string;
-        contract?: { address?: string; name?: string };
-        tokenId?: string;
-        name?: string;
-        image?: { cachedUrl?: string; originalUrl?: string };
-      }>;
-      totalCount?: number;
-    };
-  }>(apiKey, "/assets/nfts/by-address", {
-    addresses,
-    withMetadata: true,
-    pageSize: 12,
-  });
+  if (base) {
+    try {
+      const evm = await fetchPortfolioNftsEvm(apiKey, base);
+      items.push(...evm.items);
+      totalCount += evm.totalCount;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "evm_nft_failed";
+      errors.push(msg);
+      try {
+        const fallback = await fetchNftV3Base(apiKey, base);
+        items.push(...fallback.items);
+        totalCount += fallback.totalCount;
+      } catch (fallbackError) {
+        const fb =
+          fallbackError instanceof Error ? fallbackError.message : "nft_v3_failed";
+        errors.push(fb);
+      }
+    }
+  }
 
-  const owned = data.data?.ownedNfts ?? [];
-  const items: NftRow[] = owned.map((n) => ({
-    network: n.network ?? "base-mainnet",
-    owner: base ?? solana ?? "",
-    contract: n.contract?.address ?? "",
-    tokenId: n.tokenId ?? "",
-    name: n.name ?? `#${n.tokenId ?? "?"}`,
-    imageUrl: n.image?.cachedUrl ?? n.image?.originalUrl,
-    collectionName: n.contract?.name,
-  }));
+  if (solana) {
+    try {
+      const sol = await fetchPortfolioNftsSolana(apiKey, solana);
+      items.push(...sol.items);
+      totalCount += sol.totalCount;
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : "solana_nft_failed");
+    }
+  }
 
-  return {
-    items,
-    totalCount: data.data?.totalCount ?? items.length,
-  };
+  if (!base && !solana) {
+    return { items: [], totalCount: 0 };
+  }
+
+  if (errors.length && items.length === 0) {
+    throw new Error(errors.join(" · "));
+  }
+
+  return { items: items.slice(0, 12), totalCount };
 }
 
 async function fetchTokenApiBalances(
@@ -311,45 +467,73 @@ async function fetchAssetTransfers(
 ): Promise<TransferRow[]> {
   if (!base) return [];
 
-  const result = await evmJsonRpc<{
-    transfers: Array<{
-      hash: string;
-      from: string;
-      to: string | null;
-      asset: string;
-      category: string;
-      value: number | null;
-      rawContract?: { value?: string; decimal?: string };
-      blockNum: string;
-      metadata?: { blockTimestamp?: string };
-    }>;
-  }>("base-mainnet", apiKey, "alchemy_getAssetTransfers", [
-    {
-      fromAddress: base,
-      category: ["external", "erc20", "erc721", "erc1155"],
-      maxCount: "0x12",
-      order: "desc",
-      withMetadata: true,
-    },
-  ]);
+  const categories = ["external", "erc20", "erc721", "erc1155"] as const;
+  const seen = new Set<string>();
+  const rows: TransferRow[] = [];
 
-  return (result.transfers ?? []).map((t) => ({
-    network: "base-mainnet",
-    hash: t.hash,
-    from: t.from,
-    to: t.to ?? "",
-    asset: t.asset,
-    category: t.category,
-    value:
-      t.rawContract?.value != null
-        ? formatTokenBalance(
-            hexToDecimal(t.rawContract.value.startsWith("0x") ? t.rawContract.value : `0x${t.rawContract.value}`),
-            Number(t.rawContract.decimal ?? 18),
-          )
-        : String(t.value ?? ""),
-    blockNum: t.blockNum,
-    timestamp: t.metadata?.blockTimestamp,
-  }));
+  async function pull(
+    network: "base-mainnet" | "eth-mainnet",
+    direction: "from" | "to",
+  ) {
+    const params =
+      direction === "from"
+        ? { fromAddress: base, category: [...categories], maxCount: "0x8", order: "desc", withMetadata: true }
+        : { toAddress: base, category: [...categories], maxCount: "0x8", order: "desc", withMetadata: true };
+
+    const result = await evmJsonRpc<{
+      transfers: Array<{
+        hash: string;
+        from: string;
+        to: string | null;
+        asset: string;
+        category: string;
+        value: number | null;
+        rawContract?: { value?: string; decimal?: string };
+        blockNum: string;
+        metadata?: { blockTimestamp?: string };
+      }>;
+    }>(network, apiKey, "alchemy_getAssetTransfers", [params]);
+
+    for (const t of result.transfers ?? []) {
+      const key = `${network}:${t.hash}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      rows.push({
+        network,
+        hash: t.hash,
+        from: t.from,
+        to: t.to ?? "",
+        asset: t.asset,
+        category: t.category,
+        value:
+          t.rawContract?.value != null
+            ? formatTokenBalance(
+                hexToDecimal(
+                  t.rawContract.value.startsWith("0x")
+                    ? t.rawContract.value
+                    : `0x${t.rawContract.value}`,
+                ),
+                Number(t.rawContract.decimal ?? 18),
+              )
+            : String(t.value ?? ""),
+        blockNum: t.blockNum,
+        timestamp: t.metadata?.blockTimestamp,
+      });
+    }
+  }
+
+  await pull("base-mainnet", "to");
+  await pull("base-mainnet", "from");
+  await pull("eth-mainnet", "to");
+  await pull("eth-mainnet", "from");
+
+  return rows
+    .sort((a, b) => {
+      const blockA = parseInt(a.blockNum, 16);
+      const blockB = parseInt(b.blockNum, 16);
+      return blockB - blockA;
+    })
+    .slice(0, 18);
 }
 
 async function enrichSolanaPortfolio(
