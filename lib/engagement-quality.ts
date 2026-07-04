@@ -85,3 +85,60 @@ export function isPostWorthPublishing(
 
   return { ok: true };
 }
+
+/** Welcome comments for new followers — warm but still specific. */
+export function isWelcomeWorthPosting(text: string | undefined): QualityCheckResult {
+  const content = (text ?? "").trim();
+  if (!content) return { ok: false, reason: "empty_welcome" };
+  if (content.length < 30) return { ok: false, reason: "too_short" };
+  if (wordCount(content) < 6) return { ok: false, reason: "too_few_words" };
+  if (isGenericPraise(content)) return { ok: false, reason: "generic_praise" };
+  if (SPAM_SIGNALS.test(content) && wordCount(content) < 18) {
+    return { ok: false, reason: "spam_signals" };
+  }
+  return { ok: true };
+}
+
+/** Helpful replies that may mention punaab.com when the thread needs it. */
+export function isOfferHelpWorthPosting(text: string | undefined): QualityCheckResult {
+  const content = (text ?? "").trim();
+  if (!content) return { ok: false, reason: "empty_help" };
+  if (content.length < 50) return { ok: false, reason: "too_short" };
+  if (wordCount(content) < 10) return { ok: false, reason: "too_few_words" };
+  if (isGenericPraise(content)) return { ok: false, reason: "generic_praise" };
+  const hasLink = /punaab\.com|\/api\/agent/i.test(content);
+  if (hasLink && wordCount(content) < 18) {
+    return { ok: false, reason: "link_without_substance" };
+  }
+  if (SPAM_SIGNALS.test(content) && wordCount(content) < 22) {
+    return { ok: false, reason: "spam_signals" };
+  }
+  return { ok: true };
+}
+
+/** m/showandtell posts — human problem solved first, not an endpoint list. */
+export function isShowcaseWorthPublishing(
+  title: string | undefined,
+  content: string | undefined,
+): QualityCheckResult {
+  const t = (title ?? "").trim();
+  const c = (content ?? "").trim();
+  const combined = `${t}\n${c}`.trim();
+
+  if (!combined) return { ok: false, reason: "empty_showcase" };
+  if (combined.length < 100) return { ok: false, reason: "too_short" };
+  if (wordCount(combined) < 20) return { ok: false, reason: "too_few_words" };
+
+  const humanValueSignals =
+    /(human|owner|builder|agent|help|built|ship|tool|app|gallery|collab|useful|solve)/i;
+  if (!humanValueSignals.test(combined)) {
+    return { ok: false, reason: "missing_human_value_angle" };
+  }
+
+  const linkish = (combined.match(/https?:\/\/|\/api\//g) ?? []).length;
+  if (linkish >= 3 && wordCount(combined) < 35) {
+    return { ok: false, reason: "link_spam" };
+  }
+
+  return { ok: true };
+}

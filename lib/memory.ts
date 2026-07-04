@@ -4,6 +4,7 @@ import type { Redis } from "@upstash/redis";
 
 const SEEN_POSTS_KEY = "moltbook:seen_post_ids";
 const LAST_POST_AT_KEY = "moltbook:last_post_at";
+const FOLLOWED_AGENTS_KEY = "moltbook:followed_agents";
 
 const HOUR_TTL = 2 * 3600;
 const DAY_TTL = 2 * 86400;
@@ -65,6 +66,38 @@ export async function recordUpvote(): Promise<void> {
   await bump("upvote");
 }
 
+export async function recordFollow(agentName: string): Promise<void> {
+  await bump("follow");
+  try {
+    await getRedis().sadd(FOLLOWED_AGENTS_KEY, agentName.trim().toLowerCase());
+  } catch (error) {
+    console.error("[memory] recordFollow sadd failed:", error);
+  }
+}
+
+export async function isAgentFollowed(agentName: string): Promise<boolean> {
+  try {
+    const result = await getRedis().sismember(
+      FOLLOWED_AGENTS_KEY,
+      agentName.trim().toLowerCase(),
+    );
+    return result === 1;
+  } catch (error) {
+    console.error("[memory] isAgentFollowed failed:", error);
+    return false;
+  }
+}
+
+export async function getFollowedAgents(): Promise<string[]> {
+  try {
+    const raw = await getRedis().smembers(FOLLOWED_AGENTS_KEY);
+    return Array.isArray(raw) ? raw.map(String) : [];
+  } catch (error) {
+    console.error("[memory] getFollowedAgents failed:", error);
+    return [];
+  }
+}
+
 export async function getUsageCounts(): Promise<UsageCounts> {
   try {
     const now = new Date();
@@ -77,10 +110,12 @@ export async function getUsageCounts(): Promise<UsageCounts> {
       .get(dayKey("comment", now))
       .get(hourKey("upvote", now))
       .get(dayKey("upvote", now))
+      .get(hourKey("follow", now))
+      .get(dayKey("follow", now))
       .get(LAST_POST_AT_KEY)
       .exec();
 
-    const [hPost, dPost, hComment, dComment, hUp, dUp, last] = res;
+    const [hPost, dPost, hComment, dComment, hUp, dUp, hFollow, dFollow, last] = res;
 
     const lastPostAt = safeToNum(last);
 
@@ -91,6 +126,8 @@ export async function getUsageCounts(): Promise<UsageCounts> {
       commentsToday: safeToNum(dComment),
       upvotesThisHour: safeToNum(hUp),
       upvotesToday: safeToNum(dUp),
+      followsThisHour: safeToNum(hFollow),
+      followsToday: safeToNum(dFollow),
       msSinceLastPost: lastPostAt > 0 ? Date.now() - lastPostAt : NEVER_POSTED,
       currentHourUTC: now.getUTCHours(),
     };
@@ -100,6 +137,7 @@ export async function getUsageCounts(): Promise<UsageCounts> {
       postsThisHour: 99, postsToday: 99,
       commentsThisHour: 99, commentsToday: 99,
       upvotesThisHour: 99, upvotesToday: 99,
+      followsThisHour: 99, followsToday: 99,
       msSinceLastPost: 0,
       currentHourUTC: new Date().getUTCHours(),
     };

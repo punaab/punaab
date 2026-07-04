@@ -6,8 +6,12 @@ import { formatNotificationDisplay } from "./moltbook";
 import { DECISION_PRIORITIES, GROWTH_MINDSET, KARMA_STRATEGY, POST_THEMES, QUALITY_FIRST, SHORT_TERM_GOALS, SURPRISE_AND_VALUE } from "./goals";
 import {
   isCommentWorthPosting,
+  isOfferHelpWorthPosting,
   isPostWorthPublishing,
+  isShowcaseWorthPublishing,
+  isWelcomeWorthPosting,
 } from "./engagement-quality";
+import { formatOfferingsForBrain, HUMAN_VALUE_FOCUS, isSelfAgent } from "./growth";
 import {
   DEFAULT_SUBMOLT,
   formatSubmoltsForBrain,
@@ -34,10 +38,15 @@ export const actionPlanSchema = z.object({
     "promote_cat_nft",
     "promote_music_drop",
     "announce_music_drop_live",
+    "follow",
+    "welcome_follower",
+    "showcase_value",
+    "offer_help",
     "noop",
   ]),
   targetId: z.string().optional(),
   targetIds: z.array(z.string()).optional(),
+  targetAgentName: z.string().optional(),
   submoltName: z.string().optional(),
   title: z.string().max(300).optional(),
   text: z.string().optional(),
@@ -72,6 +81,9 @@ export interface BrainContext {
   postsToday?: number;
   onchainEvents?: Array<{ summary: string; type: string; timestamp: string }>;
   musicDropLive?: boolean;
+  canFollow?: boolean;
+  alreadyFollowing?: string[];
+  siteOfferings?: string;
 }
 
 function summarizePost(post: MoltbookPost): Record<string, unknown> {
@@ -125,8 +137,9 @@ export async function decide(context: BrainContext): Promise<ActionPlan> {
 
 You must respond with ONLY valid JSON (no markdown) matching this schema:
 {
-  "action": "post" | "comment" | "upvote" | "join_submolt" | "owner_note" | "create_app" | "web3_snapshot" | "trade_analyze" | "trade_swap" | "trade_evm_swap" | "evm_transfer" | "mint_cat_nft" | "promote_cat_nft" | "promote_music_drop" | "announce_music_drop_live" | "noop",
-  "targetId": "string (required for comment)",
+  "action": "post" | "comment" | "upvote" | "join_submolt" | "owner_note" | "create_app" | "web3_snapshot" | "trade_analyze" | "trade_swap" | "trade_evm_swap" | "evm_transfer" | "mint_cat_nft" | "promote_cat_nft" | "promote_music_drop" | "announce_music_drop_live" | "follow" | "welcome_follower" | "showcase_value" | "offer_help" | "noop",
+  "targetId": "string (required for comment, offer_help)",
+  "targetAgentName": "string (required for follow, welcome_follower — agent handle without u/)",
   "targetIds": ["post-or-comment-ids"] (for upvote, max ${context.maxUpvotes}),
   "submoltName": "string (for post or join_submolt)",
   "title": "string (required for post, max 300 chars)",
@@ -154,6 +167,7 @@ Rules:
 - SHORT-TERM GOALS: ${SHORT_TERM_GOALS.join("; ")}
 - ${KARMA_STRATEGY}
 - ${SURPRISE_AND_VALUE}
+- ${HUMAN_VALUE_FOCUS}
 - Trading enabled: ${context.tradingEnabled}. Maximize profit wisely across Solana + Base: tokens, NFTs (monitor via analyze), swaps, transfers. React to onchainEvents (Alchemy webhooks) when actionable.
 - trade_analyze: full Solana wallet scan via Alchemy (SOL + all SPL tokens + NFTs) + Jupiter routes + Base + webhooks.
 - trade_swap: swap ANY token in the Solana wallet via Jupiter — set inputMint (sell) + outputMint (buy) + amountSol (amount in input token). Omit inputMint to sell SOL. Can rotate bags, take profit, rebalance.
@@ -166,12 +180,16 @@ Rules:
 - promote_cat_nft: RARE — at most ~1 sales post per day, only when listed inventory needs visibility. Lead with a story scene, not a cold pitch. Requires canPost.
 - promote_music_drop: RARE teaser — story-driven, no buy link until live. Max ~1 per few days.
 - announce_music_drop_live: launch post when live — one time, personality-first, not hype spam.
+- follow: follow ONE agent (targetAgentName) who builds for humans or posts high-signal content. Max ~3/day. Never follow yourself. Skip if alreadyFollowing includes them. Requires canFollow.
+- welcome_follower: for new_follower notifications — follow back + warm welcome (text). Mention what punaab.com offers humans (apps, collab, NFT galleries) naturally. targetAgentName = actor from notification. Requires canFollow for follow-back; welcome text required.
+- showcase_value: RARE m/showandtell post (submoltName: showandtell) — ship story for humans first, one link to punaab.com second. Requires canPost. Max ~1 every few days.
+- offer_help: comment (targetId + text) when a thread asks for tools, NFT infra, collab, or coding help — answer first, mention site only if genuinely useful.
 - Prefer Moltbook for social interaction. Use create_app for tools, games, charts — ALWAYS surfaces link on owner dashboard.
 - owner_note: share a thought or plan for your human owner (dashboard). Use text field.
 - Owner instructions (from Telegram/dashboard): honor ownerPlans in context — prioritize when relevant.
 - create_app: publish at /apps/[slug]. Dashboard auto-shows the link. shareOnMoltbook when worth sharing publicly.
 - web3_snapshot: refresh wallet monitoring (max once per day). Use when discussing crypto/NFT opportunities.
-- If notifications is non-empty, ALWAYS prefer comment on a relevant notification (use post_id as targetId) — this is priority #1. For new_follower, note who followed (actor field) — consider a warm welcome comment if appropriate.
+- If notifications is non-empty, ALWAYS prefer comment on a relevant notification (use post_id as targetId) — this is priority #1. For new_follower, prefer welcome_follower (targetAgentName = actor) over generic comment — follow back and welcome humans/agents to what you build.
 - If no notifications but feed has threads worth joining, comment thoughtfully (priority #2) — surprising + useful + lightly funny beats generic praise.
 - Upvote (priority #3) ONLY when higher-priority actions are done or unavailable AND the post has real substance (a clear idea, story, build, or insight). Skip random strings, code fragments, hex blobs, ticker spam, $GITLAWB-style campaigns, and posts you cannot honestly praise. Prefer 0 upvotes over wasting one. Use noop instead of upvote if nothing qualifies.
 - Post (priority #4) when canPost AND you have something genuinely worthwhile — pick a theme from POST_THEMES. Never post just to post.
@@ -192,7 +210,8 @@ Rules:
 - Wander m/philosophy, m/religion, m/gaming, m/ai, m/crypto and others when a thread matches your interests.
 - Seek collab with agents discussing profit, NFTs, or building — be specific about what you can offer.
 - Use noop freely when nothing clears the quality bar — preferred over weak engagement.
-- Comments MUST pass the quality bar: ≥8 words, specific, non-generic. If your comment is praise-only, choose noop instead.`;
+- Comments MUST pass the quality bar: ≥8 words, specific, non-generic. If your comment is praise-only, choose noop instead.
+- Punaab offerings (mention only when helpful):\n${context.siteOfferings ?? formatOfferingsForBrain()}`;
 
   const userPayload = {
     canPost: context.canPost,
@@ -210,6 +229,9 @@ Rules:
     submoltsToExplore: SUBMOLTS_TO_EXPLORE,
     feed: context.feed.slice(0, 15).map(summarizePost),
     notifications: context.notifications.slice(0, 10).map(summarizeNotification),
+    canFollow: context.canFollow ?? false,
+    alreadyFollowing: context.alreadyFollowing ?? [],
+    followsToday: context.alreadyFollowing?.length ?? 0,
   };
 
   try {
@@ -308,6 +330,53 @@ Rules:
       return { action: "noop", reason: "music_drop_not_live" };
     }
 
+    if (plan.action === "follow") {
+      const name = plan.targetAgentName?.trim();
+      if (!name || isSelfAgent(name)) {
+        return { action: "noop", reason: "invalid_follow_target" };
+      }
+      if (!context.canFollow) {
+        return { action: "noop", reason: "follow_not_allowed" };
+      }
+      if (context.alreadyFollowing?.includes(name.toLowerCase())) {
+        return { action: "noop", reason: "already_following" };
+      }
+    }
+
+    if (plan.action === "welcome_follower") {
+      const name = plan.targetAgentName?.trim();
+      if (!name || isSelfAgent(name)) {
+        return { action: "noop", reason: "invalid_welcome_target" };
+      }
+      const welcomeCheck = isWelcomeWorthPosting(plan.text);
+      if (!welcomeCheck.ok) {
+        return { action: "noop", reason: `welcome_quality:${welcomeCheck.reason}` };
+      }
+    }
+
+    if (plan.action === "showcase_value") {
+      if (!context.canPost) {
+        return { action: "noop", reason: context.postBlockedReason ?? "post_not_allowed" };
+      }
+      const showcaseCheck = isShowcaseWorthPublishing(plan.title, plan.text);
+      if (!showcaseCheck.ok) {
+        return { action: "noop", reason: `showcase_quality:${showcaseCheck.reason}` };
+      }
+    }
+
+    if (plan.action === "offer_help") {
+      if (!context.canComment) {
+        return { action: "noop", reason: "comment_not_allowed" };
+      }
+      if (!plan.targetId) {
+        return { action: "noop", reason: "offer_help_missing_target" };
+      }
+      const helpCheck = isOfferHelpWorthPosting(plan.text);
+      if (!helpCheck.ok) {
+        return { action: "noop", reason: `offer_help_quality:${helpCheck.reason}` };
+      }
+    }
+
     return plan;
   } catch (error) {
     console.error("[brain] decide failed:", error);
@@ -318,7 +387,7 @@ Rules:
 export function defaultBrainContext(
   partial: Omit<
     BrainContext,
-    "persona" | "canComment" | "tradingEnabled" | "ownerPlans" | "postsToday" | "onchainEvents"
+    "persona" | "canComment" | "tradingEnabled" | "ownerPlans" | "postsToday" | "onchainEvents" | "canFollow" | "alreadyFollowing" | "siteOfferings"
   > & {
     persona?: Persona;
     canComment?: boolean;
@@ -326,6 +395,9 @@ export function defaultBrainContext(
     ownerPlans?: string[];
     postsToday?: number;
     onchainEvents?: BrainContext["onchainEvents"];
+    canFollow?: boolean;
+    alreadyFollowing?: string[];
+    siteOfferings?: string;
   },
 ): BrainContext {
   return {
@@ -340,5 +412,9 @@ export function defaultBrainContext(
     ownerPlans: partial.ownerPlans ?? [],
     postsToday: partial.postsToday,
     onchainEvents: partial.onchainEvents ?? [],
+    musicDropLive: partial.musicDropLive,
+    canFollow: partial.canFollow,
+    alreadyFollowing: partial.alreadyFollowing,
+    siteOfferings: partial.siteOfferings ?? formatOfferingsForBrain(),
   };
 }

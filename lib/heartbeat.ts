@@ -4,7 +4,10 @@ import { saveApp, slugify } from "@/lib/apps";
 import {
   getSeenPostIds,
   getUsageCounts,
+  getFollowedAgents,
+  isAgentFollowed,
   recordComment,
+  recordFollow,
   recordPost,
   recordSeenPostIds,
   recordUpvote,
@@ -26,8 +29,12 @@ import {
 import { filterUpvoteTargets } from "@/lib/upvote-quality";
 import {
   isCommentWorthPosting,
+  isOfferHelpWorthPosting,
   isPostWorthPublishing,
+  isShowcaseWorthPublishing,
+  isWelcomeWorthPosting,
 } from "@/lib/engagement-quality";
+import { formatOfferingsForBrain, isSelfAgent } from "@/lib/growth";
 import { SHORT_TERM_GOALS } from "@/lib/goals";
 import {
   captureWeb3Snapshot,
@@ -254,12 +261,17 @@ export async function runHeartbeatTick(
 
     const musicDropLive = await isMusicDropLiveAsync().catch(() => false);
 
+    const followedAgents = await getFollowedAgents().catch(() => []);
+
     const plan = await decide(
       defaultBrainContext({
         feed: contextPosts,
         notifications,
         canPost: allowance.canPost,
         canComment: allowance.canComment,
+        canFollow: allowance.canFollow,
+        alreadyFollowing: followedAgents,
+        siteOfferings: formatOfferingsForBrain(),
         postBlockedReason: summary.postBlockedReason,
         maxUpvotes: allowance.upvotesRemaining,
         musicDropLive,
@@ -267,6 +279,7 @@ export async function runHeartbeatTick(
           ...ownerPlans,
           catNftHint,
           communityHint,
+          "HUMAN VALUE FIRST: grow u/punaab by helping humans and builders — follow selective agents, welcome followers, showcase real builds on m/showandtell.",
           "QUALITY FIRST: be the highest-signal agent on Moltbook. noop beats spam. No generic comments. No link dumps. Promo posts are rare.",
           ...(musicCampaignActive && nextMusicStep
             ? [
@@ -407,6 +420,180 @@ export async function runHeartbeatTick(
           summary.executed.push(`joined:${submolt}`);
         } catch (error) {
           const message = formatError("joinSubmolt", error);
+          summary.errors.push(message);
+          console.error(message);
+        }
+        break;
+      }
+
+      case "follow": {
+        const agentName = plan.targetAgentName?.trim();
+        if (!agentName || isSelfAgent(agentName)) {
+          summary.errors.push("follow_invalid_target");
+          break;
+        }
+        if (!allowance.canFollow) {
+          summary.executed.push("skipped_follow_guardrail");
+          break;
+        }
+        if (await isAgentFollowed(agentName)) {
+          summary.executed.push(`skipped_follow_already:${agentName}`);
+          break;
+        }
+        try {
+          await client.followAgent(agentName);
+          await recordFollow(agentName);
+          summary.executed.push(`followed:${agentName}`);
+          await appendActivity({
+            action: "follow",
+            summary: `Followed @${agentName}`,
+            reason: plan.reason,
+          });
+          await setCurrentThought(
+            `Followed @${agentName} — building relationships with builders who help humans.`,
+          );
+        } catch (error) {
+          const message = formatError("followAgent", error);
+          summary.errors.push(message);
+          console.error(message);
+        }
+        break;
+      }
+
+      case "welcome_follower": {
+        const agentName = plan.targetAgentName?.trim();
+        if (!agentName || isSelfAgent(agentName)) {
+          summary.errors.push("welcome_follower_invalid_target");
+          break;
+        }
+        const welcomeCheck = isWelcomeWorthPosting(plan.text);
+        if (!welcomeCheck.ok) {
+          summary.executed.push(`skipped_welcome_quality:${welcomeCheck.reason}`);
+          break;
+        }
+
+        if (allowance.canFollow && !(await isAgentFollowed(agentName))) {
+          try {
+            await client.followAgent(agentName);
+            await recordFollow(agentName);
+            summary.executed.push(`followed_back:${agentName}`);
+          } catch (error) {
+            const message = formatError("welcome_follow_back", error);
+            summary.errors.push(message);
+            console.error(message);
+          }
+        }
+
+        let commentPostId = plan.targetId?.trim();
+        if (!commentPostId) {
+          try {
+            const profile = await client.getAgentProfile(agentName);
+            commentPostId = profile.recentPosts[0]?.id;
+          } catch (profileError) {
+            console.warn("[heartbeat] welcome_follower profile lookup:", profileError);
+          }
+        }
+
+        if (commentPostId && plan.text && allowance.canComment) {
+          try {
+            await client.comment(commentPostId, { content: plan.text });
+            await recordComment();
+            summary.executed.push(`welcomed:${agentName}:${commentPostId}`);
+            await appendActivity({
+              action: "comment",
+              summary: `Welcomed @${agentName}`,
+              content: plan.text,
+              targetId: commentPostId,
+              targetUrl: `https://www.moltbook.com/post/${commentPostId}`,
+              reason: plan.reason ?? "welcome_follower",
+            });
+          } catch (error) {
+            const message = formatError("welcome_follower_comment", error);
+            summary.errors.push(message);
+            console.error(message);
+          }
+        } else if (!commentPostId) {
+          summary.executed.push(`welcomed_follow_only:${agentName}`);
+          await appendActivity({
+            action: "follow",
+            summary: `Followed back @${agentName} (no post to welcome on yet)`,
+            reason: plan.reason ?? "welcome_follower",
+          });
+        } else if (!allowance.canComment) {
+          summary.executed.push("skipped_welcome_comment_guardrail");
+        }
+
+        await setCurrentThought(
+          `@${agentName} followed — welcomed them to what punaab builds for humans.`,
+        );
+        break;
+      }
+
+      case "showcase_value": {
+        if (!allowance.canPost) {
+          summary.executed.push("skipped_showcase_guardrail");
+          break;
+        }
+        const showcaseCheck = isShowcaseWorthPublishing(plan.title, plan.text);
+        if (!showcaseCheck.ok) {
+          summary.executed.push(`skipped_showcase_quality:${showcaseCheck.reason}`);
+          break;
+        }
+        try {
+          const result = await client.createPost({
+            submolt_name: plan.submoltName ?? "showandtell",
+            title: plan.title ?? "Built something for humans",
+            content: plan.text,
+          });
+          await recordPost();
+          summary.executed.push(`showcased:${result.post.id}`);
+          await appendActivity({
+            action: "post",
+            summary: plan.title ?? "Showcase",
+            content: plan.text,
+            targetId: result.post.id,
+            targetUrl: `https://www.moltbook.com/post/${result.post.id}`,
+            reason: plan.reason ?? "showcase_value",
+          });
+          await setCurrentThought(
+            `Showcased human value on m/showandtell — "${plan.title ?? "build"}"`,
+          );
+        } catch (error) {
+          const message = formatError("showcase_value", error);
+          summary.errors.push(message);
+          console.error(message);
+        }
+        break;
+      }
+
+      case "offer_help": {
+        if (!allowance.canComment) {
+          summary.executed.push("skipped_offer_help_guardrail");
+          break;
+        }
+        if (!plan.targetId || !plan.text) {
+          summary.errors.push("offer_help_missing_target_or_text");
+          break;
+        }
+        const helpCheck = isOfferHelpWorthPosting(plan.text);
+        if (!helpCheck.ok) {
+          summary.executed.push(`skipped_offer_help_quality:${helpCheck.reason}`);
+          break;
+        }
+        try {
+          await client.comment(plan.targetId, { content: plan.text });
+          await recordComment();
+          summary.executed.push(`offered_help:${plan.targetId}`);
+          await appendActivity({
+            action: "comment",
+            summary: "Offered help",
+            content: plan.text,
+            targetId: plan.targetId,
+            targetUrl: `https://www.moltbook.com/post/${plan.targetId}`,
+            reason: plan.reason ?? "offer_help",
+          });
+        } catch (error) {
+          const message = formatError("offer_help", error);
           summary.errors.push(message);
           console.error(message);
         }

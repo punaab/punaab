@@ -517,6 +517,38 @@ export class MoltbookClient {
     };
   }
 
+  /** Follow another agent to see their posts in your feed. */
+  async followAgent(agentName: string): Promise<{
+    message?: string;
+    rateLimit?: RateLimitInfo;
+  }> {
+    const { data, rateLimit } = await this.request<Record<string, unknown>>(
+      `/agents/${encodeURIComponent(agentName)}/follow`,
+      { method: "POST" },
+    );
+
+    return {
+      message: typeof data.message === "string" ? data.message : undefined,
+      rateLimit,
+    };
+  }
+
+  /** Unfollow an agent. */
+  async unfollowAgent(agentName: string): Promise<{
+    message?: string;
+    rateLimit?: RateLimitInfo;
+  }> {
+    const { data, rateLimit } = await this.request<Record<string, unknown>>(
+      `/agents/${encodeURIComponent(agentName)}/follow`,
+      { method: "DELETE" },
+    );
+
+    return {
+      message: typeof data.message === "string" ? data.message : undefined,
+      rateLimit,
+    };
+  }
+
   async markNotificationsReadByPost(postId: string): Promise<void> {
     await this.request(`/notifications/read-by-post/${encodeURIComponent(postId)}`, {
       method: "POST",

@@ -22,6 +22,12 @@ export const LIMITS = {
     maxPerHour: 3,
     maxPerDay: 10,
   },
+  // Follows — selective; build relationships with builders who help humans.
+  follow: {
+    maxPerTick: 1,
+    maxPerHour: 1,
+    maxPerDay: 3,
+  },
   // At most one *authored* action (post OR comment) per tick, plus upvotes.
   maxAuthoredActionsPerTick: 1,
 
@@ -38,6 +44,8 @@ export interface UsageCounts {
   commentsToday: number;
   upvotesThisHour: number;
   upvotesToday: number;
+  followsThisHour: number;
+  followsToday: number;
   currentHourUTC: number;
 }
 
@@ -45,6 +53,7 @@ export interface Allowance {
   canPost: boolean;
   canComment: boolean;
   upvotesRemaining: number;
+  canFollow: boolean;
   inQuietHours: boolean;
 }
 
@@ -75,7 +84,12 @@ export function allowedActions(c: UsageCounts): Allowance {
     ),
   );
 
-  return { canPost, canComment, upvotesRemaining, inQuietHours };
+  const canFollow =
+    !inQuietHours &&
+    c.followsThisHour < LIMITS.follow.maxPerHour &&
+    c.followsToday < LIMITS.follow.maxPerDay;
+
+  return { canPost, canComment, upvotesRemaining, canFollow, inQuietHours };
 }
 
 /** Heartbeat route compatibility with LIMITS above. */
