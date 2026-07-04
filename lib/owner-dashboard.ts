@@ -20,6 +20,7 @@ import { buildWeb3Hub, type Web3Hub } from "./web3-dashboard";
 import { loadCampaignForDashboard, type Campaign } from "./campaign";
 import { getAlchemyApiSnapshot } from "./alchemy-apis";
 import { getCatNftCatalog, getCatNftShopStats, catNftApiUrl, catNftGalleryUrl } from "./punaab-cat-nfts";
+import { fetchMusicShopForDashboard } from "./music-dashboard";
 
 export interface OwnerDashboard {
   agent: { name: string; handle: string };
@@ -60,6 +61,7 @@ export interface OwnerDashboard {
     stats: Awaited<ReturnType<typeof getCatNftShopStats>>;
     catalog: Awaited<ReturnType<typeof getCatNftCatalog>>;
   };
+  musicNftShop: Awaited<ReturnType<typeof fetchMusicShopForDashboard>>;
 }
 
 export async function getOwnerDashboard(): Promise<OwnerDashboard> {
@@ -81,6 +83,7 @@ export async function getOwnerDashboard(): Promise<OwnerDashboard> {
     alchemyApis,
     catNftCatalog,
     catNftStats,
+    musicNftShop,
   ] = await Promise.all([
     getCurrentThought(),
     getPlans(),
@@ -99,6 +102,7 @@ export async function getOwnerDashboard(): Promise<OwnerDashboard> {
     getAlchemyApiSnapshot(),
     getCatNftCatalog(),
     getCatNftShopStats(),
+    fetchMusicShopForDashboard(),
   ]);
 
   const campaign = campaignLoad.campaign;
@@ -156,5 +160,6 @@ export async function getOwnerDashboard(): Promise<OwnerDashboard> {
       stats: catNftStats,
       catalog: catNftCatalog,
     },
+    musicNftShop,
   };
 }

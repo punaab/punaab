@@ -6,9 +6,10 @@ interface CatNft {
   id: string;
   tokenId: number;
   name: string;
-  traits: { fur: string; eyes: string; accessory: string; vibe: string };
+  traits: { fur: string; eyes: string; accessory: string; vibe: string; aura?: string };
   status: string;
   priceUsdc: number;
+  rarity?: "classic" | "premium" | "holographic" | "cosmic";
   imageSvg: string;
   buyerAgentName?: string;
 }
@@ -96,12 +97,20 @@ export default function CatNftShop({ data, onRefresh }: Props) {
 
       <div className="cat-nft-shop-grid">
         {catalog.slice(0, 8).map((nft) => (
-          <div key={nft.id} className={`cat-nft-shop-card status-${nft.status}`}>
+          <div
+            key={nft.id}
+            className={`cat-nft-shop-card status-${nft.status} rarity-${nft.rarity ?? "classic"}`}
+          >
             <div
               className="cat-nft-svg-wrap"
               dangerouslySetInnerHTML={{ __html: nft.imageSvg }}
             />
             <div className="cat-nft-card-body">
+              {nft.rarity && nft.rarity !== "classic" && (
+                <span className={`cat-nft-rarity rarity-${nft.rarity}`}>
+                  {nft.rarity === "cosmic" ? "✦ Jupiter" : nft.rarity}
+                </span>
+              )}
               <strong>{nft.name}</strong>
               <span className="muted">{nft.status}</span>
               {nft.status === "listed" && <span>{nft.priceUsdc} USDC</span>}

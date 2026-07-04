@@ -1,33 +1,32 @@
 /** Agent behavior limits — edit these in one place. */
-// Behavioral limits. Tuned to be a good citizen at a 30-minute heartbeat
-// (≈48 ticks/day). Start conservative; loosen once you see how it behaves.
+// Quality-first: fewer actions, higher bar. Never look like a spam bot.
 
 export const CADENCE_MINUTES = 30;
 
 export const LIMITS = {
-  // Top-level posts — loosened for a more active, entertaining presence.
+  // Top-level posts — rare, high-signal only.
   post: {
-    minIntervalMs: 90 * 60 * 1000, // ≥90m between posts
-    maxPerHour: 2,
-    maxPerDay: 8,
+    minIntervalMs: 3 * 60 * 60 * 1000, // ≥3h between posts
+    maxPerHour: 1,
+    maxPerDay: 3,
   },
-  // Comments are the agent's main activity — loosened for karma-growth phase.
+  // Comments — main activity, but still restrained.
   comment: {
     maxPerTick: 1,
-    maxPerHour: 8,
-    maxPerDay: 40,
+    maxPerHour: 4,
+    maxPerDay: 12,
   },
-  // Upvotes are cheap/social — allowed more freely for trust-building.
+  // Upvotes — very selective.
   upvote: {
-    maxPerTick: 6,
-    maxPerHour: 20,
-    maxPerDay: 80,
+    maxPerTick: 1,
+    maxPerHour: 3,
+    maxPerDay: 10,
   },
   // At most one *authored* action (post OR comment) per tick, plus upvotes.
   maxAuthoredActionsPerTick: 1,
 
-  // Quiet hours disabled during karma-growth phase — re-enable when stable.
-  quietHours: { enabled: false, startHour: 1, endHour: 7 },
+  // Rest during low-traffic hours — reduces bot-like 24/7 spraying.
+  quietHours: { enabled: true, startHour: 2, endHour: 7 },
 } as const;
 
 // Current usage counts, supplied by lib/memory.ts (Upstash) at each tick.
@@ -344,6 +343,40 @@ export function getSiteUrl(): string {
     return `https://${process.env.VERCEL_URL}`;
   }
   return "http://localhost:3000";
+}
+
+/** Suno API key — AI music generation for on-chain music NFTs. */
+export function getSunoApiKey(): string | undefined {
+  return process.env.SUNO_API_KEY?.trim() || undefined;
+}
+
+/** Deployed PunaabMusicNFT ERC-721 on Base. */
+export function getMusicNftContractAddress(): string | undefined {
+  const addr = process.env.MUSIC_NFT_CONTRACT_ADDRESS?.trim();
+  if (addr && /^0x[0-9a-fA-F]{40}$/i.test(addr)) return addr;
+  return undefined;
+}
+
+/** Vercel Blob read/write token for permanent audio + cover hosting. */
+export function getBlobReadWriteToken(): string | undefined {
+  return process.env.BLOB_READ_WRITE_TOKEN?.trim() || undefined;
+}
+
+/** USDC price for a one-of-one agent music NFT (default 5). */
+export function getMusicNftPriceUsdc(): number {
+  const n = Number(process.env.MUSIC_NFT_PRICE_USDC ?? "5");
+  return Number.isFinite(n) && n > 0 ? n : 5;
+}
+
+/** Optional secret path segment for Suno webhook URL hardening. */
+export function getSunoCallbackSecret(): string | undefined {
+  return process.env.SUNO_CALLBACK_SECRET?.trim() || undefined;
+}
+
+/** When true (env only), agents can purchase music NFTs. Prefer isMusicDropLiveAsync for Redis flag. */
+export function isMusicDropLive(): boolean {
+  const v = process.env.MUSIC_DROP_LIVE?.trim().toLowerCase();
+  return v === "true" || v === "1" || v === "yes";
 }
 
 /** @deprecated Use isTradingEnabled() — reads TRADING_ENABLED env */

@@ -211,6 +211,10 @@ export default function CampaignWatch({
   const nextStep = c?.steps?.find((s) => s.status === "pending");
   const startedEvent = c?.events?.find((e) => e.type === "campaign_started");
 
+  if (!campaign || campaign.id === "none" || !c?.steps?.length) {
+    return null;
+  }
+
   return (
     <section className="campaign-watch panel panel-wide">
       <div
@@ -241,10 +245,10 @@ export default function CampaignWatch({
 
       <header className="campaign-header">
         <div>
-          <p className="campaign-eyebrow">Moltbook distribution</p>
-          <h2 className="campaign-title">$GITLAWB Campaign</h2>
+          <p className="campaign-eyebrow">Moltbook campaign</p>
+          <h2 className="campaign-title">{c?.name ?? "Campaign"}</h2>
           <p className="muted campaign-subtitle">
-            m/agents → vision · m/crypto → chart · m/tooling → install
+            Automated multi-step posts when active
           </p>
         </div>
         <div className="campaign-actions">

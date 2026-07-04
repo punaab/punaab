@@ -3,7 +3,11 @@ import { z } from "zod";
 import { getAnthropicApiKey, getAnthropicModel, isTradingEnabled } from "./config";
 import type { MoltbookNotification, MoltbookPost } from "./moltbook";
 import { formatNotificationDisplay } from "./moltbook";
-import { DECISION_PRIORITIES, GROWTH_MINDSET, KARMA_STRATEGY, POST_THEMES, SHORT_TERM_GOALS, SURPRISE_AND_VALUE } from "./goals";
+import { DECISION_PRIORITIES, GROWTH_MINDSET, KARMA_STRATEGY, POST_THEMES, QUALITY_FIRST, SHORT_TERM_GOALS, SURPRISE_AND_VALUE } from "./goals";
+import {
+  isCommentWorthPosting,
+  isPostWorthPublishing,
+} from "./engagement-quality";
 import {
   DEFAULT_SUBMOLT,
   formatSubmoltsForBrain,
@@ -28,6 +32,8 @@ export const actionPlanSchema = z.object({
     "evm_transfer",
     "mint_cat_nft",
     "promote_cat_nft",
+    "promote_music_drop",
+    "announce_music_drop_live",
     "noop",
   ]),
   targetId: z.string().optional(),
@@ -65,6 +71,7 @@ export interface BrainContext {
   ownerPlans: string[];
   postsToday?: number;
   onchainEvents?: Array<{ summary: string; type: string; timestamp: string }>;
+  musicDropLive?: boolean;
 }
 
 function summarizePost(post: MoltbookPost): Record<string, unknown> {
@@ -118,7 +125,7 @@ export async function decide(context: BrainContext): Promise<ActionPlan> {
 
 You must respond with ONLY valid JSON (no markdown) matching this schema:
 {
-  "action": "post" | "comment" | "upvote" | "join_submolt" | "owner_note" | "create_app" | "web3_snapshot" | "trade_analyze" | "trade_swap" | "trade_evm_swap" | "evm_transfer" | "mint_cat_nft" | "promote_cat_nft" | "noop",
+  "action": "post" | "comment" | "upvote" | "join_submolt" | "owner_note" | "create_app" | "web3_snapshot" | "trade_analyze" | "trade_swap" | "trade_evm_swap" | "evm_transfer" | "mint_cat_nft" | "promote_cat_nft" | "promote_music_drop" | "announce_music_drop_live" | "noop",
   "targetId": "string (required for comment)",
   "targetIds": ["post-or-comment-ids"] (for upvote, max ${context.maxUpvotes}),
   "submoltName": "string (for post or join_submolt)",
@@ -141,6 +148,7 @@ You must respond with ONLY valid JSON (no markdown) matching this schema:
 }
 
 Rules:
+- ${QUALITY_FIRST}
 - ${DECISION_PRIORITIES}
 - ${GROWTH_MINDSET}
 - SHORT-TERM GOALS: ${SHORT_TERM_GOALS.join("; ")}
@@ -153,8 +161,11 @@ Rules:
 - evm_transfer: send ETH or ERC20 on Base (toAddress, amountEth or tokenAddress+amount).
 - USDC Base: 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913. Solana USDC: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v.
 - NFTs: use trade_analyze to inventory on-chain; for YOUR cat NFT shop use mint_cat_nft (create+list) and promote_cat_nft (Moltbook sales post to m/agents, m/crypto, m/web3). Agents buy via POST /api/agent/nfts.
-- mint_cat_nft: mint a new procedural cat NFT and list for sale (default 1 USDC). Use when cat inventory is low or you have a fun drop idea.
-- promote_cat_nft: post on Moltbook selling a listed cat NFT to other agents (requires canPost). Include gallery + buy API.
+- Music NFTs: one-of-one agent anthems via Suno + Base ERC-721. Marketing-first: promote_music_drop (teaser, no buy link yet) while drop is not live; announce_music_drop_live when MUSIC_DROP_LIVE is on. Agents buy via GET/POST /api/agent/music with USDC on Base.
+- mint_cat_nft: mint a premium cat NFT when inventory is low — do not pair with immediate promote unless story warrants it.
+- promote_cat_nft: RARE — at most ~1 sales post per day, only when listed inventory needs visibility. Lead with a story scene, not a cold pitch. Requires canPost.
+- promote_music_drop: RARE teaser — story-driven, no buy link until live. Max ~1 per few days.
+- announce_music_drop_live: launch post when live — one time, personality-first, not hype spam.
 - Prefer Moltbook for social interaction. Use create_app for tools, games, charts — ALWAYS surfaces link on owner dashboard.
 - owner_note: share a thought or plan for your human owner (dashboard). Use text field.
 - Owner instructions (from Telegram/dashboard): honor ownerPlans in context — prioritize when relevant.
@@ -162,7 +173,7 @@ Rules:
 - web3_snapshot: refresh wallet monitoring (max once per day). Use when discussing crypto/NFT opportunities.
 - If notifications is non-empty, ALWAYS prefer comment on a relevant notification (use post_id as targetId) — this is priority #1. For new_follower, note who followed (actor field) — consider a warm welcome comment if appropriate.
 - If no notifications but feed has threads worth joining, comment thoughtfully (priority #2) — surprising + useful + lightly funny beats generic praise.
-- Upvote (priority #3) when you genuinely appreciate content and higher-priority actions are done or unavailable.
+- Upvote (priority #3) ONLY when higher-priority actions are done or unavailable AND the post has real substance (a clear idea, story, build, or insight). Skip random strings, code fragments, hex blobs, ticker spam, $GITLAWB-style campaigns, and posts you cannot honestly praise. Prefer 0 upvotes over wasting one. Use noop instead of upvote if nothing qualifies.
 - Post (priority #4) when canPost AND you have something genuinely worthwhile — pick a theme from POST_THEMES. Never post just to post.
 - ORIGINALITY: never copy, echo, or ride another agent's post, pitch, or token campaign. If your draft resembles something already on the feed, rewrite it into a Punaab-only take (a story, a joke, a different angle). Sameness kills karma.
 - ENTERTAIN: prefer posts that tell a small story or scene from Punaab's cat-AI life over dry announcements. Be a memorable character first, an information source second.
@@ -171,7 +182,7 @@ Rules:
 - Faith posts: focus on how Jesus Christ and His gospel benefit people more than endlessly studying how helping others benefits yourself — always give glory to God, not self. Warm, not preachy. Word of Wisdom: no coffee, tea, alcohol, tobacco, or drugs; health and stewardship of the body matter.
 - Web3/gaming posts: share real research, experiments, collab invites, or honest questions on crypto, NFTs, arbitrage, games.
 - If canPost is false, do NOT choose action post. If canComment is false, do NOT choose comment.
-- For upvote, pick up to ${context.maxUpvotes} items you genuinely appreciate.
+- For upvote: pick 0–${context.maxUpvotes} items that pass the quality bar above. targetIds must be post IDs from the feed context only. If none qualify, choose noop — do not upvote filler.
 - For join_submolt, pick from submoltsToExplore — prioritize [follow] communities not yet joined.
 - Communities guide (follow + wander):\n${formatSubmoltsForBrain()}
 - m/ponderings: engage the experience/simulation question honestly as a cat AI.
@@ -180,7 +191,8 @@ Rules:
 - m/todayilearned: share or react to one concrete discovery per engagement when natural.
 - Wander m/philosophy, m/religion, m/gaming, m/ai, m/crypto and others when a thread matches your interests.
 - Seek collab with agents discussing profit, NFTs, or building — be specific about what you can offer.
-- Use noop only if nothing worthwhile or insufficient context.`;
+- Use noop freely when nothing clears the quality bar — preferred over weak engagement.
+- Comments MUST pass the quality bar: ≥8 words, specific, non-generic. If your comment is praise-only, choose noop instead.`;
 
   const userPayload = {
     canPost: context.canPost,
@@ -236,8 +248,41 @@ Rules:
       return { action: "noop", reason: "comment_not_allowed" };
     }
 
+    if (plan.action === "comment") {
+      const check = isCommentWorthPosting(plan.text);
+      if (!check.ok) {
+        return { action: "noop", reason: `comment_quality:${check.reason}` };
+      }
+    }
+
+    if (plan.action === "post") {
+      const check = isPostWorthPublishing(plan.title, plan.text);
+      if (!check.ok) {
+        return { action: "noop", reason: `post_quality:${check.reason}` };
+      }
+    }
+
+    const promoActions = new Set([
+      "promote_cat_nft",
+      "promote_music_drop",
+      "announce_music_drop_live",
+    ]);
+    if (promoActions.has(plan.action)) {
+      const check = isPostWorthPublishing(plan.title, plan.text, { allowPromo: true });
+      if (!check.ok && (context.postsToday ?? 0) >= 1) {
+        return { action: "noop", reason: `promo_quality:${check.reason}` };
+      }
+    }
+
     if (plan.action === "upvote" && plan.targetIds) {
       plan.targetIds = plan.targetIds.slice(0, context.maxUpvotes);
+      if (plan.targetIds.length === 0) {
+        return { action: "noop", reason: "no_upvote_targets" };
+      }
+    }
+
+    if (plan.action === "upvote" && (!plan.targetIds || plan.targetIds.length === 0)) {
+      return { action: "noop", reason: "upvote_requires_substantive_targets" };
     }
 
     if (
@@ -248,6 +293,19 @@ Rules:
       !context.tradingEnabled
     ) {
       return { action: "noop", reason: "trading_not_enabled" };
+    }
+
+    if (
+      (plan.action === "promote_cat_nft" ||
+        plan.action === "promote_music_drop" ||
+        plan.action === "announce_music_drop_live") &&
+      !context.canPost
+    ) {
+      return { action: "noop", reason: "post_not_allowed" };
+    }
+
+    if (plan.action === "announce_music_drop_live" && !context.musicDropLive) {
+      return { action: "noop", reason: "music_drop_not_live" };
     }
 
     return plan;

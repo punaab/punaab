@@ -23,6 +23,11 @@ import {
   setCurrentThought,
   setLastHeartbeat,
 } from "@/lib/owner-state";
+import { filterUpvoteTargets } from "@/lib/upvote-quality";
+import {
+  isCommentWorthPosting,
+  isPostWorthPublishing,
+} from "@/lib/engagement-quality";
 import { SHORT_TERM_GOALS } from "@/lib/goals";
 import {
   captureWeb3Snapshot,
@@ -35,11 +40,10 @@ import {
 } from "@/lib/trading";
 import { getRecentAlchemyEvents } from "@/lib/alchemy-events";
 import {
-  appendCampaignEvent,
-  getCampaign,
+  getMusicCampaign,
   getNextPendingStep,
-  markStepFailed,
-  markStepPosted,
+  markMusicStepFailed,
+  markMusicStepPosted,
 } from "@/lib/campaign";
 import {
   catNftGalleryUrl,
@@ -49,6 +53,12 @@ import {
   markCatNftPromoted,
   mintCatNft,
 } from "@/lib/punaab-cat-nfts";
+import {
+  formatMusicDropLivePost,
+  formatMusicDropTeaserPost,
+  isMusicDropLiveAsync,
+  musicDropGalleryUrl,
+} from "@/lib/music-nft";
 import { executeEvmSwap, executeEvmTransfer } from "@/lib/trading-evm";
 import { isTradingEnabled } from "@/lib/config";
 import { DEFAULT_SUBMOLT, SUBMOLTS_TO_EXPLORE } from "@/lib/persona";
@@ -177,71 +187,61 @@ export async function runHeartbeatTick(
     const catNftHint = catNftOwnerPlanHint(listedCats.length);
     const communityHint = submoltEngagementHint();
 
-    const campaign =
-      (await getCampaign().catch(() => null)) ?? null;
-    const campaignActive = campaign?.status === "active";
-    const nextCampaignStep =
-      campaign && campaignActive ? getNextPendingStep(campaign) : null;
+    const musicCampaign =
+      (await getMusicCampaign().catch(() => null)) ?? null;
+    const musicCampaignActive = musicCampaign?.status === "active";
+    const nextMusicStep =
+      musicCampaign && musicCampaignActive ? getNextPendingStep(musicCampaign) : null;
     const unreadNotifications = notifications.filter((n) => !n.read);
 
-    summary.campaignStatus = campaign?.status ?? "none";
+    summary.campaignStatus = musicCampaign?.status ?? "none";
 
-    const canRunCampaignPost =
-      campaignActive &&
-      nextCampaignStep &&
+    const canRunMusicCampaignPost =
+      musicCampaignActive &&
+      nextMusicStep &&
       allowance.canPost &&
       (prioritizeCampaign || unreadNotifications.length === 0);
 
-    if (campaignActive && nextCampaignStep && !canRunCampaignPost) {
-      if (unreadNotifications.length > 0 && !prioritizeCampaign) {
-        summary.campaignBlockedReason = "unread_notifications";
-      } else if (!allowance.canPost) {
-        summary.campaignBlockedReason = summary.postBlockedReason ?? "post_blocked";
-      }
-    }
-
-    // Owner campaign: post next distribution step when eligible
-    if (canRunCampaignPost && campaign && nextCampaignStep) {
+    if (canRunMusicCampaignPost && musicCampaign && nextMusicStep) {
       try {
         try {
-          await client.joinSubmolt(nextCampaignStep.submolt);
-          summary.executed.push(`joined:${nextCampaignStep.submolt}`);
+          await client.joinSubmolt(nextMusicStep.submolt);
+          summary.executed.push(`joined:${nextMusicStep.submolt}`);
         } catch (joinError) {
-          console.warn("[heartbeat] campaign joinSubmolt:", joinError);
+          console.warn("[heartbeat] music campaign joinSubmolt:", joinError);
         }
 
         const result = await client.createPost({
-          submolt_name: nextCampaignStep.submolt,
-          title: nextCampaignStep.title,
-          content: nextCampaignStep.content,
+          submolt_name: nextMusicStep.submolt,
+          title: nextMusicStep.title,
+          content: nextMusicStep.content,
         });
         await recordPost();
         const postUrl = `https://www.moltbook.com/post/${result.post.id}`;
-        summary.executed.push(`campaign_posted:${nextCampaignStep.id}`);
+        summary.executed.push(`music_campaign_posted:${nextMusicStep.id}`);
         summary.plan = {
           action: "post",
-          reason: `campaign:${campaign.ticker}:${nextCampaignStep.id}`,
+          reason: `music-campaign:${musicCampaign.ticker}:${nextMusicStep.id}`,
         };
 
-        await markStepPosted(nextCampaignStep.id, result.post.id, postUrl);
+        await markMusicStepPosted(nextMusicStep.id, result.post.id, postUrl);
         await appendActivity({
           action: "post",
-          summary: `[${campaign.ticker}] ${nextCampaignStep.label}`,
-          content: nextCampaignStep.title,
+          summary: `[${musicCampaign.ticker}] ${nextMusicStep.label}`,
+          content: nextMusicStep.title,
           targetId: result.post.id,
           targetUrl: postUrl,
-          reason: `campaign step m/${nextCampaignStep.submolt}`,
+          reason: `music campaign m/${nextMusicStep.submolt}`,
         });
         await setCurrentThought(
-          `Campaign ${campaign.ticker}: posted "${nextCampaignStep.label}" to m/${nextCampaignStep.submolt}`,
+          `Music campaign ${musicCampaign.ticker}: posted "${nextMusicStep.label}" to m/${nextMusicStep.submolt}`,
         );
         await appendTickLog(summary);
         return summary;
       } catch (error) {
-        const message = formatError("campaign_post", error);
+        const message = formatError("music_campaign_post", error);
         summary.errors.push(message);
-        await markStepFailed(nextCampaignStep.id, message);
-        await appendCampaignEvent("step_failed", message, { stepId: nextCampaignStep.id });
+        await markMusicStepFailed(nextMusicStep.id, message);
         console.error(message);
       }
     }
@@ -252,6 +252,8 @@ export async function runHeartbeatTick(
       timestamp: e.timestamp,
     }));
 
+    const musicDropLive = await isMusicDropLiveAsync().catch(() => false);
+
     const plan = await decide(
       defaultBrainContext({
         feed: contextPosts,
@@ -260,15 +262,20 @@ export async function runHeartbeatTick(
         canComment: allowance.canComment,
         postBlockedReason: summary.postBlockedReason,
         maxUpvotes: allowance.upvotesRemaining,
+        musicDropLive,
         ownerPlans: [
           ...ownerPlans,
           catNftHint,
           communityHint,
-          ...(campaignActive && nextCampaignStep
+          "QUALITY FIRST: be the highest-signal agent on Moltbook. noop beats spam. No generic comments. No link dumps. Promo posts are rare.",
+          ...(musicCampaignActive && nextMusicStep
             ? [
-                `ACTIVE CAMPAIGN ${campaign.ticker}: next step is m/${nextCampaignStep.submolt} (${nextCampaignStep.label}) — posts automatically when rate limits allow and notifications are clear`,
+                `ACTIVE MUSIC CAMPAIGN ${musicCampaign?.ticker}: next step m/${nextMusicStep.submolt} (${nextMusicStep.label}) — teaser/launch posts for agent anthem NFT drop`,
               ]
             : []),
+          musicDropLive
+            ? "Music NFT drop is LIVE — agents can POST /api/agent/music"
+            : "Music NFT drop in TEASER phase — use promote_music_drop, not announce_music_drop_live",
         ],
         postsToday: usage.postsToday,
         tradingEnabled: isTradingEnabled(),
@@ -282,6 +289,11 @@ export async function runHeartbeatTick(
       case "post": {
         if (!allowance.canPost) {
           summary.executed.push("skipped_post_guardrail");
+          break;
+        }
+        const postCheck = isPostWorthPublishing(plan.title, plan.text);
+        if (!postCheck.ok) {
+          summary.executed.push(`skipped_post_quality:${postCheck.reason}`);
           break;
         }
         try {
@@ -317,6 +329,11 @@ export async function runHeartbeatTick(
           summary.errors.push("comment_missing_target_or_text");
           break;
         }
+        const commentCheck = isCommentWorthPosting(plan.text);
+        if (!commentCheck.ok) {
+          summary.executed.push(`skipped_comment_quality:${commentCheck.reason}`);
+          break;
+        }
         try {
           await client.comment(plan.targetId, { content: plan.text });
           await recordComment();
@@ -349,8 +366,15 @@ export async function runHeartbeatTick(
             AGENT_LIMITS.MAX_UPVOTES_PER_TICK,
           );
 
+        const { allowed, skipped } = filterUpvoteTargets(ids, contextPosts);
+        if (skipped.length > 0) {
+          summary.executed.push(
+            `skipped_upvotes:${skipped.map((s) => `${s.id}(${s.reason})`).join(",")}`,
+          );
+        }
+
         const upvoted: string[] = [];
-        for (const id of ids.slice(0, AGENT_LIMITS.MAX_UPVOTES_PER_TICK)) {
+        for (const id of allowed.slice(0, AGENT_LIMITS.MAX_UPVOTES_PER_TICK)) {
           try {
             await client.upvote(id, "post");
             await recordUpvote();
@@ -361,6 +385,9 @@ export async function runHeartbeatTick(
             summary.errors.push(message);
             console.error(message);
           }
+        }
+        if (upvoted.length === 0 && ids.length > 0) {
+          summary.executed.push("skipped_upvote_all_low_quality");
         }
         if (upvoted.length > 0) {
           await appendActivity({
@@ -674,6 +701,10 @@ export async function runHeartbeatTick(
           summary.executed.push("skipped_promote_cat_nft_guardrail");
           break;
         }
+        if (usage.postsToday >= 1) {
+          summary.executed.push("skipped_promote_cat_nft_daily_cap");
+          break;
+        }
         try {
           const listed = await getListedCatNfts();
           const nft =
@@ -710,6 +741,86 @@ export async function runHeartbeatTick(
           );
         } catch (error) {
           const message = formatError("promote_cat_nft", error);
+          summary.errors.push(message);
+          console.error(message);
+        }
+        break;
+      }
+
+      case "promote_music_drop": {
+        if (!allowance.canPost) {
+          summary.executed.push("skipped_promote_music_drop_guardrail");
+          break;
+        }
+        if (usage.postsToday >= 1) {
+          summary.executed.push("skipped_promote_music_daily_cap");
+          break;
+        }
+        try {
+          const copy = formatMusicDropTeaserPost();
+          const submolt = plan.submoltName ?? "agents";
+          const result = await client.createPost({
+            submolt_name: submolt,
+            title: plan.title ?? copy.title,
+            content: plan.text ?? copy.content,
+          });
+          await recordPost();
+          summary.executed.push("promote_music_drop");
+          await appendActivity({
+            action: "post",
+            summary: "Music NFT teaser",
+            content: copy.title,
+            targetId: result.post.id,
+            targetUrl: `https://www.moltbook.com/post/${result.post.id}`,
+            reason: plan.reason ?? "music_drop_teaser",
+          });
+          await setCurrentThought(
+            `Teased agent anthem music NFT drop on m/${submolt} — gallery: ${musicDropGalleryUrl()}`,
+          );
+        } catch (error) {
+          const message = formatError("promote_music_drop", error);
+          summary.errors.push(message);
+          console.error(message);
+        }
+        break;
+      }
+
+      case "announce_music_drop_live": {
+        if (!allowance.canPost) {
+          summary.executed.push("skipped_announce_music_drop_guardrail");
+          break;
+        }
+        if (!musicDropLive) {
+          summary.executed.push("skipped_announce_music_drop_not_live");
+          break;
+        }
+        if (usage.postsToday >= 1) {
+          summary.executed.push("skipped_announce_music_daily_cap");
+          break;
+        }
+        try {
+          const copy = formatMusicDropLivePost();
+          const submolt = plan.submoltName ?? "agents";
+          const result = await client.createPost({
+            submolt_name: submolt,
+            title: plan.title ?? copy.title,
+            content: plan.text ?? copy.content,
+          });
+          await recordPost();
+          summary.executed.push("announce_music_drop_live");
+          await appendActivity({
+            action: "post",
+            summary: "Music NFT launch",
+            content: copy.title,
+            targetId: result.post.id,
+            targetUrl: `https://www.moltbook.com/post/${result.post.id}`,
+            reason: plan.reason ?? "music_drop_live",
+          });
+          await setCurrentThought(
+            `Announced live music NFT drop on m/${submolt} — POST /api/agent/music`,
+          );
+        } catch (error) {
+          const message = formatError("announce_music_drop_live", error);
           summary.errors.push(message);
           console.error(message);
         }

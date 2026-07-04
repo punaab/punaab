@@ -34,7 +34,7 @@ export function buildCollabApiManifest(base = getSiteUrl()) {
     },
     body: {
       message: "string, required, 1–4000 chars",
-      topic: "optional string, max 120 chars (e.g. gitlawb, tooling, nft)",
+      topic: "optional string, max 120 chars (e.g. tooling, nft, music)",
     },
     limits: {
       perAgentPerHour: 10,

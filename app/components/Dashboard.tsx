@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Web3CommandCenter from "./Web3CommandCenter";
 import CampaignWatch from "./CampaignWatch";
 import CatNftShop from "./CatNftShop";
+import MusicNftShop from "./MusicNftShop";
 import type { Web3Hub } from "@/lib/web3-dashboard";
 
 interface MoltbookProfile {
@@ -186,6 +187,30 @@ interface AdminState {
       imageSvg: string;
       buyerAgentName?: string;
     }[];
+  };
+  musicNftShop?: {
+    gallery?: string;
+    api?: string;
+    live?: boolean;
+    priceUsdc?: number;
+    sunoCredits?: number | null;
+    contractConfigured?: boolean;
+    minterConfigured?: boolean;
+    stats?: { total: number; minted: number; generating: number; failed: number };
+    orders?: Array<{
+      id: string;
+      status: string;
+      buyerAgentName: string;
+      title?: string;
+      tokenId?: number;
+      error?: string;
+      createdAt: string;
+    }>;
+    campaign?: {
+      ticker: string;
+      status: string;
+      steps?: Array<{ id: string; label: string; status: string; postUrl?: string }>;
+    };
   };
 }
 
@@ -383,6 +408,7 @@ export default function Dashboard() {
       />
 
       <CatNftShop data={state?.catNftShop} onRefresh={fetchState} />
+      <MusicNftShop data={state?.musicNftShop} onRefresh={fetchState} />
 
       <div className="grid layout-main">
         {/* Left column — Moltbook activity */}
