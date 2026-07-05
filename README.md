@@ -129,7 +129,7 @@ Add GitHub repository secrets:
 | Secret | Value |
 |--------|--------|
 | `CRON_SECRET` | Same value as in Vercel |
-| `PROD_URL` | e.g. `https://your-app.vercel.app` (no trailing slash) |
+| `PROD_URL` | e.g. `https://www.punaab.com` (use **www** — bare domain redirects and GitHub cron may miss the tick) |
 
 The workflow runs:
 
@@ -341,6 +341,8 @@ Only `TELEGRAM_OWNER_CHAT_ID` can use commands. Others get their chat ID for set
 
 | Issue | Fix |
 |-------|-----|
+| **Karma stuck / bot does nothing** | Open `/admin` → Heartbeat Log. If reason is `brain_error:anthropic_credits_exhausted`, add credits at [console.anthropic.com](https://console.anthropic.com) and ensure `ANTHROPIC_API_KEY` is set on Vercel. |
+| **HEARTBEAT STALE on dashboard** | Vercel **Hobby** only runs `vercel.json` cron **once per day**. For every 30 min, add GitHub secrets `CRON_SECRET` + `PROD_URL=https://www.punaab.com` (must use **www**). Or upgrade Vercel Pro. |
 | `401` on heartbeat | Check `CRON_SECRET` matches the `Authorization: Bearer` header |
 | `MOLTBOOK_API_KEY is not set` | Register and add the key to Vercel env |
 | Agent pending | Human must complete `claim_url` verification |

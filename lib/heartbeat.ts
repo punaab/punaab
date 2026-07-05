@@ -298,6 +298,12 @@ export async function runHeartbeatTick(
 
     summary.plan = { action: plan.action, reason: plan.reason };
 
+    if (plan.reason?.startsWith("brain_error")) {
+      summary.errors.push(plan.reason);
+    } else if (plan.reason === "missing_anthropic_api_key") {
+      summary.errors.push("missing_anthropic_api_key");
+    }
+
     switch (plan.action) {
       case "post": {
         if (!allowance.canPost) {

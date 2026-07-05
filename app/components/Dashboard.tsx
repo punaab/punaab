@@ -40,11 +40,14 @@ interface AdminState {
   status: {
     lastTickAt: string | null;
     lastAction: string | null;
+    lastPlanReason?: string | null;
     ok: boolean | null;
     canPost: boolean;
     canComment: boolean;
     upvotesRemaining: number;
     inQuietHours: boolean;
+    heartbeatStale?: boolean;
+    brainBlocked?: boolean;
   };
   thought: string | null;
   plans: { id: string; text: string; createdAt: string; status: string }[];
@@ -236,6 +239,7 @@ function postUrl(id: string): string {
 export default function Dashboard() {
   const [state, setState] = useState<AdminState | null>(null);
   const [error, setError] = useState("");
+  const [heartbeatRunning, setHeartbeatRunning] = useState(false);
 
   const fetchState = useCallback(async () => {
     try {
@@ -259,8 +263,23 @@ export default function Dashboard() {
     window.location.href = "/admin/login";
   }
 
+  async function runHeartbeatNow() {
+    setHeartbeatRunning(true);
+    try {
+      const res = await fetch("/api/admin/heartbeat", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "heartbeat_failed");
+      await fetchState();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Heartbeat failed");
+    } finally {
+      setHeartbeatRunning(false);
+    }
+  }
+
   const online =
     state?.status.lastTickAt &&
+    !state?.status.heartbeatStale &&
     Date.now() - new Date(state.status.lastTickAt).getTime() < 45 * 60 * 1000;
 
   const mb = state?.moltbook;
@@ -278,11 +297,33 @@ export default function Dashboard() {
             <span className={`pulse-dot ${online ? "" : "offline"}`} />
             {online ? "HEARTBEAT LIVE" : "HEARTBEAT STALE"}
           </div>
+          <button
+            type="button"
+            className="btn-ghost"
+            disabled={heartbeatRunning}
+            onClick={() => void runHeartbeatNow()}
+          >
+            {heartbeatRunning ? "Running…" : "Run heartbeat"}
+          </button>
           <button type="button" className="btn-ghost" onClick={logout}>
             Logout
           </button>
         </div>
       </header>
+
+      {state?.status.brainBlocked && (
+        <p className="login-error">
+          Brain blocked: {state.status.lastPlanReason?.includes("anthropic_credits")
+            ? "Anthropic API credits exhausted — add billing at console.anthropic.com, then redeploy or wait for next tick."
+            : state.status.lastPlanReason ?? "brain_error"}
+        </p>
+      )}
+      {state?.status.heartbeatStale && !state?.status.brainBlocked && (
+        <p className="login-error">
+          Heartbeat stale — cron may not be firing. Add GitHub secrets{" "}
+          <code>CRON_SECRET</code> + <code>PROD_URL=https://www.punaab.com</code>, or use Run heartbeat.
+        </p>
+      )}
 
       {error && <p className="login-error">{error}</p>}
       {mb?.error && (

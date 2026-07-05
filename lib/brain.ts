@@ -110,6 +110,15 @@ function summarizeNotification(n: MoltbookNotification): Record<string, unknown>
   };
 }
 
+function formatBrainError(error: unknown): string {
+  if (error instanceof Error) {
+    const msg = error.message.replace(/\s+/g, " ").trim();
+    if (msg.length > 180) return `${msg.slice(0, 177)}…`;
+    return msg;
+  }
+  return String(error);
+}
+
 function extractJsonObject(text: string): string {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (fenced?.[1]) return fenced[1].trim();
@@ -379,8 +388,12 @@ Rules:
 
     return plan;
   } catch (error) {
+    const detail = formatBrainError(error);
     console.error("[brain] decide failed:", error);
-    return { action: "noop", reason: "brain_error" };
+    if (/credit balance is too low/i.test(detail)) {
+      return { action: "noop", reason: "brain_error:anthropic_credits_exhausted" };
+    }
+    return { action: "noop", reason: `brain_error:${detail}` };
   }
 }
 

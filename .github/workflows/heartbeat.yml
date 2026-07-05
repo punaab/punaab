@@ -1,8 +1,9 @@
 name: Moltbook Heartbeat
 
-# Optional backup cron when Vercel Hobby limits apply.
-# Set repository secrets: CRON_SECRET (same as Vercel) and PROD_URL (e.g. https://punaab.com)
-# If secrets are missing, this workflow skips cleanly (no failed runs).
+# Backup cron every 30 minutes (required on Vercel Hobby — built-in cron is once/day).
+# Set repository secrets:
+#   CRON_SECRET — same value as Vercel env CRON_SECRET
+#   PROD_URL    — https://www.punaab.com  (use www; bare domain 308-redirects and skips the tick)
 
 on:
   schedule:
@@ -13,15 +14,19 @@ jobs:
   heartbeat:
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger Vercel heartbeat
+      - name: Trigger production heartbeat
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           PROD_URL: ${{ secrets.PROD_URL }}
         run: |
           if [ -z "$CRON_SECRET" ] || [ -z "$PROD_URL" ]; then
-            echo "::notice title=Heartbeat skipped::Add repository secrets CRON_SECRET and PROD_URL (e.g. https://punaab.com) to enable this workflow."
-            exit 0
+            echo "::error title=Heartbeat not configured::Add GitHub repository secrets CRON_SECRET and PROD_URL (https://www.punaab.com)."
+            exit 1
           fi
-          curl -sS -f \
+          echo "Calling ${PROD_URL%/}/api/cron/heartbeat"
+          body=$(curl -sS -f -L \
             -H "Authorization: Bearer $CRON_SECRET" \
-            "${PROD_URL%/}/api/cron/heartbeat"
+            "${PROD_URL%/}/api/cron/heartbeat")
+          echo "$body"
+          echo "$body" | grep -q '"ok":true' || { echo "::error::Heartbeat returned non-ok response"; exit 1; }
+          echo "$body" | grep -q 'brain_error' && echo "::warning::Brain returned an error — check Anthropic credits / ANTHROPIC_API_KEY on Vercel"

@@ -27,11 +27,14 @@ export interface OwnerDashboard {
   status: {
     lastTickAt: string | null;
     lastAction: string | null;
+    lastPlanReason: string | null;
     ok: boolean | null;
     canPost: boolean;
     canComment: boolean;
     upvotesRemaining: number;
     inQuietHours: boolean;
+    heartbeatStale: boolean;
+    brainBlocked: boolean;
   };
   shortTermGoals: readonly string[];
   thought: string | null;
@@ -110,17 +113,28 @@ export async function getOwnerDashboard(): Promise<OwnerDashboard> {
   const allowance = allowedActions(usage);
   const lastTick = tickLog[0] ?? null;
   const lastTickAt = lastHeartbeat ?? lastTick?.timestamp ?? null;
+  const lastPlanReason = lastTick?.plan?.reason ?? null;
+  const heartbeatStale =
+    !lastTickAt ||
+    Date.now() - new Date(lastTickAt).getTime() > 45 * 60 * 1000;
+  const brainBlocked =
+    typeof lastPlanReason === "string" &&
+    (lastPlanReason.startsWith("brain_error") ||
+      lastPlanReason === "missing_anthropic_api_key");
 
   return {
     agent: { name: persona.name, handle: persona.handle },
     status: {
       lastTickAt,
       lastAction: lastTick?.plan?.action ?? null,
+      lastPlanReason,
       ok: lastTick?.ok ?? null,
       canPost: allowance.canPost,
       canComment: allowance.canComment,
       upvotesRemaining: allowance.upvotesRemaining,
       inQuietHours: allowance.inQuietHours,
+      heartbeatStale,
+      brainBlocked,
     },
     shortTermGoals: SHORT_TERM_GOALS,
     thought,
