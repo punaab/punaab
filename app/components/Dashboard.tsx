@@ -215,6 +215,12 @@ interface AdminState {
       steps?: Array<{ id: string; label: string; status: string; postUrl?: string }>;
     };
   };
+  llm?: {
+    configured: string[];
+    primary: string;
+    mode: string;
+    aiiUrl?: string;
+  };
 }
 
 function formatTime(iso: string | null | undefined): string {
@@ -314,8 +320,10 @@ export default function Dashboard() {
       {state?.status.brainBlocked && (
         <p className="login-error">
           Brain blocked: {state.status.lastPlanReason?.includes("anthropic_credits")
-            ? "Anthropic API credits exhausted — add billing at console.anthropic.com, then redeploy or wait for next tick."
-            : state.status.lastPlanReason ?? "brain_error"}
+            ? "LLM credits exhausted — add Anthropic billing OR set AII_CLOUD_API_KEY from cloud.aiiware.com (100 free/day)."
+            : state.status.lastPlanReason?.includes("no_llm_provider")
+              ? "No LLM configured — set ANTHROPIC_API_KEY and/or AII_CLOUD_API_KEY on Vercel."
+              : state.status.lastPlanReason ?? "brain_error"}
         </p>
       )}
       {state?.status.heartbeatStale && !state?.status.brainBlocked && (
@@ -390,6 +398,10 @@ export default function Dashboard() {
           <div className="stat-card">
             <span className="stat-value">{mb?.unreadCount ?? 0}</span>
             <span className="stat-label">Unread</span>
+          </div>
+          <div className="stat-card">
+            <span className="stat-value">{state?.llm?.primary ?? "—"}</span>
+            <span className="stat-label">LLM ({state?.llm?.mode ?? "auto"})</span>
           </div>
         </div>
       </section>

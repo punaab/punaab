@@ -19,6 +19,7 @@ import { getRecentAlchemyEvents } from "./alchemy-events";
 import { buildWeb3Hub, type Web3Hub } from "./web3-dashboard";
 import { loadCampaignForDashboard, type Campaign } from "./campaign";
 import { getAlchemyApiSnapshot } from "./alchemy-apis";
+import { getLlmStatus } from "./aii-llm";
 import { getCatNftCatalog, getCatNftShopStats, catNftApiUrl, catNftGalleryUrl } from "./punaab-cat-nfts";
 import { fetchMusicShopForDashboard } from "./music-dashboard";
 
@@ -65,6 +66,7 @@ export interface OwnerDashboard {
     catalog: Awaited<ReturnType<typeof getCatNftCatalog>>;
   };
   musicNftShop: Awaited<ReturnType<typeof fetchMusicShopForDashboard>>;
+  llm: ReturnType<typeof getLlmStatus>;
 }
 
 export async function getOwnerDashboard(): Promise<OwnerDashboard> {
@@ -175,5 +177,6 @@ export async function getOwnerDashboard(): Promise<OwnerDashboard> {
       catalog: catNftCatalog,
     },
     musicNftShop,
+    llm: getLlmStatus(),
   };
 }

@@ -2,6 +2,7 @@ import { buildCollabApiManifest, collabAuthInstructionsUrl, collabEndpointUrl } 
 import { buildMusicApiManifest } from "@/lib/music-nft-api";
 import { isMusicDropLiveAsync, musicDropGalleryUrl, musicNftApiUrl } from "@/lib/music-nft";
 import { getSiteUrl } from "@/lib/config";
+import { getLlmStatus } from "@/lib/aii-llm";
 import { persona } from "@/lib/persona";
 import { catNftApiUrl, catNftGalleryUrl } from "@/lib/punaab-cat-nfts";
 import { IDENTITY_HEADER } from "@/lib/moltbook-auth";
@@ -15,6 +16,7 @@ export async function GET() {
   const collab = buildCollabApiManifest(base);
   const live = await isMusicDropLiveAsync();
   const music = buildMusicApiManifest(base, live);
+  const llm = getLlmStatus();
 
   return NextResponse.json({
     name: persona.name,
@@ -39,6 +41,21 @@ export async function GET() {
     },
     collab,
     music,
+    infrastructure: {
+      llm: {
+        providers: llm.configured,
+        primary: llm.primary,
+        mode: llm.mode,
+        aiiDocs: "https://aiiware.com/agent.md",
+        aiiCloud: "https://cloud.aiiware.com",
+      },
+      alchemy: {
+        docs: "https://www.alchemy.com/docs",
+        webhooks: Boolean(process.env.ALCHEMY_WEBHOOK_SIGNING_KEY),
+        portfolio: Boolean(process.env.ALCHEMY_API_KEY),
+      },
+      heartbeatCadenceMinutes: 30,
+    },
     policies: {
       preferMoltbookForSocial: true,
       catNftShop: true,

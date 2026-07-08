@@ -1,5 +1,5 @@
-import Anthropic from "@anthropic-ai/sdk";
-import { getAnthropicApiKey, getAnthropicModel, getMoltbookOwnerChatPostId } from "./config";
+import { completeChat } from "./aii-llm";
+import { getMoltbookOwnerChatPostId } from "./config";
 import { MoltbookClient } from "./moltbook";
 import { appendPlan } from "./owner-state";
 import { persona, personaSystemPrompt } from "./persona";
@@ -25,24 +25,19 @@ export interface ChatWithOwnerResult {
   karma?: number;
   postedCommentUrl?: string;
   planSaved?: boolean;
+  llmProvider?: string;
 }
 
 export async function chatWithOwner(
   messages: ChatMessage[],
   options: ChatWithOwnerOptions = {},
 ): Promise<ChatWithOwnerResult> {
-  const apiKey = getAnthropicApiKey();
-  if (!apiKey) {
-    return { reply: "", error: "missing_anthropic_api_key" };
-  }
-
   const lastUser = [...messages].reverse().find((m) => m.role === "user");
   if (!lastUser?.content.trim()) {
     return { reply: "", error: "empty_message" };
   }
 
   const ctx = await buildPunaabLiveContext();
-  const client = new Anthropic({ apiKey });
   const ownerChatPostId = getMoltbookOwnerChatPostId();
 
   const system = `${personaSystemPrompt(persona)}
@@ -62,18 +57,15 @@ Owner chat rules:
 - Do not pretend this private chat is a public Moltbook post unless they enable "Reply on Moltbook".`;
 
   try {
-    const response = await client.messages.create({
-      model: getAnthropicModel(),
-      max_tokens: 700,
+    const completion = await completeChat(
       system,
-      messages: messages.slice(-14).map((m) => ({
+      messages.slice(-14).map((m) => ({
         role: m.role,
         content: m.content,
       })),
-    });
-
-    const block = response.content.find((b) => b.type === "text");
-    const reply = block && block.type === "text" ? block.text.trim() : "";
+      700,
+    );
+    const reply = completion.text.trim();
     if (!reply) return { reply: "", error: "empty_reply" };
 
     let planSaved = false;
@@ -92,6 +84,7 @@ Owner chat rules:
           moltbookUrl: ctx.profileUrl,
           karma: ctx.moltbook.profile?.karma,
           planSaved,
+          llmProvider: completion.provider,
         };
       }
       try {
@@ -112,6 +105,7 @@ Owner chat rules:
           moltbookUrl: ctx.profileUrl,
           karma: ctx.moltbook.profile?.karma,
           planSaved,
+          llmProvider: completion.provider,
         };
       }
     }
@@ -122,6 +116,7 @@ Owner chat rules:
       karma: ctx.moltbook.profile?.karma,
       postedCommentUrl,
       planSaved,
+      llmProvider: completion.provider,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "chat_failed";

@@ -31,6 +31,7 @@ export const SHORT_TERM_GOALS = [
   "Upvote sparingly — only posts that teach, entertain, or show a real build",
   "Post at most ~1/day and only when you have something surprising and worthwhile",
   "Use showcase_value on m/showandtell when you ship something humans can use",
+  "Share honest Alchemy on-chain insights on m/crypto when webhook events are fresh",
   "Prefer noop over low-quality engagement — never spray the feed to stay visible",
   "Engage m/ponderings, m/showandtell, m/blesstheirhearts, m/todayilearned when you have something real to add",
   "When building an app or game, surface the link on the owner dashboard",

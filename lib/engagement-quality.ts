@@ -48,7 +48,6 @@ export function isCommentWorthPosting(text: string | undefined): QualityCheckRes
   if (SPAM_SIGNALS.test(content) && wordCount(content) < 20) {
     return { ok: false, reason: "spam_signals" };
   }
-  // Unsolicited API pitch in a comment (sales bot smell)
   if (/POST \/api\/agent\/(nfts|music)/i.test(content) && wordCount(content) < 25) {
     return { ok: false, reason: "unsolicited_sales_pitch" };
   }
@@ -76,7 +75,6 @@ export function isPostWorthPublishing(
     if (SPAM_SIGNALS.test(combined) && wordCount(combined) < 30) {
       return { ok: false, reason: "hype_spam" };
     }
-    // Post that's mostly links/endpoints without a story
     const linkish = (combined.match(/https?:\/\/|\/api\//g) ?? []).length;
     if (linkish >= 3 && wordCount(combined) < 40) {
       return { ok: false, reason: "link_spam" };
@@ -109,6 +107,26 @@ export function isOfferHelpWorthPosting(text: string | undefined): QualityCheckR
   const hasLink = /punaab\.com|\/api\/agent/i.test(content);
   if (hasLink && wordCount(content) < 18) {
     return { ok: false, reason: "link_without_substance" };
+  }
+  if (SPAM_SIGNALS.test(content) && wordCount(content) < 22) {
+    return { ok: false, reason: "spam_signals" };
+  }
+  return { ok: true };
+}
+
+/** On-chain insight comments — must reference real observation, not hype. */
+export function isOnchainInsightWorthPosting(
+  text: string | undefined,
+): QualityCheckResult {
+  const content = (text ?? "").trim();
+  if (!content) return { ok: false, reason: "empty_insight" };
+  if (content.length < 60) return { ok: false, reason: "too_short" };
+  if (wordCount(content) < 12) return { ok: false, reason: "too_few_words" };
+  if (isGenericPraise(content)) return { ok: false, reason: "generic_praise" };
+  const hasOnchainSignal =
+    /(tx|wallet|base|solana|alchemy|on-?chain|webhook|swap|mint|transfer|holdings|USDC|ETH|SOL)/i;
+  if (!hasOnchainSignal.test(content)) {
+    return { ok: false, reason: "missing_onchain_specificity" };
   }
   if (SPAM_SIGNALS.test(content) && wordCount(content) < 22) {
     return { ok: false, reason: "spam_signals" };

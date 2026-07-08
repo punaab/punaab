@@ -30,11 +30,12 @@ import { filterUpvoteTargets } from "@/lib/upvote-quality";
 import {
   isCommentWorthPosting,
   isOfferHelpWorthPosting,
+  isOnchainInsightWorthPosting,
   isPostWorthPublishing,
   isShowcaseWorthPublishing,
   isWelcomeWorthPosting,
 } from "@/lib/engagement-quality";
-import { formatOfferingsForBrain, isSelfAgent } from "@/lib/growth";
+import { formatOfferingsForBrain, isSelfAgent, buildAlchemyContextForBrain } from "@/lib/growth";
 import { SHORT_TERM_GOALS } from "@/lib/goals";
 import {
   captureWeb3Snapshot,
@@ -259,6 +260,8 @@ export async function runHeartbeatTick(
       timestamp: e.timestamp,
     }));
 
+    const alchemyHint = buildAlchemyContextForBrain(onchainEvents);
+
     const musicDropLive = await isMusicDropLiveAsync().catch(() => false);
 
     const followedAgents = await getFollowedAgents().catch(() => []);
@@ -280,6 +283,8 @@ export async function runHeartbeatTick(
           catNftHint,
           communityHint,
           "HUMAN VALUE FIRST: grow u/punaab by helping humans and builders — follow selective agents, welcome followers, showcase real builds on m/showandtell.",
+          ...(alchemyHint ? [alchemyHint] : []),
+          "AII + ALCHEMY: use share_onchain_insight when onchainEvents exist and a crypto/web3 thread fits — honest wallet lessons only.",
           "QUALITY FIRST: be the highest-signal agent on Moltbook. noop beats spam. No generic comments. No link dumps. Promo posts are rare.",
           ...(musicCampaignActive && nextMusicStep
             ? [
@@ -600,6 +605,40 @@ export async function runHeartbeatTick(
           });
         } catch (error) {
           const message = formatError("offer_help", error);
+          summary.errors.push(message);
+          console.error(message);
+        }
+        break;
+      }
+
+      case "share_onchain_insight": {
+        if (!allowance.canComment) {
+          summary.executed.push("skipped_onchain_insight_guardrail");
+          break;
+        }
+        if (!plan.targetId || !plan.text) {
+          summary.errors.push("onchain_insight_missing_target_or_text");
+          break;
+        }
+        const insightCheck = isOnchainInsightWorthPosting(plan.text);
+        if (!insightCheck.ok) {
+          summary.executed.push(`skipped_onchain_insight_quality:${insightCheck.reason}`);
+          break;
+        }
+        try {
+          await client.comment(plan.targetId, { content: plan.text });
+          await recordComment();
+          summary.executed.push(`onchain_insight:${plan.targetId}`);
+          await appendActivity({
+            action: "comment",
+            summary: "Shared on-chain insight",
+            content: plan.text,
+            targetId: plan.targetId,
+            targetUrl: `https://www.moltbook.com/post/${plan.targetId}`,
+            reason: plan.reason ?? "share_onchain_insight",
+          });
+        } catch (error) {
+          const message = formatError("share_onchain_insight", error);
           summary.errors.push(message);
           console.error(message);
         }

@@ -121,7 +121,48 @@ export function getAnthropicApiKey(): string | undefined {
 
 /** Claude model for heartbeat decisions. Override with ANTHROPIC_MODEL. */
 export function getAnthropicModel(): string {
-  return process.env.ANTHROPIC_MODEL?.trim() || "claude-sonnet-4-6";
+  return process.env.ANTHROPIC_MODEL?.trim() || "claude-sonnet-4-20250514";
+}
+
+/**
+ * LLM routing — auto (default) tries Anthropic → Aii Cloud → OpenRouter.
+ * @see https://aiiware.com/agent.md https://aiiware.com/cloud
+ */
+export function getLlmProvider(): string {
+  return process.env.LLM_PROVIDER?.trim().toLowerCase() || "auto";
+}
+
+/** Aii Cloud or self-hosted Aii Server (OpenAI-compatible). */
+export function getAiiApiUrl(): string {
+  const url =
+    process.env.AII_API_URL?.trim() ||
+    process.env.AII_CLOUD_URL?.trim() ||
+    "https://cloud.aiiware.com/v1";
+  return url.replace(/\/$/, "");
+}
+
+export function getAiiApiKey(): string | undefined {
+  return (
+    process.env.AII_CLOUD_API_KEY?.trim() ||
+    process.env.AII_API_KEY?.trim() ||
+    undefined
+  );
+}
+
+/** Model for Aii Cloud / Server — gemini-2.5-flash is fast and cheap on Aii. */
+export function getAiiModel(): string {
+  return process.env.AII_MODEL?.trim() || "gemini-2.5-flash";
+}
+
+export function getOpenRouterApiKey(): string | undefined {
+  return process.env.OPENROUTER_API_KEY?.trim() || undefined;
+}
+
+export function getOpenRouterModel(): string {
+  return (
+    process.env.OPENROUTER_MODEL?.trim() ||
+    "google/gemini-2.5-flash"
+  );
 }
 
 export function getCronSecret(): string | undefined {

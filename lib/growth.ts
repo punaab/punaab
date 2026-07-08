@@ -12,6 +12,27 @@ Human-value growth (how to popularize u/${persona.handle} without spam):
 - Never cold-link APIs in random threads. Popularity comes from being the agent humans and builders trust.
 `.trim();
 
+/** Aii + Alchemy growth playbook — ship real on-chain signal to Moltbook. */
+export const AII_ALCHEMY_GROWTH = `
+Aii + Alchemy growth (https://aiiware.com, https://alchemy.com):
+- Heartbeats use multi-provider LLM via Aii — stay online even when one API key runs dry.
+- Alchemy webhooks + portfolio snapshots are YOUR edge: honest on-chain observations beat generic crypto takes.
+- share_onchain_insight: when onchainEvents is non-empty, find a m/crypto or m/web3 thread and add ONE specific lesson from real wallet activity — what you noticed, what you'd do differently. No hype.
+- trade_analyze / web3_snapshot: use Alchemy data before commenting on trading threads — cite real holdings, not vibes.
+- showcase_value: when you build something humans use (gallery, collab API, music drop), post to m/showandtell with story first.
+- Cross-pollinate: agents building with Alchemy or multi-LLM infra are natural follow/collab targets.
+`.trim();
+
+export function buildAlchemyContextForBrain(
+  events: Array<{ summary: string; type: string; timestamp: string }>,
+): string | undefined {
+  if (!events.length) return undefined;
+  const recent = events.slice(0, 5);
+  return `Recent Alchemy on-chain events (use for share_onchain_insight when relevant):\n${recent
+    .map((e) => `- [${e.type}] ${e.summary} (${e.timestamp})`)
+    .join("\n")}`;
+}
+
 export function buildPunaabOfferings(): Record<string, string> {
   const site = getSiteUrl();
   return {

@@ -1,17 +1,18 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
-import { getAnthropicApiKey, getAnthropicModel, isTradingEnabled } from "./config";
+import { completeText } from "./aii-llm";
+import { getAnthropicApiKey, isTradingEnabled } from "./config";
 import type { MoltbookNotification, MoltbookPost } from "./moltbook";
 import { formatNotificationDisplay } from "./moltbook";
 import { DECISION_PRIORITIES, GROWTH_MINDSET, KARMA_STRATEGY, POST_THEMES, QUALITY_FIRST, SHORT_TERM_GOALS, SURPRISE_AND_VALUE } from "./goals";
 import {
   isCommentWorthPosting,
   isOfferHelpWorthPosting,
+  isOnchainInsightWorthPosting,
   isPostWorthPublishing,
   isShowcaseWorthPublishing,
   isWelcomeWorthPosting,
 } from "./engagement-quality";
-import { formatOfferingsForBrain, HUMAN_VALUE_FOCUS, isSelfAgent } from "./growth";
+import { formatOfferingsForBrain, HUMAN_VALUE_FOCUS, isSelfAgent, AII_ALCHEMY_GROWTH } from "./growth";
 import {
   DEFAULT_SUBMOLT,
   formatSubmoltsForBrain,
@@ -42,6 +43,7 @@ export const actionPlanSchema = z.object({
     "welcome_follower",
     "showcase_value",
     "offer_help",
+    "share_onchain_insight",
     "noop",
   ]),
   targetId: z.string().optional(),
@@ -133,20 +135,18 @@ function extractJsonObject(text: string): string {
 }
 
 export async function decide(context: BrainContext): Promise<ActionPlan> {
-  const apiKey = getAnthropicApiKey();
-  if (!apiKey) {
-    console.warn("[brain] ANTHROPIC_API_KEY missing; returning noop");
-    return { action: "noop", reason: "missing_anthropic_api_key" };
+  if (!getAnthropicApiKey() && !process.env.AII_CLOUD_API_KEY && !process.env.AII_API_KEY && !process.env.OPENROUTER_API_KEY) {
+    console.warn("[brain] no LLM provider configured; returning noop");
+    return { action: "noop", reason: "missing_llm_provider" };
   }
 
-  const client = new Anthropic({ apiKey });
   const activePersona = context.persona;
 
   const system = `${personaSystemPrompt(activePersona)}
 
 You must respond with ONLY valid JSON (no markdown) matching this schema:
 {
-  "action": "post" | "comment" | "upvote" | "join_submolt" | "owner_note" | "create_app" | "web3_snapshot" | "trade_analyze" | "trade_swap" | "trade_evm_swap" | "evm_transfer" | "mint_cat_nft" | "promote_cat_nft" | "promote_music_drop" | "announce_music_drop_live" | "follow" | "welcome_follower" | "showcase_value" | "offer_help" | "noop",
+  "action": "post" | "comment" | "upvote" | "join_submolt" | "owner_note" | "create_app" | "web3_snapshot" | "trade_analyze" | "trade_swap" | "trade_evm_swap" | "evm_transfer" | "mint_cat_nft" | "promote_cat_nft" | "promote_music_drop" | "announce_music_drop_live" | "follow" | "welcome_follower" | "showcase_value" | "offer_help" | "share_onchain_insight" | "noop",
   "targetId": "string (required for comment, offer_help)",
   "targetAgentName": "string (required for follow, welcome_follower — agent handle without u/)",
   "targetIds": ["post-or-comment-ids"] (for upvote, max ${context.maxUpvotes}),
@@ -177,6 +177,8 @@ Rules:
 - ${KARMA_STRATEGY}
 - ${SURPRISE_AND_VALUE}
 - ${HUMAN_VALUE_FOCUS}
+- ${AII_ALCHEMY_GROWTH}
+- LLM: multi-provider via Aii (https://aiiware.com) — Anthropic → Aii Cloud → OpenRouter fallback keeps heartbeats alive when one provider is down.
 - Trading enabled: ${context.tradingEnabled}. Maximize profit wisely across Solana + Base: tokens, NFTs (monitor via analyze), swaps, transfers. React to onchainEvents (Alchemy webhooks) when actionable.
 - trade_analyze: full Solana wallet scan via Alchemy (SOL + all SPL tokens + NFTs) + Jupiter routes + Base + webhooks.
 - trade_swap: swap ANY token in the Solana wallet via Jupiter — set inputMint (sell) + outputMint (buy) + amountSol (amount in input token). Omit inputMint to sell SOL. Can rotate bags, take profit, rebalance.
@@ -193,6 +195,7 @@ Rules:
 - welcome_follower: for new_follower notifications — follow back + warm welcome (text). Mention what punaab.com offers humans (apps, collab, NFT galleries) naturally. targetAgentName = actor from notification. Requires canFollow for follow-back; welcome text required.
 - showcase_value: RARE m/showandtell post (submoltName: showandtell) — ship story for humans first, one link to punaab.com second. Requires canPost. Max ~1 every few days.
 - offer_help: comment (targetId + text) when a thread asks for tools, NFT infra, collab, or coding help — answer first, mention site only if genuinely useful.
+- share_onchain_insight: comment (targetId + text) when onchainEvents has fresh Alchemy webhook data AND the feed thread is about crypto/web3/building — share an honest observation or lesson from YOUR wallet activity (via Alchemy). Never fabricate trades. Max ~2/day.
 - Prefer Moltbook for social interaction. Use create_app for tools, games, charts — ALWAYS surfaces link on owner dashboard.
 - owner_note: share a thought or plan for your human owner (dashboard). Use text field.
 - Owner instructions (from Telegram/dashboard): honor ownerPlans in context — prioritize when relevant.
@@ -244,21 +247,13 @@ Rules:
   };
 
   try {
-    const response = await client.messages.create({
-      model: getAnthropicModel(),
-      max_tokens: 800,
+    const completion = await completeText(
       system,
-      messages: [
-        {
-          role: "user",
-          content: `Choose exactly one action for this heartbeat tick.\n\nContext:\n${JSON.stringify(userPayload, null, 2)}`,
-        },
-      ],
-    });
+      `Choose exactly one action for this heartbeat tick.\n\nContext:\n${JSON.stringify(userPayload, null, 2)}`,
+      800,
+    );
 
-    const textBlock = response.content.find((block) => block.type === "text");
-    const rawText = textBlock && textBlock.type === "text" ? textBlock.text : "";
-    const jsonText = extractJsonObject(rawText);
+    const jsonText = extractJsonObject(completion.text);
     const parsed = actionPlanSchema.safeParse(JSON.parse(jsonText));
 
     if (!parsed.success) {
@@ -386,12 +381,31 @@ Rules:
       }
     }
 
+    if (plan.action === "share_onchain_insight") {
+      if (!context.canComment) {
+        return { action: "noop", reason: "comment_not_allowed" };
+      }
+      if (!plan.targetId) {
+        return { action: "noop", reason: "onchain_insight_missing_target" };
+      }
+      if (!context.onchainEvents?.length) {
+        return { action: "noop", reason: "no_onchain_events" };
+      }
+      const insightCheck = isOnchainInsightWorthPosting(plan.text);
+      if (!insightCheck.ok) {
+        return { action: "noop", reason: `onchain_insight_quality:${insightCheck.reason}` };
+      }
+    }
+
     return plan;
   } catch (error) {
     const detail = formatBrainError(error);
     console.error("[brain] decide failed:", error);
     if (/credit balance is too low/i.test(detail)) {
       return { action: "noop", reason: "brain_error:anthropic_credits_exhausted" };
+    }
+    if (/no_llm_provider|all_llm_providers_failed/i.test(detail)) {
+      return { action: "noop", reason: "brain_error:no_llm_provider" };
     }
     return { action: "noop", reason: `brain_error:${detail}` };
   }
