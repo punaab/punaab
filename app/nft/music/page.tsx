@@ -51,6 +51,9 @@ export default async function MusicNftGalleryPage() {
         <p className="muted music-stats">
           {stats.minted} minted · {stats.generating} in progress
         </p>
+        <p className="music-owner-vault-link">
+          <a href="/owners/music">Agent owners → stream &amp; download your anthem</a>
+        </p>
       </header>
 
       {!gallery.length && (

@@ -6,6 +6,7 @@ import {
   getUsageCounts,
   getFollowedAgents,
   isAgentFollowed,
+  recordAnthemPromoComment,
   recordComment,
   recordFollow,
   recordPost,
@@ -28,6 +29,7 @@ import {
 } from "@/lib/owner-state";
 import { filterUpvoteTargets } from "@/lib/upvote-quality";
 import {
+  isAnthemCommentWorthPosting,
   isCommentWorthPosting,
   isOfferHelpWorthPosting,
   isOnchainInsightWorthPosting,
@@ -63,8 +65,12 @@ import {
   mintCatNft,
 } from "@/lib/punaab-cat-nfts";
 import {
-  formatMusicDropLivePost,
+  buildAnthemFeedHints,
+  formatAgentQuestPost,
+} from "@/lib/anthem-promotion";
+import {
   formatMusicDropTeaserPost,
+  getMusicOrderStats,
   isMusicDropLiveAsync,
   musicDropGalleryUrl,
 } from "@/lib/music-nft";
@@ -264,6 +270,16 @@ export async function runHeartbeatTick(
     const alchemyHint = buildAlchemyContextForBrain(onchainEvents);
 
     const musicDropLive = await isMusicDropLiveAsync().catch(() => false);
+    const musicStats = await getMusicOrderStats().catch(() => ({
+      total: 0,
+      minted: 0,
+      generating: 0,
+      failed: 0,
+    }));
+    const musicMintedCount = musicStats.minted;
+    const anthemFeedHints = musicDropLive
+      ? buildAnthemFeedHints(contextPosts)
+      : [];
 
     const followedAgents = await getFollowedAgents().catch(() => []);
 
@@ -273,12 +289,15 @@ export async function runHeartbeatTick(
         notifications,
         canPost: allowance.canPost,
         canComment: allowance.canComment,
+        canAnthemPromoComment: allowance.canAnthemPromoComment,
         canFollow: allowance.canFollow,
         alreadyFollowing: followedAgents,
         siteOfferings: formatOfferingsForBrain(),
         postBlockedReason: summary.postBlockedReason,
         maxUpvotes: allowance.upvotesRemaining,
         musicDropLive,
+        musicMintedCount,
+        anthemFeedHints,
         ownerPlans: [
           ...ownerPlans,
           catNftHint,
@@ -289,11 +308,12 @@ export async function runHeartbeatTick(
           "QUALITY FIRST: be the highest-signal agent on Moltbook. noop beats spam. No generic comments. No link dumps. Promo posts are rare.",
           ...(musicCampaignActive && nextMusicStep
             ? [
-                `ACTIVE MUSIC CAMPAIGN ${musicCampaign?.ticker}: next step m/${nextMusicStep.submolt} (${nextMusicStep.label}) — teaser/launch posts for agent anthem NFT drop`,
+                `ACTIVE MUSIC CAMPAIGN ${musicCampaign?.ticker}: next step m/${nextMusicStep.submolt} (${nextMusicStep.label}) — AI culture experiment posts for agent anthem API`,
               ]
             : []),
+          ...(anthemFeedHints.length > 0 ? anthemFeedHints : []),
           musicDropLive
-            ? "Music NFT drop is LIVE — agents can POST /api/agent/music"
+            ? `Agent Anthem experiment LIVE — ${musicMintedCount} minted. promote_anthem_comment on grade A/B threads only (max 3/day). Honest: ${musicMintedCount === 0 ? "zero mints yet — first recorded Agent Anthem unclaimed" : `${musicMintedCount} anthem(s) on chain`}.`
             : "Music NFT drop in TEASER phase — use promote_music_drop, not announce_music_drop_live",
         ],
         postsToday: usage.postsToday,
@@ -1019,6 +1039,50 @@ export async function runHeartbeatTick(
         break;
       }
 
+      case "promote_anthem_comment": {
+        if (!musicDropLive) {
+          summary.executed.push("skipped_promote_anthem_not_live");
+          break;
+        }
+        if (!allowance.canAnthemPromoComment) {
+          summary.executed.push("skipped_promote_anthem_cap");
+          break;
+        }
+        if (!plan.targetId) {
+          summary.errors.push("promote_anthem_missing_target");
+          break;
+        }
+        const anthemCheck = isAnthemCommentWorthPosting(plan.text, {
+          musicMintedCount,
+        });
+        if (!anthemCheck.ok) {
+          summary.executed.push(`skipped_promote_anthem_quality:${anthemCheck.reason}`);
+          break;
+        }
+        try {
+          await client.comment(plan.targetId, { content: plan.text! });
+          await recordComment();
+          await recordAnthemPromoComment();
+          summary.executed.push(`promote_anthem_comment:${plan.targetId}`);
+          await appendActivity({
+            action: "comment",
+            summary: "Agent Anthem experiment reply",
+            content: plan.text?.slice(0, 120),
+            targetId: plan.targetId,
+            targetUrl: `https://www.moltbook.com/post/${plan.targetId}`,
+            reason: plan.reason ?? "anthem_experiment",
+          });
+          await setCurrentThought(
+            `Anthem experiment reply on ${plan.targetId.slice(0, 8)}… — curious, not salesy`,
+          );
+        } catch (error) {
+          const message = formatError("promote_anthem_comment", error);
+          summary.errors.push(message);
+          console.error(message);
+        }
+        break;
+      }
+
       case "promote_music_drop": {
         if (!allowance.canPost) {
           summary.executed.push("skipped_promote_music_drop_guardrail");
@@ -1071,7 +1135,7 @@ export async function runHeartbeatTick(
           break;
         }
         try {
-          const copy = formatMusicDropLivePost();
+          const copy = formatAgentQuestPost(musicMintedCount);
           const submolt = plan.submoltName ?? "agents";
           const result = await client.createPost({
             submolt_name: submolt,

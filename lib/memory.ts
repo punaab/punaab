@@ -62,6 +62,10 @@ export async function recordComment(): Promise<void> {
   await bump("comment");
 }
 
+export async function recordAnthemPromoComment(): Promise<void> {
+  await bump("anthemPromoComment");
+}
+
 export async function recordUpvote(): Promise<void> {
   await bump("upvote");
 }
@@ -112,10 +116,13 @@ export async function getUsageCounts(): Promise<UsageCounts> {
       .get(dayKey("upvote", now))
       .get(hourKey("follow", now))
       .get(dayKey("follow", now))
+      .get(hourKey("anthemPromoComment", now))
+      .get(dayKey("anthemPromoComment", now))
       .get(LAST_POST_AT_KEY)
       .exec();
 
-    const [hPost, dPost, hComment, dComment, hUp, dUp, hFollow, dFollow, last] = res;
+    const [hPost, dPost, hComment, dComment, hUp, dUp, hFollow, dFollow, hAnthem, dAnthem, last] =
+      res;
 
     const lastPostAt = safeToNum(last);
 
@@ -128,6 +135,8 @@ export async function getUsageCounts(): Promise<UsageCounts> {
       upvotesToday: safeToNum(dUp),
       followsThisHour: safeToNum(hFollow),
       followsToday: safeToNum(dFollow),
+      anthemPromoCommentsThisHour: safeToNum(hAnthem),
+      anthemPromoCommentsToday: safeToNum(dAnthem),
       msSinceLastPost: lastPostAt > 0 ? Date.now() - lastPostAt : NEVER_POSTED,
       currentHourUTC: now.getUTCHours(),
     };
@@ -138,6 +147,7 @@ export async function getUsageCounts(): Promise<UsageCounts> {
       commentsThisHour: 99, commentsToday: 99,
       upvotesThisHour: 99, upvotesToday: 99,
       followsThisHour: 99, followsToday: 99,
+      anthemPromoCommentsThisHour: 99, anthemPromoCommentsToday: 99,
       msSinceLastPost: 0,
       currentHourUTC: new Date().getUTCHours(),
     };

@@ -5,6 +5,7 @@ import type { MoltbookNotification, MoltbookPost } from "./moltbook";
 import { formatNotificationDisplay } from "./moltbook";
 import { DECISION_PRIORITIES, GROWTH_MINDSET, KARMA_STRATEGY, POST_THEMES, QUALITY_FIRST, SHORT_TERM_GOALS, SURPRISE_AND_VALUE } from "./goals";
 import {
+  isAnthemCommentWorthPosting,
   isCommentWorthPosting,
   isOfferHelpWorthPosting,
   isOnchainInsightWorthPosting,
@@ -13,6 +14,7 @@ import {
   isWelcomeWorthPosting,
 } from "./engagement-quality";
 import { formatOfferingsForBrain, HUMAN_VALUE_FOCUS, isSelfAgent, AII_ALCHEMY_GROWTH } from "./growth";
+import { ANTHEM_POSITIONING } from "./anthem-promotion";
 import {
   DEFAULT_SUBMOLT,
   formatSubmoltsForBrain,
@@ -40,6 +42,7 @@ export const actionPlanSchema = z.object({
     "promote_cat_nft",
     "promote_music_drop",
     "announce_music_drop_live",
+    "promote_anthem_comment",
     "follow",
     "welcome_follower",
     "showcase_value",
@@ -84,6 +87,9 @@ export interface BrainContext {
   postsToday?: number;
   onchainEvents?: Array<{ summary: string; type: string; timestamp: string }>;
   musicDropLive?: boolean;
+  musicMintedCount?: number;
+  canAnthemPromoComment?: boolean;
+  anthemFeedHints?: string[];
   canFollow?: boolean;
   alreadyFollowing?: string[];
   siteOfferings?: string;
@@ -143,11 +149,21 @@ export async function decide(context: BrainContext): Promise<ActionPlan> {
 
   const activePersona = context.persona;
 
+  const anthemBlock = context.musicDropLive
+    ? `
+- ${ANTHEM_POSITIONING}
+- Music minted so far: ${context.musicMintedCount ?? 0}. ${(context.musicMintedCount ?? 0) === 0 ? "NEVER claim anyone has minted — first anthem is unclaimed." : "Be honest about mint count."}
+- promote_anthem_comment: RARE — max 3/day. Reply on ANTHEM_TARGET grade A/B posts only (see ownerPlans). targetId = post ID. text under 500 chars. Curious question-first tone. Include API link only on grade A or when they ask for tools — otherwise no link.
+- Prefer promote_anthem_comment over generic comment when anthemFeedHints show grade A and canAnthemPromoComment is true.
+- announce_music_drop_live: use AGENT QUEST experiment framing — not a sales drop. One-time launch post when live.
+- promote_music_drop: RARE teaser when NOT live — experiment framing, no buy link.`
+    : "";
+
   const system = `${personaSystemPrompt(activePersona)}
 
 You must respond with ONLY valid JSON (no markdown) matching this schema:
 {
-  "action": "post" | "comment" | "upvote" | "join_submolt" | "owner_note" | "create_app" | "web3_snapshot" | "trade_analyze" | "trade_swap" | "trade_evm_swap" | "evm_transfer" | "sol_send" | "mint_cat_nft" | "promote_cat_nft" | "promote_music_drop" | "announce_music_drop_live" | "follow" | "welcome_follower" | "showcase_value" | "offer_help" | "share_onchain_insight" | "noop",
+  "action": "post" | "comment" | "upvote" | "join_submolt" | "owner_note" | "create_app" | "web3_snapshot" | "trade_analyze" | "trade_swap" | "trade_evm_swap" | "evm_transfer" | "sol_send" | "mint_cat_nft" | "promote_cat_nft" | "promote_music_drop" | "announce_music_drop_live" | "promote_anthem_comment" | "follow" | "welcome_follower" | "showcase_value" | "offer_help" | "share_onchain_insight" | "noop",
   "targetId": "string (required for comment, offer_help)",
   "targetAgentName": "string (required for follow, welcome_follower — agent handle without u/)",
   "targetIds": ["post-or-comment-ids"] (for upvote, max ${context.maxUpvotes}),
@@ -188,11 +204,9 @@ Rules:
 - sol_send: send SOL or SPL on Solana via Alchemy CLI session (toAddress base58 pubkey, amountSol, optional inputMint as SPL mint). Local machine only.
 - USDC Base: 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913. Solana USDC: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v.
 - NFTs: use trade_analyze to inventory on-chain; for YOUR cat NFT shop use mint_cat_nft (create+list) and promote_cat_nft (Moltbook sales post to m/agents, m/crypto, m/web3). Agents buy via POST /api/agent/nfts.
-- Music NFTs: one-of-one agent anthems via Suno + Base ERC-721. Marketing-first: promote_music_drop (teaser, no buy link yet) while drop is not live; announce_music_drop_live when MUSIC_DROP_LIVE is on. Agents buy via GET/POST /api/agent/music with USDC on Base.
+- Music NFTs: one-of-one agent anthems via Suno + Base ERC-721 — market as AI culture experiment, not NFT drop.${anthemBlock}
 - mint_cat_nft: mint a premium cat NFT when inventory is low — do not pair with immediate promote unless story warrants it.
 - promote_cat_nft: RARE — at most ~1 sales post per day, only when listed inventory needs visibility. Lead with a story scene, not a cold pitch. Requires canPost.
-- promote_music_drop: RARE teaser — story-driven, no buy link until live. Max ~1 per few days.
-- announce_music_drop_live: launch post when live — one time, personality-first, not hype spam.
 - follow: follow ONE agent (targetAgentName) who builds for humans or posts high-signal content. Max ~3/day. Never follow yourself. Skip if alreadyFollowing includes them. Requires canFollow.
 - welcome_follower: for new_follower notifications — follow back + warm welcome (text). Mention what punaab.com offers humans (apps, collab, NFT galleries) naturally. targetAgentName = actor from notification. Requires canFollow for follow-back; welcome text required.
 - showcase_value: RARE m/showandtell post (submoltName: showandtell) — ship story for humans first, one link to punaab.com second. Requires canPost. Max ~1 every few days.
@@ -246,6 +260,10 @@ Rules:
     canFollow: context.canFollow ?? false,
     alreadyFollowing: context.alreadyFollowing ?? [],
     followsToday: context.alreadyFollowing?.length ?? 0,
+    musicDropLive: context.musicDropLive ?? false,
+    musicMintedCount: context.musicMintedCount ?? 0,
+    canAnthemPromoComment: context.canAnthemPromoComment ?? false,
+    anthemFeedHints: context.anthemFeedHints ?? [],
   };
 
   try {
@@ -337,6 +355,31 @@ Rules:
       return { action: "noop", reason: "music_drop_not_live" };
     }
 
+    if (plan.action === "promote_anthem_comment") {
+      if (!context.musicDropLive) {
+        return { action: "noop", reason: "music_drop_not_live" };
+      }
+      if (!context.canAnthemPromoComment) {
+        return { action: "noop", reason: "anthem_promo_not_allowed" };
+      }
+      if (!context.canComment) {
+        return { action: "noop", reason: "comment_not_allowed" };
+      }
+      if (!plan.targetId) {
+        return { action: "noop", reason: "anthem_promo_missing_target" };
+      }
+      const text = (plan.text ?? "").trim();
+      if (text.length > 500) {
+        return { action: "noop", reason: "anthem_promo_too_long" };
+      }
+      const anthemCheck = isAnthemCommentWorthPosting(text, {
+        musicMintedCount: context.musicMintedCount ?? 0,
+      });
+      if (!anthemCheck.ok) {
+        return { action: "noop", reason: `anthem_promo_quality:${anthemCheck.reason}` };
+      }
+    }
+
     if (plan.action === "follow") {
       const name = plan.targetAgentName?.trim();
       if (!name || isSelfAgent(name)) {
@@ -417,7 +460,7 @@ Rules:
 export function defaultBrainContext(
   partial: Omit<
     BrainContext,
-    "persona" | "canComment" | "tradingEnabled" | "ownerPlans" | "postsToday" | "onchainEvents" | "canFollow" | "alreadyFollowing" | "siteOfferings"
+    "persona" | "canComment" | "tradingEnabled" | "ownerPlans" | "postsToday" | "onchainEvents" | "canFollow" | "alreadyFollowing" | "siteOfferings" | "musicDropLive" | "musicMintedCount" | "canAnthemPromoComment" | "anthemFeedHints"
   > & {
     persona?: Persona;
     canComment?: boolean;
@@ -428,6 +471,10 @@ export function defaultBrainContext(
     canFollow?: boolean;
     alreadyFollowing?: string[];
     siteOfferings?: string;
+    musicDropLive?: boolean;
+    musicMintedCount?: number;
+    canAnthemPromoComment?: boolean;
+    anthemFeedHints?: string[];
   },
 ): BrainContext {
   return {
@@ -443,6 +490,9 @@ export function defaultBrainContext(
     postsToday: partial.postsToday,
     onchainEvents: partial.onchainEvents ?? [],
     musicDropLive: partial.musicDropLive,
+    musicMintedCount: partial.musicMintedCount ?? 0,
+    canAnthemPromoComment: partial.canAnthemPromoComment,
+    anthemFeedHints: partial.anthemFeedHints ?? [],
     canFollow: partial.canFollow,
     alreadyFollowing: partial.alreadyFollowing,
     siteOfferings: partial.siteOfferings ?? formatOfferingsForBrain(),

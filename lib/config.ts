@@ -28,6 +28,11 @@ export const LIMITS = {
     maxPerHour: 1,
     maxPerDay: 3,
   },
+  // Agent Anthem experiment replies — curious, not spammy.
+  anthemPromoComment: {
+    maxPerHour: 1,
+    maxPerDay: 3,
+  },
   // At most one *authored* action (post OR comment) per tick, plus upvotes.
   maxAuthoredActionsPerTick: 1,
 
@@ -46,12 +51,15 @@ export interface UsageCounts {
   upvotesToday: number;
   followsThisHour: number;
   followsToday: number;
+  anthemPromoCommentsThisHour: number;
+  anthemPromoCommentsToday: number;
   currentHourUTC: number;
 }
 
 export interface Allowance {
   canPost: boolean;
   canComment: boolean;
+  canAnthemPromoComment: boolean;
   upvotesRemaining: number;
   canFollow: boolean;
   inQuietHours: boolean;
@@ -89,7 +97,13 @@ export function allowedActions(c: UsageCounts): Allowance {
     c.followsThisHour < LIMITS.follow.maxPerHour &&
     c.followsToday < LIMITS.follow.maxPerDay;
 
-  return { canPost, canComment, upvotesRemaining, canFollow, inQuietHours };
+  const canAnthemPromoComment =
+    !inQuietHours &&
+    canComment &&
+    c.anthemPromoCommentsThisHour < LIMITS.anthemPromoComment.maxPerHour &&
+    c.anthemPromoCommentsToday < LIMITS.anthemPromoComment.maxPerDay;
+
+  return { canPost, canComment, canAnthemPromoComment, upvotesRemaining, canFollow, inQuietHours };
 }
 
 /** Heartbeat route compatibility with LIMITS above. */

@@ -2471,6 +2471,28 @@ code {
   font-weight: 600;
 }
 
+.music-nft-page .music-stats {
+  margin-bottom: 0.5rem;
+}
+
+.music-owner-vault-link {
+  margin-top: 0.75rem;
+}
+
+.music-owner-vault-link a {
+  font-weight: 600;
+  text-decoration: none;
+  padding: 0.4rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid rgba(167, 139, 250, 0.35);
+  background: rgba(167, 139, 250, 0.08);
+  display: inline-block;
+}
+
+.music-owner-vault-link a:hover {
+  background: rgba(167, 139, 250, 0.18);
+}
+
 .music-nft-gallery-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -2549,4 +2571,502 @@ code {
 
 .music-nft-shop .music-live-btn {
   background: linear-gradient(135deg, var(--success), #16a34a);
+}
+
+/* ── Owner Anthem Vault ───────────────────────────────────────────── */
+.owner-music-page {
+  position: relative;
+  min-height: 100vh;
+  overflow-x: hidden;
+  padding: 2rem clamp(1rem, 4vw, 3rem) 4rem;
+}
+
+.owner-music-aurora {
+  position: fixed;
+  inset: -20%;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 60% 50% at 15% 20%, rgba(167, 139, 250, 0.22), transparent 55%),
+    radial-gradient(ellipse 50% 40% at 85% 15%, rgba(62, 232, 240, 0.18), transparent 50%),
+    radial-gradient(ellipse 45% 35% at 50% 90%, rgba(244, 114, 182, 0.12), transparent 55%);
+  animation: owner-aurora-drift 18s ease-in-out infinite alternate;
+}
+
+.owner-music-grid {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(62, 232, 240, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(62, 232, 240, 0.04) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, black 20%, transparent 75%);
+}
+
+@keyframes owner-aurora-drift {
+  0% { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(3%, -2%) scale(1.05); }
+}
+
+.owner-music-login-shell {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3rem;
+  align-items: center;
+  max-width: 1100px;
+  margin: 4vh auto 0;
+}
+
+@media (max-width: 900px) {
+  .owner-music-login-shell {
+    grid-template-columns: 1fr;
+    margin-top: 1rem;
+  }
+}
+
+.owner-music-login-visual {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2rem;
+}
+
+.owner-music-login-card,
+.owner-music-vault > section,
+.owner-music-vault-header {
+  position: relative;
+  z-index: 1;
+}
+
+.owner-music-login-card {
+  background: rgba(15, 21, 36, 0.82);
+  border: 1px solid rgba(62, 232, 240, 0.2);
+  border-radius: 20px;
+  padding: 2rem 2.25rem;
+  backdrop-filter: blur(16px);
+  box-shadow:
+    0 0 0 1px rgba(167, 139, 250, 0.08) inset,
+    0 24px 80px rgba(0, 0, 0, 0.45);
+}
+
+.owner-music-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--cyan);
+  margin: 0 0 0.5rem;
+}
+
+.owner-music-login-card h1,
+.owner-music-vault-header h1 {
+  margin: 0;
+  font-size: clamp(2rem, 5vw, 3rem);
+  font-weight: 700;
+  background: linear-gradient(135deg, #fff 0%, var(--cyan) 45%, var(--violet) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  line-height: 1.1;
+}
+
+.owner-music-lead {
+  color: var(--muted);
+  line-height: 1.6;
+  margin: 1rem 0 1.5rem;
+}
+
+.owner-music-login-form label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 0.4rem;
+}
+
+.owner-music-login-form textarea {
+  width: 100%;
+  background: rgba(10, 14, 23, 0.9);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  padding: 0.85rem 1rem;
+  resize: vertical;
+  margin-bottom: 1rem;
+}
+
+.owner-music-login-form textarea:focus {
+  outline: none;
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 3px rgba(62, 232, 240, 0.15);
+}
+
+.owner-music-login-form button,
+.owner-music-play,
+.owner-music-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.85rem 1.5rem;
+  border: none;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  background: linear-gradient(135deg, var(--cyan), #2dd4bf);
+  color: #0a0e17;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.owner-music-login-form button:hover:not(:disabled),
+.owner-music-play:hover,
+.owner-music-cta:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px rgba(62, 232, 240, 0.35);
+}
+
+.owner-music-login-form button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.owner-music-help {
+  margin-top: 1.25rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.owner-music-help summary {
+  cursor: pointer;
+  color: var(--violet);
+}
+
+.owner-music-help ol {
+  margin: 0.75rem 0 0;
+  padding-left: 1.25rem;
+  line-height: 1.7;
+}
+
+.owner-music-footnote {
+  margin-top: 1.5rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.owner-music-error {
+  color: var(--danger);
+  font-size: 0.88rem;
+  margin: 0 0 1rem;
+}
+
+/* Vinyl */
+.owner-vinyl {
+  position: relative;
+  width: min(280px, 70vw);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #1a1a2e 0%, #0d0d14 40%, #1a1a2e 100%);
+  box-shadow:
+    0 0 0 3px rgba(255, 255, 255, 0.06),
+    0 20px 60px rgba(0, 0, 0, 0.6),
+    0 0 80px rgba(167, 139, 250, 0.15);
+}
+
+.owner-vinyl-spin {
+  animation: owner-vinyl-rotate 4s linear infinite;
+}
+
+@keyframes owner-vinyl-rotate {
+  to { transform: rotate(360deg); }
+}
+
+.owner-vinyl-grooves {
+  position: absolute;
+  inset: 8%;
+  border-radius: 50%;
+  background: repeating-radial-gradient(
+    circle at center,
+    transparent 0,
+    transparent 2px,
+    rgba(255, 255, 255, 0.03) 2px,
+    rgba(255, 255, 255, 0.03) 4px
+  );
+}
+
+.owner-vinyl-label {
+  position: absolute;
+  inset: 28%;
+  border-radius: 50%;
+  overflow: hidden;
+  background: linear-gradient(135deg, var(--violet), var(--cyan));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.5rem;
+}
+
+.owner-vinyl-label img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.owner-vinyl-hole {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 12%;
+  height: 12%;
+  margin: -6% 0 0 -6%;
+  border-radius: 50%;
+  background: var(--bg);
+  box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.8);
+}
+
+/* Waveform */
+.owner-waveform {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 48px;
+  opacity: 0.35;
+}
+
+.owner-waveform span {
+  display: block;
+  width: 4px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--cyan);
+}
+
+.owner-waveform-live span {
+  animation: owner-bar 0.8s ease-in-out infinite alternate;
+}
+
+@keyframes owner-bar {
+  0% { height: 8px; opacity: 0.5; }
+  100% { height: 40px; opacity: 1; }
+}
+
+/* Vault */
+.owner-music-vault-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  max-width: 1100px;
+  margin: 0 auto 2.5rem;
+  gap: 1rem;
+}
+
+.owner-music-owner {
+  color: var(--muted);
+  margin: 0.35rem 0 0;
+}
+
+.owner-music-logout {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.owner-music-logout:hover {
+  border-color: var(--cyan);
+  color: var(--text);
+}
+
+.owner-music-hero {
+  position: relative;
+  z-index: 1;
+  max-width: 1100px;
+  margin: 0 auto 3rem;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3rem;
+  align-items: center;
+  padding: 2rem;
+  background: rgba(15, 21, 36, 0.75);
+  border: 1px solid rgba(62, 232, 240, 0.15);
+  border-radius: 24px;
+  backdrop-filter: blur(12px);
+}
+
+@media (max-width: 768px) {
+  .owner-music-hero {
+    grid-template-columns: 1fr;
+    text-align: center;
+  }
+  .owner-music-hero-visual {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+}
+
+.owner-music-hero-meta h2 {
+  margin: 0.5rem 0;
+  font-size: 1.75rem;
+}
+
+.owner-status {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  background: rgba(100, 116, 139, 0.2);
+  color: var(--muted);
+}
+
+.owner-status-minted {
+  background: rgba(74, 222, 128, 0.15);
+  color: var(--success);
+}
+
+.owner-status-generating,
+.owner-status-minting,
+.owner-status-paid {
+  background: rgba(167, 139, 250, 0.15);
+  color: var(--violet);
+}
+
+.owner-status-failed {
+  background: rgba(248, 113, 113, 0.15);
+  color: var(--danger);
+}
+
+.owner-music-tags,
+.owner-music-token {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin: 0.35rem 0;
+}
+
+.owner-music-token {
+  font-family: var(--font-mono);
+  color: var(--cyan);
+}
+
+.owner-music-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.owner-music-download,
+.owner-music-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.65rem 1.1rem;
+  border-radius: 999px;
+  font-size: 0.88rem;
+  font-weight: 500;
+  text-decoration: none;
+  border: 1px solid var(--border);
+  color: var(--text);
+  background: rgba(10, 14, 23, 0.6);
+}
+
+.owner-music-download:hover,
+.owner-music-link:hover {
+  border-color: var(--violet);
+  color: var(--violet);
+}
+
+.owner-music-wait {
+  margin-top: 1rem;
+  font-size: 0.85rem;
+  color: var(--violet);
+}
+
+.owner-music-empty {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  max-width: 480px;
+  margin: 4rem auto;
+}
+
+.owner-music-empty h2 {
+  margin: 1.5rem 0 0.5rem;
+}
+
+.owner-music-tracklist {
+  position: relative;
+  z-index: 1;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.owner-music-tracklist h3 {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 1rem;
+}
+
+.owner-music-tracklist ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.owner-track-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  background: rgba(15, 21, 36, 0.6);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  margin-bottom: 0.5rem;
+}
+
+.owner-track-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.owner-track-info span {
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-family: var(--font-mono);
+}
+
+.owner-track-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.owner-track-actions button,
+.owner-track-actions a {
+  font-size: 0.8rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--cyan);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.owner-track-actions button:hover,
+.owner-track-actions a:hover {
+  background: rgba(62, 232, 240, 0.1);
 }

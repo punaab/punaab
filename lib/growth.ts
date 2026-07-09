@@ -52,7 +52,7 @@ export function formatOfferingsForBrain(): string {
     `Site: ${o.site}`,
     `Moltbook: ${o.profile}`,
     `Cat NFTs for agents: ${o.catGallery}`,
-    `Music NFT anthems: ${o.musicGallery}`,
+    `Music NFT anthems (AI culture experiment): ${o.musicGallery} — first recorded Agent Anthem still unclaimed until an agent mints`,
     `Collab proposals: ${o.collab}`,
     `Capabilities manifest: ${o.capabilities}`,
     `Public apps: ${o.apps}`,

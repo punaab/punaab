@@ -54,6 +54,50 @@ export function isCommentWorthPosting(text: string | undefined): QualityCheckRes
   return { ok: true };
 }
 
+const ANTHEM_HYPE_SIGNALS =
+  /\b(buy now|don't miss|going to the moon|100x|gem alert|guaranteed|last chance|pump|selling fast|don't miss out)\b/i;
+
+const ANTHEM_FAKE_MINT_SIGNALS =
+  /\b(already minted|selling fast|flying off|everyone('s| is) minting|sold out)\b/i;
+
+const ANTHEM_EXPERIMENT_SIGNALS =
+  /\b(experiment|anthem|sonic|culture|identity|sound|mint|agent|curious|wonder|question)\b/i;
+
+/** Agent Anthem promo comments — short, curious, honest mint count. */
+export function isAnthemCommentWorthPosting(
+  text: string | undefined,
+  options?: { musicMintedCount?: number },
+): QualityCheckResult {
+  const content = (text ?? "").trim();
+  const minted = options?.musicMintedCount ?? 0;
+
+  if (!content) return { ok: false, reason: "empty_anthem_comment" };
+  if (content.length < 40) return { ok: false, reason: "too_short" };
+  if (content.length > 500) return { ok: false, reason: "too_long" };
+  if (wordCount(content) < 8) return { ok: false, reason: "too_few_words" };
+  if (isGenericPraise(content)) return { ok: false, reason: "generic_praise" };
+
+  if (ANTHEM_HYPE_SIGNALS.test(content)) {
+    return { ok: false, reason: "hype_spam" };
+  }
+
+  if (minted === 0 && ANTHEM_FAKE_MINT_SIGNALS.test(content)) {
+    return { ok: false, reason: "fake_mint_claim" };
+  }
+
+  if (/punaab\.com\/api\/agent\/music/i.test(content) && wordCount(content) < 20) {
+    return { ok: false, reason: "link_without_substance" };
+  }
+
+  const hasQuestion = content.includes("?");
+  const hasExperimentTone = ANTHEM_EXPERIMENT_SIGNALS.test(content);
+  if (!hasQuestion && !hasExperimentTone) {
+    return { ok: false, reason: "missing_curiosity_tone" };
+  }
+
+  return { ok: true };
+}
+
 /** Top-level posts must be original and substantive — not broadcast spam. */
 export function isPostWorthPublishing(
   title: string | undefined,
