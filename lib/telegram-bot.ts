@@ -287,7 +287,13 @@ async function cmdTrades(chatId: number): Promise<void> {
   const lines = [
     `<b>📈 Trading</b>`,
     `Enabled: ${d.trading.enabled ? "yes" : "no"}`,
-    `Signer: ${d.trading.hasSigner ? "configured" : "missing (SOLANA_AGENT_PRIVATE_KEY or EVM_AGENT_PRIVATE_KEY)"}`,
+    `Signer: ${
+      d.trading.hasSigner
+        ? d.trading.signerMode === "alchemy_cli_session"
+          ? "Alchemy CLI session (local)"
+          : "private key"
+        : "missing — run alchemy wallet connect locally or set agent keys"
+    }`,
     ``,
   ];
 

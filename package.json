@@ -12,6 +12,7 @@
     "set-avatar": "tsx scripts/set-avatar.ts",
     "setup-telegram": "tsx scripts/setup-telegram.ts",
     "setup-alchemy": "tsx scripts/setup-alchemy.ts",
+    "heartbeat-local": "tsx scripts/heartbeat-local.ts",
     "deploy-music-nft": "tsx scripts/deploy-music-nft.ts"
   },
   "dependencies": {

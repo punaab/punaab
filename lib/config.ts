@@ -352,6 +352,17 @@ export function isDryRun(): boolean {
   return v === "true" || v === "1" || v === "yes";
 }
 
+/**
+ * Route trades through local `alchemy` CLI Agent Wallet session (no private keys in env).
+ * Default: enabled locally, disabled on Vercel (no CLI session on server).
+ */
+export function isAlchemyCliTradingEnabled(): boolean {
+  const v = process.env.ALCHEMY_CLI_TRADING?.trim().toLowerCase();
+  if (v === "false" || v === "0" || v === "no") return false;
+  if (v === "true" || v === "1" || v === "yes") return true;
+  return !process.env.VERCEL;
+}
+
 export const TRADING_LIMITS = {
   maxSolPerTrade: Number(process.env.TRADING_MAX_SOL_PER_TRADE ?? "0.1"),
   minSolReserve: Number(process.env.TRADING_MIN_SOL_RESERVE ?? "0.05"),

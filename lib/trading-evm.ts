@@ -24,6 +24,7 @@ import {
   getEvmAgentPrivateKey,
   getTradingBaseAddress,
   getZeroExApiKey,
+  isAlchemyCliTradingEnabled,
   isDryRun,
   isTradingEnabled,
   TRADING_LIMITS,
@@ -31,6 +32,12 @@ import {
 import { getCached } from "./alchemy-cache";
 import { countNFTsForOwner } from "./alchemy-nft-v3";
 import { appendTradeLog, canExecuteTrade, incrementTradesToday, type TradeLogEntry } from "./trading";
+import {
+  cliEvmSend,
+  cliEvmSwapExecute,
+  cliEvmSwapQuote,
+  isAlchemyCliSessionReady,
+} from "./trading-cli";
 
 const BASE_CHAIN_ID = 8453;
 const NATIVE_ETH = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE" as const;
@@ -51,7 +58,13 @@ function getEvmAccount() {
 }
 
 export function hasEvmTradeSigner(): boolean {
-  return getEvmAccount() !== null;
+  return getEvmAccount() !== null || isAlchemyCliTradingEnabled();
+}
+
+export async function hasEvmTradeSignerAsync(): Promise<boolean> {
+  if (getEvmAccount() !== null) return true;
+  if (!isAlchemyCliTradingEnabled()) return false;
+  return isAlchemyCliSessionReady();
 }
 
 function getPublicClient() {
@@ -145,11 +158,130 @@ export interface EvmSwapResult {
   log: TradeLogEntry;
 }
 
+async function executeEvmSwapViaCli(params: {
+  sellToken: string;
+  buyToken: string;
+  amountEth: number;
+  reason?: string;
+  dryRun: boolean;
+}): Promise<EvmSwapResult> {
+  if (params.dryRun) {
+    const quote = await cliEvmSwapQuote({
+      sellToken: params.sellToken,
+      buyToken: params.buyToken,
+      amount: params.amountEth,
+    });
+    const log = await appendTradeLog({
+      chain: "base",
+      action: "swap",
+      inputMint: quote.fromToken ?? params.sellToken,
+      outputMint: quote.toToken ?? params.buyToken,
+      inputAmount: String(params.amountEth),
+      outputAmount: quote.minimumOutput,
+      reason: params.reason ?? "cli_dry_run",
+      dryRun: true,
+      error: quote.ok ? undefined : quote.error,
+    });
+    return { ok: quote.ok, dryRun: true, error: quote.error, log };
+  }
+
+  const result = await cliEvmSwapExecute({
+    sellToken: params.sellToken,
+    buyToken: params.buyToken,
+    amount: params.amountEth,
+  });
+
+  const log = await appendTradeLog({
+    chain: "base",
+    action: "swap",
+    inputMint: result.fromToken ?? params.sellToken,
+    outputMint: result.toToken ?? params.buyToken,
+    inputAmount: result.fromAmount ?? String(params.amountEth),
+    signature: result.txHash,
+    reason: params.reason ?? "cli_session",
+    dryRun: false,
+    error: result.ok ? undefined : result.error,
+  });
+
+  if (result.ok) await incrementTradesToday();
+
+  return {
+    ok: result.ok,
+    dryRun: false,
+    callId: result.callId,
+    txHash: result.txHash,
+    error: result.error,
+    log,
+  };
+}
+
+async function executeEvmTransferViaCli(
+  params: EvmTransferParams & { dryRun: boolean },
+): Promise<EvmSwapResult> {
+  const amount = String(params.amountEth ?? params.tokenAmount ?? "0");
+  const result = await cliEvmSend({
+    toAddress: params.toAddress,
+    amount,
+    tokenAddress: params.tokenAddress,
+    dryRun: params.dryRun,
+  });
+
+  const log = await appendTradeLog({
+    chain: "base",
+    action: "transfer",
+    inputMint: params.tokenAddress ?? "ETH",
+    outputMint: params.toAddress,
+    inputAmount: amount,
+    signature: result.txHash,
+    reason: params.reason ?? "cli_session",
+    dryRun: params.dryRun,
+    error: result.ok ? undefined : result.error,
+  });
+
+  if (result.ok && !params.dryRun) await incrementTradesToday();
+
+  return {
+    ok: result.ok,
+    dryRun: params.dryRun,
+    callId: result.callId,
+    txHash: result.txHash,
+    error: result.error,
+    log,
+  };
+}
+
 export async function executeEvmSwap(params: EvmSwapParams): Promise<EvmSwapResult> {
   const sellToken = (params.sellToken ?? NATIVE_ETH) as string;
   const buyToken = (params.buyToken ?? USDC_BASE) as string;
   const dryRun = isDryRun();
   const account = getEvmAccount();
+
+  if (!account && isAlchemyCliTradingEnabled()) {
+    const sessionReady = await isAlchemyCliSessionReady();
+    if (sessionReady) {
+      const gate = await canExecuteTrade();
+      if (!gate.ok && !dryRun) {
+        const log = await appendTradeLog({
+          chain: "base",
+          action: "swap",
+          inputMint: sellToken,
+          outputMint: buyToken,
+          inputAmount: String(params.amountEth),
+          reason: params.reason,
+          dryRun: false,
+          error: gate.reason,
+        });
+        return { ok: false, dryRun: false, error: gate.reason, log };
+      }
+      return executeEvmSwapViaCli({
+        sellToken,
+        buyToken,
+        amountEth: params.amountEth,
+        reason: params.reason,
+        dryRun,
+      });
+    }
+  }
   const client = getWalletClient();
   const taker = getTradingBaseAddress() ?? account?.address;
 
@@ -296,7 +428,6 @@ export interface EvmTransferParams {
 
 export async function executeEvmTransfer(params: EvmTransferParams): Promise<EvmSwapResult> {
   const dryRun = isDryRun();
-  const client = getWalletClient();
   const account = getEvmAccount();
 
   if (!isAddress(params.toAddress)) {
@@ -327,6 +458,15 @@ export async function executeEvmTransfer(params: EvmTransferParams): Promise<Evm
     });
     return { ok: false, dryRun: false, error: gate.reason, log };
   }
+
+  if (!account && isAlchemyCliTradingEnabled()) {
+    const sessionReady = await isAlchemyCliSessionReady();
+    if (sessionReady) {
+      return executeEvmTransferViaCli({ ...params, dryRun });
+    }
+  }
+
+  const client = getWalletClient();
 
   if (dryRun || !client || !account) {
     const log = await appendTradeLog({

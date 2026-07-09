@@ -40,12 +40,39 @@ export async function runAlchemyCli(
     }
 
     const data = JSON.parse(stdout) as unknown;
+    const cliError = parseCliJsonError(data);
+    if (cliError) {
+      return { ok: false, error: cliError, data };
+    }
     return { ok: true, data };
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "alchemy_cli_failed";
+    const exec = error as { stdout?: string; stderr?: string; message?: string };
+    if (exec.stdout?.trim()) {
+      try {
+        const data = JSON.parse(exec.stdout) as unknown;
+        const cliError = parseCliJsonError(data);
+        if (cliError) {
+          return { ok: false, error: cliError, data };
+        }
+      } catch {
+        // fall through
+      }
+    }
+    const message = exec.message ?? "alchemy_cli_failed";
     return { ok: false, error: message };
   }
+}
+
+function parseCliJsonError(data: unknown): string | undefined {
+  if (!data || typeof data !== "object") return undefined;
+  const record = data as Record<string, unknown>;
+  const err = record.error;
+  if (typeof err === "string") return err;
+  if (err && typeof err === "object") {
+    const e = err as Record<string, unknown>;
+    if (typeof e.message === "string") return e.message;
+  }
+  return undefined;
 }
 
 export async function getAlchemyWalletStatus(): Promise<AlchemyCliResult> {

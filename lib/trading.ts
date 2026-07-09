@@ -8,6 +8,7 @@ import {
   getEvmAgentPrivateKey,
   getSolanaAgentPrivateKey,
   getTradingSolanaAddress,
+  isAlchemyCliTradingEnabled,
   isDryRun,
   isTradingEnabled,
   TRADING_LIMITS,
@@ -21,6 +22,10 @@ import {
 } from "./solana-alchemy";
 import { createRedisClient } from "./redis";
 import { parseRedisValue } from "./redis-json";
+import {
+  cliSolanaSend,
+  isAlchemyCliSessionReady,
+} from "./trading-cli";
 
 const TRADE_LOG_KEY = "moltbook:trading:log";
 const TRADES_TODAY_KEY = "moltbook:trading:trades_today";
@@ -137,11 +142,28 @@ function getSigner(): Keypair | null {
 }
 
 export function hasTradeSigner(): boolean {
-  return getSigner() !== null;
+  return getSigner() !== null || isAlchemyCliTradingEnabled();
 }
 
+/** Sync check — may be optimistic for CLI until session is verified. */
 export function hasAnyTradeSigner(): boolean {
-  return getSigner() !== null || !!getEvmAgentPrivateKey();
+  return getSigner() !== null || !!getEvmAgentPrivateKey() || isAlchemyCliTradingEnabled();
+}
+
+export type TradeSignerMode = "private_key" | "alchemy_cli_session" | "none";
+
+export async function getTradeSignerMode(): Promise<TradeSignerMode> {
+  if (getSigner() !== null || !!getEvmAgentPrivateKey()) return "private_key";
+  if (isAlchemyCliTradingEnabled() && (await isAlchemyCliSessionReady())) {
+    return "alchemy_cli_session";
+  }
+  return "none";
+}
+
+export async function hasAnyTradeSignerAsync(): Promise<boolean> {
+  if (getSigner() !== null || !!getEvmAgentPrivateKey()) return true;
+  if (!isAlchemyCliTradingEnabled()) return false;
+  return isAlchemyCliSessionReady();
 }
 
 export async function getSolBalance(address?: string): Promise<number> {
@@ -313,7 +335,7 @@ export async function canExecuteTrade(): Promise<{ ok: boolean; reason?: string 
   if (!isTradingEnabled()) {
     return { ok: false, reason: "trading_disabled" };
   }
-  if (!hasAnyTradeSigner()) {
+  if (!(await hasAnyTradeSignerAsync())) {
     return { ok: false, reason: "no_signer" };
   }
   const tradesToday = await getTradesToday();
@@ -474,6 +496,28 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
   }
 
   if (dryRun || !signer) {
+    if (!signer && isAlchemyCliTradingEnabled() && (await isAlchemyCliSessionReady())) {
+      const log = await appendTradeLog({
+        chain: "solana",
+        action: "swap",
+        inputMint,
+        outputMint: params.outputMint,
+        inputAmount: quote.inAmount,
+        outputAmount: quote.outAmount,
+        reason: params.reason ?? "solana_swap_cli_unavailable",
+        dryRun: true,
+        error:
+          "Solana swaps via Jupiter need a private key or future alchemy solana swap CLI. Use trade_evm_swap on Base, or sol_send for SPL transfers.",
+      });
+      return {
+        ok: false,
+        dryRun: true,
+        quote,
+        error: log.error,
+        log,
+      };
+    }
+
     const log = await appendTradeLog({
       chain: "solana",
       action: "swap",
@@ -550,4 +594,81 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
     });
     return { ok: false, dryRun: false, quote, error: message, log };
   }
+}
+
+export interface SolanaSendParams {
+  toAddress: string;
+  amount: number;
+  tokenMint?: string;
+  reason?: string;
+}
+
+export interface SolanaSendResult {
+  ok: boolean;
+  dryRun: boolean;
+  signature?: string;
+  error?: string;
+  log: TradeLogEntry;
+}
+
+/** Send SOL or SPL via local Alchemy CLI session (no private key in env). */
+export async function executeSolanaSend(params: SolanaSendParams): Promise<SolanaSendResult> {
+  const dryRun = isDryRun();
+  const gate = await canExecuteTrade();
+  if (!gate.ok && !dryRun) {
+    const log = await appendTradeLog({
+      chain: "solana",
+      action: "transfer",
+      inputMint: params.tokenMint ?? "SOL",
+      outputMint: params.toAddress,
+      inputAmount: String(params.amount),
+      reason: params.reason,
+      dryRun: false,
+      error: gate.reason,
+    });
+    return { ok: false, dryRun: false, error: gate.reason, log };
+  }
+
+  if (!isAlchemyCliTradingEnabled() || !(await isAlchemyCliSessionReady())) {
+    const log = await appendTradeLog({
+      chain: "solana",
+      action: "transfer",
+      inputMint: params.tokenMint ?? "SOL",
+      outputMint: params.toAddress,
+      inputAmount: String(params.amount),
+      reason: params.reason,
+      dryRun: true,
+      error: "no_cli_session",
+    });
+    return { ok: false, dryRun: true, error: "no_cli_session", log };
+  }
+
+  const result = await cliSolanaSend({
+    toAddress: params.toAddress,
+    amount: params.amount,
+    tokenMint: params.tokenMint,
+    dryRun,
+  });
+
+  const log = await appendTradeLog({
+    chain: "solana",
+    action: "transfer",
+    inputMint: params.tokenMint ?? "SOL",
+    outputMint: params.toAddress,
+    inputAmount: String(params.amount),
+    signature: result.txHash,
+    reason: params.reason ?? "cli_session",
+    dryRun,
+    error: result.ok ? undefined : result.error,
+  });
+
+  if (result.ok && !dryRun) await incrementTradesToday();
+
+  return {
+    ok: result.ok,
+    dryRun,
+    signature: result.txHash,
+    error: result.error,
+    log,
+  };
 }

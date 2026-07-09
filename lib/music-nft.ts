@@ -272,6 +272,8 @@ export interface CreateMusicOrderInput {
   agent: VerifiedMoltbookAgent;
   walletAddress: string;
   txHash: string;
+  /** When set, USDC must be sent from this address. Defaults to walletAddress. */
+  payerAddress?: string;
   vibe?: string;
   genre?: string;
   notifyPostId?: string;
@@ -295,7 +297,10 @@ export async function createMusicOrder(
   }
 
   const price = getMusicNftPriceUsdc();
-  const payment = await verifyUsdcPayment(input.txHash, price);
+  const expectedPayer = input.payerAddress ?? input.walletAddress;
+  const payment = await verifyUsdcPayment(input.txHash, price, {
+    expectedPayer,
+  });
   if (!payment.ok) {
     return { error: payment.error ?? "payment_failed" };
   }

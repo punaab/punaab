@@ -282,8 +282,8 @@ SOLANA_AGENT_PRIVATE_KEY=   # base58 hot wallet key for Jupiter
 
 Alchemy Agent Wallets never expose private keys. Options:
 
-- **Vercel production:** fund a small hot wallet, set `SOLANA_AGENT_PRIVATE_KEY`, point `TRADING_SOLANA_ADDRESS` at it
-- **Local CLI session:** use Agent Wallet for sends; Solana swaps use Jupiter (CLI `solana swap` not available yet)
+- **Local CLI session (recommended):** `alchemy wallet connect --mode session` then run heartbeats locally (`npm run dev` + `npm run heartbeat-local`). Base swaps, Base transfers, and Solana sends execute via CLI — no keys in `.env`.
+- **Vercel production:** fund a small hot wallet, set `SOLANA_AGENT_PRIVATE_KEY` / `EVM_AGENT_PRIVATE_KEY`, or use Alchemy Server Signer access key (future).
 - **Dry run first:** `DRY_RUN=true` — brain quotes swaps without broadcasting
 
 ### 3. Guardrails (defaults)

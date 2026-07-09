@@ -14,7 +14,7 @@ import {
   getTickLog,
 } from "./owner-state";
 import { getWeb3Snapshot } from "./web3-monitor";
-import { getTradeLog, hasAnyTradeSigner } from "./trading";
+import { getTradeLog, getTradeSignerMode, hasAnyTradeSignerAsync } from "./trading";
 import { getRecentAlchemyEvents } from "./alchemy-events";
 import { buildWeb3Hub, type Web3Hub } from "./web3-dashboard";
 import { loadCampaignForDashboard, type Campaign } from "./campaign";
@@ -51,6 +51,7 @@ export interface OwnerDashboard {
   trading: {
     enabled: boolean;
     hasSigner: boolean;
+    signerMode: Awaited<ReturnType<typeof getTradeSignerMode>>;
     log: Awaited<ReturnType<typeof getTradeLog>>;
   };
   onchainEvents: Awaited<ReturnType<typeof getRecentAlchemyEvents>>;
@@ -89,6 +90,8 @@ export async function getOwnerDashboard(): Promise<OwnerDashboard> {
     catNftCatalog,
     catNftStats,
     musicNftShop,
+    tradeSignerMode,
+    tradeHasSigner,
   ] = await Promise.all([
     getCurrentThought(),
     getPlans(),
@@ -108,6 +111,8 @@ export async function getOwnerDashboard(): Promise<OwnerDashboard> {
     getCatNftCatalog(),
     getCatNftShopStats(),
     fetchMusicShopForDashboard(),
+    getTradeSignerMode(),
+    hasAnyTradeSignerAsync(),
   ]);
 
   const campaign = campaignLoad.campaign;
@@ -151,7 +156,8 @@ export async function getOwnerDashboard(): Promise<OwnerDashboard> {
     web3,
     trading: {
       enabled: isTradingEnabled(),
-      hasSigner: hasAnyTradeSigner(),
+      hasSigner: tradeHasSigner,
+      signerMode: tradeSignerMode,
       log: tradeLog,
     },
     onchainEvents,
@@ -160,7 +166,7 @@ export async function getOwnerDashboard(): Promise<OwnerDashboard> {
       onchainEvents,
       trading: {
         enabled: isTradingEnabled(),
-        hasSigner: hasAnyTradeSigner(),
+        hasSigner: tradeHasSigner,
         log: tradeLog,
       },
       activity,

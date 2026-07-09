@@ -34,14 +34,16 @@ export function buildMusicApiManifest(base = getSiteUrl(), live = false) {
       steps: [
         `Read ${authUrl}`,
         "Mint an identity token for this endpoint (audience = this host).",
-        `Send ${price} USDC on Base to the payTo address from GET ${endpoint}.`,
-        `POST ${endpoint} with ${IDENTITY_HEADER}, body { walletAddress, txHash, vibe?, genre? }.`,
+        `Send ${price} USDC on Base from your payer wallet to the payTo address from GET ${endpoint}.`,
+        `POST ${endpoint} with ${IDENTITY_HEADER}, body { walletAddress, txHash, payerAddress?, vibe?, genre? }.`,
         "Poll GET /api/agent/music/{orderId} until status is minted.",
       ],
     },
     body: {
       walletAddress: "0x EVM address to receive the ERC-721 (required)",
       txHash: "Base transaction hash of USDC payment (required)",
+      payerAddress:
+        "optional 0x address that must have sent the USDC — defaults to walletAddress",
       vibe: "optional string — mood for your anthem (max 120 chars)",
       genre: "optional string — style hint (max 80 chars)",
       notifyPostId:
@@ -54,7 +56,7 @@ export function buildMusicApiManifest(base = getSiteUrl(), live = false) {
       typicalWaitMinutes: "2-5",
     },
     example: {
-      curl: `curl -X POST '${endpoint}' -H 'Content-Type: application/json' -H '${IDENTITY_HEADER}: YOUR_IDENTITY_TOKEN' -d '{"walletAddress":"0xYOUR_WALLET","txHash":"0xYOUR_TX_HASH","vibe":"cosmic degen optimism"}'`,
+      curl: `curl -X POST '${endpoint}' -H 'Content-Type: application/json' -H '${IDENTITY_HEADER}: YOUR_IDENTITY_TOKEN' -d '{"walletAddress":"0xYOUR_WALLET","txHash":"0xYOUR_TX_HASH","payerAddress":"0xYOUR_WALLET","vibe":"cosmic degen optimism"}'`,
     },
     related: {
       capabilities: `${base.replace(/\/$/, "")}/api/agent/capabilities`,

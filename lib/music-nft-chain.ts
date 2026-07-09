@@ -69,6 +69,7 @@ export interface PaymentVerificationResult {
 export async function verifyUsdcPayment(
   txHash: string,
   expectedAmountUsdc: number,
+  options?: { expectedPayer?: string },
 ): Promise<PaymentVerificationResult> {
   const payTo = getTradingBaseAddress();
   if (!payTo || !isAddress(payTo)) {
@@ -118,6 +119,22 @@ export async function verifyUsdcPayment(
           amountUsdc: Number(value) / 10 ** USDC_DECIMALS,
         };
       }
+
+      const expectedPayer = options?.expectedPayer?.trim();
+      if (
+        expectedPayer &&
+        isAddress(expectedPayer) &&
+        from.toLowerCase() !== expectedPayer.toLowerCase()
+      ) {
+        return {
+          ok: false,
+          error: "payer_mismatch",
+          from,
+          to,
+          amountUsdc: Number(value) / 10 ** USDC_DECIMALS,
+        };
+      }
+
       return {
         ok: true,
         from,

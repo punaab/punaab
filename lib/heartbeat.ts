@@ -44,6 +44,7 @@ import {
 import {
   analyzeTradingOpportunity,
   executeSwap,
+  executeSolanaSend,
   MINT_USDC,
 } from "@/lib/trading";
 import { getRecentAlchemyEvents } from "@/lib/alchemy-events";
@@ -893,6 +894,45 @@ export async function runHeartbeatTick(
           }
         } catch (error) {
           const message = formatError("evm_transfer", error);
+          summary.errors.push(message);
+          console.error(message);
+        }
+        break;
+      }
+
+      case "sol_send": {
+        try {
+          if (!plan.toAddress) {
+            summary.errors.push("sol_send_missing_to_address");
+            break;
+          }
+          const result = await executeSolanaSend({
+            toAddress: plan.toAddress,
+            amount: plan.amountSol ?? 0.01,
+            tokenMint: plan.inputMint,
+            reason: plan.reason,
+          });
+
+          if (result.ok) {
+            const msg = result.dryRun
+              ? `Solana send dry-run → ${plan.toAddress}`
+              : `Solana send confirmed: ${result.signature}`;
+            await setCurrentThought(msg);
+            summary.executed.push(
+              result.dryRun ? "sol_send_dry_run" : `sol_send:${result.signature}`,
+            );
+            await appendActivity({
+              action: "sol_send",
+              summary: result.dryRun ? "Solana send (dry run)" : `Send ${result.signature?.slice(0, 12)}…`,
+              content: msg,
+              reason: plan.reason,
+            });
+          } else {
+            summary.errors.push(result.error ?? "sol_send_failed");
+            summary.executed.push("sol_send_failed");
+          }
+        } catch (error) {
+          const message = formatError("sol_send", error);
           summary.errors.push(message);
           console.error(message);
         }

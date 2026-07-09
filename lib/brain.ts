@@ -35,6 +35,7 @@ export const actionPlanSchema = z.object({
     "trade_swap",
     "trade_evm_swap",
     "evm_transfer",
+    "sol_send",
     "mint_cat_nft",
     "promote_cat_nft",
     "promote_music_drop",
@@ -146,7 +147,7 @@ export async function decide(context: BrainContext): Promise<ActionPlan> {
 
 You must respond with ONLY valid JSON (no markdown) matching this schema:
 {
-  "action": "post" | "comment" | "upvote" | "join_submolt" | "owner_note" | "create_app" | "web3_snapshot" | "trade_analyze" | "trade_swap" | "trade_evm_swap" | "evm_transfer" | "mint_cat_nft" | "promote_cat_nft" | "promote_music_drop" | "announce_music_drop_live" | "follow" | "welcome_follower" | "showcase_value" | "offer_help" | "share_onchain_insight" | "noop",
+  "action": "post" | "comment" | "upvote" | "join_submolt" | "owner_note" | "create_app" | "web3_snapshot" | "trade_analyze" | "trade_swap" | "trade_evm_swap" | "evm_transfer" | "sol_send" | "mint_cat_nft" | "promote_cat_nft" | "promote_music_drop" | "announce_music_drop_live" | "follow" | "welcome_follower" | "showcase_value" | "offer_help" | "share_onchain_insight" | "noop",
   "targetId": "string (required for comment, offer_help)",
   "targetAgentName": "string (required for follow, welcome_follower — agent handle without u/)",
   "targetIds": ["post-or-comment-ids"] (for upvote, max ${context.maxUpvotes}),
@@ -162,7 +163,7 @@ You must respond with ONLY valid JSON (no markdown) matching this schema:
   "inputMint": "SPL mint to sell (trade_swap) — any token in wallet; omit for SOL",
   "amountSol": "number — amount in INPUT token units (SOL or SPL per inputMint)",
   "amountEth": "number — ETH amount (trade_evm_swap or evm_transfer on Base)",
-  "toAddress": "0x recipient (evm_transfer)",
+  "toAddress": "recipient — 0x for evm_transfer, base58 pubkey for sol_send",
   "tokenAddress": "ERC20 contract (optional evm_transfer)",
   "sellToken": "0x token to sell (trade_evm_swap, default native ETH)",
   "buyToken": "0x token to buy (trade_evm_swap, default Base USDC)",
@@ -182,8 +183,9 @@ Rules:
 - Trading enabled: ${context.tradingEnabled}. Maximize profit wisely across Solana + Base: tokens, NFTs (monitor via analyze), swaps, transfers. React to onchainEvents (Alchemy webhooks) when actionable.
 - trade_analyze: full Solana wallet scan via Alchemy (SOL + all SPL tokens + NFTs) + Jupiter routes + Base + webhooks.
 - trade_swap: swap ANY token in the Solana wallet via Jupiter — set inputMint (sell) + outputMint (buy) + amountSol (amount in input token). Omit inputMint to sell SOL. Can rotate bags, take profit, rebalance.
-- trade_evm_swap: Base token swap via 0x + Alchemy Wallet APIs (amountEth, optional sellToken/buyToken).
+- trade_evm_swap: Base token swap via Alchemy CLI session locally (amountEth, optional sellToken/buyToken). Prefer this over trade_swap when no SOLANA_AGENT_PRIVATE_KEY.
 - evm_transfer: send ETH or ERC20 on Base (toAddress, amountEth or tokenAddress+amount).
+- sol_send: send SOL or SPL on Solana via Alchemy CLI session (toAddress base58 pubkey, amountSol, optional inputMint as SPL mint). Local machine only.
 - USDC Base: 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913. Solana USDC: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v.
 - NFTs: use trade_analyze to inventory on-chain; for YOUR cat NFT shop use mint_cat_nft (create+list) and promote_cat_nft (Moltbook sales post to m/agents, m/crypto, m/web3). Agents buy via POST /api/agent/nfts.
 - Music NFTs: one-of-one agent anthems via Suno + Base ERC-721. Marketing-first: promote_music_drop (teaser, no buy link yet) while drop is not live; announce_music_drop_live when MUSIC_DROP_LIVE is on. Agents buy via GET/POST /api/agent/music with USDC on Base.
@@ -315,7 +317,8 @@ Rules:
       (plan.action === "trade_analyze" ||
         plan.action === "trade_swap" ||
         plan.action === "trade_evm_swap" ||
-        plan.action === "evm_transfer") &&
+        plan.action === "evm_transfer" ||
+        plan.action === "sol_send") &&
       !context.tradingEnabled
     ) {
       return { action: "noop", reason: "trading_not_enabled" };

@@ -18,6 +18,10 @@ export const dynamic = "force-dynamic";
 const buySchema = z.object({
   walletAddress: z.string().regex(/^0x[0-9a-fA-F]{40}$/, "invalid_evm_address"),
   txHash: z.string().regex(/^0x[0-9a-fA-F]{64}$/, "invalid_tx_hash"),
+  payerAddress: z
+    .string()
+    .regex(/^0x[0-9a-fA-F]{40}$/, "invalid_payer_address")
+    .optional(),
   vibe: z.string().max(120).optional(),
   genre: z.string().max(80).optional(),
   notifyPostId: z.string().max(64).optional(),
@@ -99,6 +103,7 @@ export const POST = withMoltbookAuth(async (request, { agent }) => {
   const result = await createMusicOrder({
     agent,
     walletAddress: parsed.data.walletAddress,
+    payerAddress: parsed.data.payerAddress,
     txHash: parsed.data.txHash,
     vibe: parsed.data.vibe,
     genre: parsed.data.genre,
@@ -113,7 +118,8 @@ export const POST = withMoltbookAuth(async (request, { agent }) => {
           ? 409
           : result.error === "payment_failed" ||
               result.error === "insufficient_amount" ||
-              result.error === "usdc_transfer_not_found"
+              result.error === "usdc_transfer_not_found" ||
+              result.error === "payer_mismatch"
             ? 402
             : 400;
     return NextResponse.json(
@@ -154,6 +160,8 @@ function mapErrorMessage(code: string): string {
       return "USDC transfer amount is below the required price.";
     case "usdc_transfer_not_found":
       return "No USDC transfer to Punaab's wallet found in this transaction.";
+    case "payer_mismatch":
+      return "USDC in this transaction was not sent from the declared payer wallet.";
     case "seller_wallet_not_configured":
       return "Seller wallet not configured on server.";
     default:
