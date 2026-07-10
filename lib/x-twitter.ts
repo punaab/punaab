@@ -75,7 +75,7 @@ export function formatMoltbookForX(params: {
   kind?: "post" | "comment";
 }): string {
   const title = (params.title ?? "").replace(/\s+/g, " ").trim();
-  let body = (params.content ?? "")
+  const body = (params.content ?? "")
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/`([^`]+)`/g, "$1")
     .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
