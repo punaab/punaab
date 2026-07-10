@@ -1,7 +1,19 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
   "buildCommand": "npm run build",
   "installCommand": "npm install",
+  "regions": ["sin1"],
+  "functions": {
+    "app/api/cron/prediction/route.ts": {
+      "maxDuration": 120,
+      "regions": ["sin1"]
+    },
+    "app/api/admin/prediction-tick/route.ts": {
+      "maxDuration": 120,
+      "regions": ["sin1"]
+    }
+  },
   "crons": [
     {
       "path": "/api/cron/heartbeat",

@@ -55,6 +55,21 @@ export function isPredictionGeoBlockResponse(
   return false;
 }
 
+/** Process-local latch — stops /orders spam even if Redis is down. */
+let processGeoBlockedUntil = 0;
+
+export function noteProcessGeoBlocked(ttlMs = 6 * 3600 * 1000): void {
+  processGeoBlockedUntil = Math.max(processGeoBlockedUntil, Date.now() + ttlMs);
+}
+
+export function isProcessGeoBlocked(): boolean {
+  return Date.now() < processGeoBlockedUntil;
+}
+
+export function clearProcessGeoBlocked(): void {
+  processGeoBlockedUntil = 0;
+}
+
 function apiKey(): string {
   const key = getJupiterApiKey();
   if (!key) {
@@ -144,6 +159,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
     // Region blocks won't succeed on retry — fail fast
     if (geoBlocked) {
+      noteProcessGeoBlocked();
       throw lastError;
     }
 
@@ -519,6 +535,14 @@ export interface CreateOrderResult {
 export async function createOrder(
   params: CreateOrderParams,
 ): Promise<CreateOrderResult> {
+  if (isProcessGeoBlocked()) {
+    throw new PredictionApiError(
+      "Prediction API /orders skipped: geo_blocked (US/KR IP — use non-US egress / Vercel sin1)",
+      400,
+      true,
+    );
+  }
+
   const body: Record<string, unknown> = {
     ownerPubkey: params.ownerPubkey,
     marketId: params.marketId,

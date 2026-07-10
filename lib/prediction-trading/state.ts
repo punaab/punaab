@@ -252,6 +252,8 @@ export async function markPredictionGeoBlocked(
   reason = "unsupported_region",
 ): Promise<void> {
   try {
+    const { noteProcessGeoBlocked } = await import("./client");
+    noteProcessGeoBlocked();
     await getRedis().set(GEO_BLOCKED_KEY, "1", {
       ex: GEO_BLOCKED_TTL_SEC,
     });
@@ -265,6 +267,8 @@ export async function markPredictionGeoBlocked(
 
 export async function clearPredictionGeoBlocked(): Promise<void> {
   try {
+    const { clearProcessGeoBlocked } = await import("./client");
+    clearProcessGeoBlocked();
     await getRedis().del(GEO_BLOCKED_KEY);
   } catch (error) {
     console.error("[prediction-state] clearPredictionGeoBlocked:", error);

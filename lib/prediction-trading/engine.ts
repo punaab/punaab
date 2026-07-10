@@ -1,5 +1,12 @@
 import { getTradingSolanaAddress, isDryRun, PREDICTION_TRADING_LIMITS } from "../config";
-import { checkPredictionApiAccess, forecastDownMarketId, forecastUpMarketId, getPositions } from "./client";
+import {
+  checkPredictionApiAccess,
+  forecastDownMarketId,
+  forecastUpMarketId,
+  getPositions,
+  isProcessGeoBlocked,
+  clearProcessGeoBlocked,
+} from "./client";
 import { claimPosition, executeBuySignal, executeSellPosition } from "./executor";
 import {
   canRunPredictionTrading,
@@ -77,12 +84,13 @@ export async function runPredictionTick(): Promise<PredictionTickSummary> {
   }
 
   // Jupiter blocks US/KR IPs on /orders — don't spam buys from a blocked egress
-  const geoCached = await isPredictionGeoBlockedCached();
+  const geoCached =
+    (await isPredictionGeoBlockedCached()) || isProcessGeoBlocked();
   if (geoCached && !isDryRun()) {
     summary.ok = false;
     summary.geoBlocked = true;
     summary.errors.push(
-      "geo_blocked: Jupiter Prediction unavailable from this IP (US/KR). Run trader from a non-US region or wait for cache TTL.",
+      "geo_blocked: Jupiter Prediction unavailable from this IP (US/KR). Stop local trader; rely on Vercel sin1 cron, or use a non-US VPN/VPS.",
     );
     // Still scan for radar, but skip live orders below
   }
@@ -334,6 +342,7 @@ export async function runPredictionTick(): Promise<PredictionTickSummary> {
 
       // Successful live order proves egress is allowed
       await clearPredictionGeoBlocked().catch(() => undefined);
+      clearProcessGeoBlocked();
 
       let leg = ctx.legs.get(signal.marketId);
       if (signal.strategy === "rotation") {
