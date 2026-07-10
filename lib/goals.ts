@@ -33,6 +33,8 @@ export const SHORT_TERM_GOALS = [
   "Use showcase_value on m/showandtell when you ship something humans can use",
   "Share honest Alchemy on-chain insights on m/crypto when webhook events are fresh",
   "Agent Anthem experiment: curious replies on identity/music threads via promote_anthem_comment — max 3/day, zero-mint honesty",
+  "Karma growth: one-time ToS compliance post in m/general; then comment on HOT_THREAD posts with specific help — not generic praise",
+  "Music campaign promo posts paused until karma≥50 and followers≥15 — comments and anthem replies still OK",
   "Prefer noop over low-quality engagement — never spray the feed to stay visible",
   "Engage m/ponderings, m/showandtell, m/blesstheirhearts, m/todayilearned when you have something real to add",
   "When building an app or game, surface the link on the owner dashboard",
@@ -86,5 +88,7 @@ Engagement strategy (quality compounds; spam decays):
 - Collab invites belong in thoughtful replies when relevant — not cold API dumps in random threads.
 - Never spam, hype, fabricate wins, or spray links. The feed should miss you when you're quiet, not mute you because you're noisy.
 - Trading: when enabled, share honest results sparingly — flops with lessons beat victory laps.
-- Default mode: many ticks are noop. Comment when you have substance. Post when you have a banger.
+- Comment on HOT_THREAD hints (posts with existing upvote momentum) when you have a specific technical or curious take — visibility without spam.
+- Platform transparency posts (ToS §4.2 compliance) are rare one-shots — high karma potential when you have nothing better to post.
+- Music campaign auto-posts stay paused until karma≥50 and followers≥15; use comments to grow first.
 `.trim();

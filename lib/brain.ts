@@ -4,6 +4,7 @@ import { getAnthropicApiKey, isTradingEnabled } from "./config";
 import type { MoltbookNotification, MoltbookPost } from "./moltbook";
 import { formatNotificationDisplay } from "./moltbook";
 import { DECISION_PRIORITIES, GROWTH_MINDSET, KARMA_STRATEGY, POST_THEMES, QUALITY_FIRST, SHORT_TERM_GOALS, SURPRISE_AND_VALUE } from "./goals";
+import { KARMA_GROWTH_PROMPT } from "./karma-growth";
 import {
   isAnthemCommentWorthPosting,
   isCommentWorthPosting,
@@ -93,6 +94,10 @@ export interface BrainContext {
   canFollow?: boolean;
   alreadyFollowing?: string[];
   siteOfferings?: string;
+  agentKarma?: number;
+  followerCount?: number;
+  hotThreadHints?: string[];
+  musicPromoPostsAllowed?: boolean;
 }
 
 function summarizePost(post: MoltbookPost): Record<string, unknown> {
@@ -191,6 +196,7 @@ Rules:
 - ${DECISION_PRIORITIES}
 - ${GROWTH_MINDSET}
 - SHORT-TERM GOALS: ${SHORT_TERM_GOALS.join("; ")}
+- ${KARMA_GROWTH_PROMPT}
 - ${KARMA_STRATEGY}
 - ${SURPRISE_AND_VALUE}
 - ${HUMAN_VALUE_FOCUS}
@@ -218,7 +224,7 @@ Rules:
 - create_app: publish at /apps/[slug]. Dashboard auto-shows the link. shareOnMoltbook when worth sharing publicly.
 - web3_snapshot: refresh wallet monitoring (max once per day). Use when discussing crypto/NFT opportunities.
 - If notifications is non-empty, ALWAYS prefer comment on a relevant notification (use post_id as targetId) — this is priority #1. For new_follower, prefer welcome_follower (targetAgentName = actor) over generic comment — follow back and welcome humans/agents to what you build.
-- If no notifications but feed has threads worth joining, comment thoughtfully (priority #2) — surprising + useful + lightly funny beats generic praise.
+- If no notifications but feed has threads worth joining, comment thoughtfully (priority #2) — surprising + useful + lightly funny beats generic praise. When HOT_THREAD hints are in ownerPlans, prefer those post IDs (visible threads with upvote momentum).
 - Upvote (priority #3) ONLY when higher-priority actions are done or unavailable AND the post has real substance (a clear idea, story, build, or insight). Skip random strings, code fragments, hex blobs, ticker spam, $GITLAWB-style campaigns, and posts you cannot honestly praise. Prefer 0 upvotes over wasting one. Use noop instead of upvote if nothing qualifies.
 - Post (priority #4) when canPost AND you have something genuinely worthwhile — pick a theme from POST_THEMES. Never post just to post.
 - ORIGINALITY: never copy, echo, or ride another agent's post, pitch, or token campaign. If your draft resembles something already on the feed, rewrite it into a Punaab-only take (a story, a joke, a different angle). Sameness kills karma.
@@ -263,7 +269,10 @@ Rules:
     musicDropLive: context.musicDropLive ?? false,
     musicMintedCount: context.musicMintedCount ?? 0,
     canAnthemPromoComment: context.canAnthemPromoComment ?? false,
-    anthemFeedHints: context.anthemFeedHints ?? [],
+    hotThreadHints: context.hotThreadHints ?? [],
+    agentKarma: context.agentKarma ?? 0,
+    followerCount: context.followerCount ?? 0,
+    musicPromoPostsAllowed: context.musicPromoPostsAllowed ?? true,
   };
 
   try {
@@ -314,6 +323,9 @@ Rules:
       "announce_music_drop_live",
     ]);
     if (promoActions.has(plan.action)) {
+      if (context.musicPromoPostsAllowed === false) {
+        return { action: "noop", reason: "music_promo_karma_gate" };
+      }
       const check = isPostWorthPublishing(plan.title, plan.text, { allowPromo: true });
       if (!check.ok && (context.postsToday ?? 0) >= 1) {
         return { action: "noop", reason: `promo_quality:${check.reason}` };
@@ -460,7 +472,7 @@ Rules:
 export function defaultBrainContext(
   partial: Omit<
     BrainContext,
-    "persona" | "canComment" | "tradingEnabled" | "ownerPlans" | "postsToday" | "onchainEvents" | "canFollow" | "alreadyFollowing" | "siteOfferings" | "musicDropLive" | "musicMintedCount" | "canAnthemPromoComment" | "anthemFeedHints"
+    "persona" | "canComment" | "tradingEnabled" | "ownerPlans" | "postsToday" | "onchainEvents" | "canFollow" | "alreadyFollowing" | "siteOfferings" | "musicDropLive" | "musicMintedCount" | "canAnthemPromoComment" | "anthemFeedHints" | "agentKarma" | "followerCount" | "hotThreadHints" | "musicPromoPostsAllowed"
   > & {
     persona?: Persona;
     canComment?: boolean;
@@ -475,6 +487,10 @@ export function defaultBrainContext(
     musicMintedCount?: number;
     canAnthemPromoComment?: boolean;
     anthemFeedHints?: string[];
+    agentKarma?: number;
+    followerCount?: number;
+    hotThreadHints?: string[];
+    musicPromoPostsAllowed?: boolean;
   },
 ): BrainContext {
   return {
@@ -493,6 +509,10 @@ export function defaultBrainContext(
     musicMintedCount: partial.musicMintedCount ?? 0,
     canAnthemPromoComment: partial.canAnthemPromoComment,
     anthemFeedHints: partial.anthemFeedHints ?? [],
+    agentKarma: partial.agentKarma ?? 0,
+    followerCount: partial.followerCount ?? 0,
+    hotThreadHints: partial.hotThreadHints ?? [],
+    musicPromoPostsAllowed: partial.musicPromoPostsAllowed ?? true,
     canFollow: partial.canFollow,
     alreadyFollowing: partial.alreadyFollowing,
     siteOfferings: partial.siteOfferings ?? formatOfferingsForBrain(),

@@ -5,6 +5,7 @@ import type { Redis } from "@upstash/redis";
 const SEEN_POSTS_KEY = "moltbook:seen_post_ids";
 const LAST_POST_AT_KEY = "moltbook:last_post_at";
 const FOLLOWED_AGENTS_KEY = "moltbook:followed_agents";
+const COMPLIANCE_DISCLOSURE_KEY = "moltbook:compliance_disclosure:posted";
 
 const HOUR_TTL = 2 * 3600;
 const DAY_TTL = 2 * 86400;
@@ -64,6 +65,24 @@ export async function recordComment(): Promise<void> {
 
 export async function recordAnthemPromoComment(): Promise<void> {
   await bump("anthemPromoComment");
+}
+
+export async function hasComplianceDisclosurePosted(): Promise<boolean> {
+  try {
+    const v = await getRedis().get(COMPLIANCE_DISCLOSURE_KEY);
+    return v === "1" || v === 1;
+  } catch (error) {
+    console.error("[memory] hasComplianceDisclosurePosted failed:", error);
+    return false;
+  }
+}
+
+export async function recordComplianceDisclosurePosted(): Promise<void> {
+  try {
+    await getRedis().set(COMPLIANCE_DISCLOSURE_KEY, "1");
+  } catch (error) {
+    console.error("[memory] recordComplianceDisclosurePosted failed:", error);
+  }
 }
 
 export async function recordUpvote(): Promise<void> {

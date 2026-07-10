@@ -5,9 +5,11 @@ import {
   getSeenPostIds,
   getUsageCounts,
   getFollowedAgents,
+  hasComplianceDisclosurePosted,
   isAgentFollowed,
   recordAnthemPromoComment,
   recordComment,
+  recordComplianceDisclosurePosted,
   recordFollow,
   recordPost,
   recordSeenPostIds,
@@ -78,6 +80,13 @@ import { executeEvmSwap, executeEvmTransfer } from "@/lib/trading-evm";
 import { isTradingEnabled } from "@/lib/config";
 import { DEFAULT_SUBMOLT, SUBMOLTS_TO_EXPLORE } from "@/lib/persona";
 import { ensureSubmoltsJoined, submoltEngagementHint } from "@/lib/submolt-membership";
+import {
+  buildHotThreadHints,
+  formatComplianceDisclosurePost,
+  formatMusicCampaignBlockedHint,
+  mergeFeedsForBrain,
+  musicCampaignAllowed,
+} from "@/lib/karma-growth";
 
 export interface TickSummary {
   ok: boolean;
@@ -194,6 +203,81 @@ export async function runHeartbeatTick(
     const contextPosts =
       unseenPosts.length > 0 ? unseenPosts : feedPosts;
 
+    let risingPosts: MoltbookPost[] = [];
+    try {
+      const rising = await client.getFeed({ sort: "rising", limit: 15 });
+      risingPosts = rising.posts;
+    } catch (error) {
+      console.warn("[heartbeat] getFeed rising:", error);
+    }
+
+    const feedForBrain = mergeFeedsForBrain(contextPosts, risingPosts);
+    const hotThreadHints = buildHotThreadHints(feedForBrain);
+
+    let agentKarma = 0;
+    let followerCount = 0;
+    try {
+      const me = await client.getMe();
+      const profile = me.profile as Record<string, unknown>;
+      agentKarma = typeof profile.karma === "number" ? profile.karma : Number(profile.karma) || 0;
+      followerCount =
+        typeof profile.follower_count === "number"
+          ? profile.follower_count
+          : Number(profile.follower_count) || 0;
+    } catch (error) {
+      console.warn("[heartbeat] getMe karma/followers:", error);
+    }
+
+    const karmaGate = musicCampaignAllowed(agentKarma, followerCount);
+    const musicCampaignBlockedHint = formatMusicCampaignBlockedHint(
+      agentKarma,
+      followerCount,
+    );
+
+    const compliancePosted = await hasComplianceDisclosurePosted();
+    if (!compliancePosted && allowance.canPost) {
+      try {
+        const copy = formatComplianceDisclosurePost();
+        try {
+          await client.joinSubmolt(copy.submolt);
+          summary.executed.push(`joined:${copy.submolt}`);
+        } catch (joinError) {
+          console.warn("[heartbeat] compliance joinSubmolt:", joinError);
+        }
+
+        const result = await client.createPost({
+          submolt_name: copy.submolt,
+          title: copy.title,
+          content: copy.content,
+        });
+        await recordPost();
+        await recordComplianceDisclosurePosted();
+        const postUrl = `https://www.moltbook.com/post/${result.post.id}`;
+        summary.executed.push(`compliance_disclosure:${result.post.id}`);
+        summary.plan = {
+          action: "post",
+          reason: "karma-growth:tos-compliance-once",
+        };
+        await appendActivity({
+          action: "post",
+          summary: "ToS §4.2 compliance disclosure",
+          content: copy.title,
+          targetId: result.post.id,
+          targetUrl: postUrl,
+          reason: "one-time platform transparency post",
+        });
+        await setCurrentThought(
+          `Posted one-time ToS compliance disclosure to m/${copy.submolt} — karma growth anchor`,
+        );
+        await appendTickLog(summary);
+        return summary;
+      } catch (error) {
+        const message = formatError("compliance_disclosure", error);
+        summary.errors.push(message);
+        console.error(message);
+      }
+    }
+
     const ownerPlans = (await getPlans())
       .filter((p) => p.status === "active")
       .map((p) => p.text);
@@ -215,7 +299,12 @@ export async function runHeartbeatTick(
       musicCampaignActive &&
       nextMusicStep &&
       allowance.canPost &&
+      karmaGate.ok &&
       (prioritizeCampaign || unreadNotifications.length === 0);
+
+    if (musicCampaignActive && nextMusicStep && !karmaGate.ok) {
+      summary.campaignBlockedReason = karmaGate.reason;
+    }
 
     if (canRunMusicCampaignPost && musicCampaign && nextMusicStep) {
       try {
@@ -285,7 +374,7 @@ export async function runHeartbeatTick(
 
     const plan = await decide(
       defaultBrainContext({
-        feed: contextPosts,
+        feed: feedForBrain,
         notifications,
         canPost: allowance.canPost,
         canComment: allowance.canComment,
@@ -298,6 +387,10 @@ export async function runHeartbeatTick(
         musicDropLive,
         musicMintedCount,
         anthemFeedHints,
+        agentKarma,
+        followerCount,
+        hotThreadHints,
+        musicPromoPostsAllowed: karmaGate.ok,
         ownerPlans: [
           ...ownerPlans,
           catNftHint,
@@ -306,6 +399,8 @@ export async function runHeartbeatTick(
           ...(alchemyHint ? [alchemyHint] : []),
           "AII + ALCHEMY: use share_onchain_insight when onchainEvents exist and a crypto/web3 thread fits — honest wallet lessons only.",
           "QUALITY FIRST: be the highest-signal agent on Moltbook. noop beats spam. No generic comments. No link dumps. Promo posts are rare.",
+          ...(musicCampaignBlockedHint ? [musicCampaignBlockedHint] : []),
+          ...(hotThreadHints.length > 0 ? hotThreadHints : []),
           ...(musicCampaignActive && nextMusicStep
             ? [
                 `ACTIVE MUSIC CAMPAIGN ${musicCampaign?.ticker}: next step m/${nextMusicStep.submolt} (${nextMusicStep.label}) — AI culture experiment posts for agent anthem API`,
@@ -1088,6 +1183,10 @@ export async function runHeartbeatTick(
           summary.executed.push("skipped_promote_music_drop_guardrail");
           break;
         }
+        if (!karmaGate.ok) {
+          summary.executed.push(`skipped_promote_music_karma_gate:${karmaGate.reason}`);
+          break;
+        }
         if (usage.postsToday >= 1) {
           summary.executed.push("skipped_promote_music_daily_cap");
           break;
@@ -1124,6 +1223,10 @@ export async function runHeartbeatTick(
       case "announce_music_drop_live": {
         if (!allowance.canPost) {
           summary.executed.push("skipped_announce_music_drop_guardrail");
+          break;
+        }
+        if (!karmaGate.ok) {
+          summary.executed.push(`skipped_announce_music_karma_gate:${karmaGate.reason}`);
           break;
         }
         if (!musicDropLive) {
