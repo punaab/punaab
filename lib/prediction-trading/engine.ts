@@ -18,6 +18,7 @@ import {
   setLastTickSummary,
 } from "./state";
 import { fetchPredictionWalletSnapshot } from "./wallet";
+import { ensureUsdcForPrediction } from "./fund-usdc";
 import { signalsInventoryMm } from "./strategies/inventory-mm";
 import { bumpRotation, signalsRotation } from "./strategies/rotation";
 import { signalsResolutionSnipe } from "./strategies/resolution-snipe";
@@ -69,12 +70,14 @@ export async function runPredictionTick(): Promise<PredictionTickSummary> {
     return summary;
   }
 
-  // Wallet snapshot early — sizes scalp bets to available USDC
+  // Wallet snapshot early — size bets to full tradeable capital (SOL/SPL → USDC)
   let walletUsdc = 0;
+  let tradeableCapitalUsd = 0;
   try {
     const walletSnap = await fetchPredictionWalletSnapshot();
     if (walletSnap) {
       walletUsdc = walletSnap.usdc;
+      tradeableCapitalUsd = walletSnap.tradeableCapitalUsd;
       await appendWalletHistory({
         timestamp: summary.timestamp,
         address: walletSnap.address,
@@ -84,12 +87,17 @@ export async function runPredictionTick(): Promise<PredictionTickSummary> {
         tokensValueUsd: walletSnap.tokensValueUsd,
         positionValueUsd: walletSnap.positionValueUsd,
         totalWorthUsd: walletSnap.totalWorthUsd,
+        tradeableCapitalUsd: walletSnap.tradeableCapitalUsd,
         openPositions: walletSnap.openPositions,
       });
     }
   } catch (error) {
     console.warn("[prediction-engine] wallet snapshot:", error);
   }
+
+  // Size / risk against liquid capital, not USDC alone
+  const capitalForSizing =
+    tradeableCapitalUsd > 0 ? tradeableCapitalUsd : walletUsdc;
 
   let snapshots;
   try {
@@ -131,7 +139,7 @@ export async function runPredictionTick(): Promise<PredictionTickSummary> {
     legs,
     tradesToday: await getTradesToday(),
     usdcDeployedToday: await getUsdcDeployedToday(),
-    walletUsdc,
+    walletUsdc: capitalForSizing,
   };
 
   const wallet = getTradingSolanaAddress();
@@ -156,7 +164,7 @@ export async function runPredictionTick(): Promise<PredictionTickSummary> {
   }
 
   const scalpCtx = {
-    walletUsdc,
+    walletUsdc: capitalForSizing,
     tradesToday: ctx.tradesToday,
   };
 
@@ -259,6 +267,28 @@ export async function runPredictionTick(): Promise<PredictionTickSummary> {
     }
 
     if (!snap) continue;
+
+    // Forecast deposits are USDC — top up from SOL / other tokens if needed
+    try {
+      const fund = await ensureUsdcForPrediction(signal.depositUsdc);
+      if (fund.swaps.length) {
+        summary.executed.push(`fund:${fund.swaps.join(",")}`);
+      }
+      if (!fund.ok) {
+        summary.errors.push(`fund:${fund.error ?? "usdc_short"}`);
+        continue;
+      }
+      walletUsdc = fund.usdc;
+      if (fund.tradeableCapitalUsd > 0) {
+        tradeableCapitalUsd = fund.tradeableCapitalUsd;
+        ctx.walletUsdc = fund.tradeableCapitalUsd;
+      }
+    } catch (error) {
+      summary.errors.push(
+        `fund:${error instanceof Error ? error.message : "failed"}`,
+      );
+      continue;
+    }
 
     const price =
       signal.side === "yes"

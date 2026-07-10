@@ -4,7 +4,7 @@ import { minExecutableBuyPrice } from "../pricing";
 import type { LegLedger, MarketSnapshot, TradeSignal } from "../types";
 
 export interface ScalpContext {
-  /** Available USDC in Solana trading wallet */
+  /** Tradeable capital in Solana wallet (USDC + swappable tokens) */
   walletUsdc: number;
   /** Trades already taken today */
   tradesToday: number;

@@ -3,6 +3,7 @@ import {
   getJupiterApiKey,
   getTradingSolanaAddress,
   PREDICTION_MINT_USDC,
+  TRADING_LIMITS,
 } from "../config";
 import {
   fetchSolanaWalletHoldings,
@@ -34,6 +35,7 @@ export interface WalletTokenBalance {
   mint: string;
   symbol: string;
   amount: number;
+  decimals: number;
   priceUsd: number;
   valueUsd: number;
 }
@@ -48,6 +50,13 @@ export interface PredictionWalletSnapshot {
   positionValueUsd: number;
   /** SOL + SPL tokens (priced) + open prediction positions */
   totalWorthUsd: number;
+  /**
+   * Liquid capital available to fund Forecast buys (auto-swaps to USDC):
+   * USDC + other SPL + (SOL − gas reserve). Excludes open positions.
+   */
+  tradeableCapitalUsd: number;
+  /** SOL kept for fees — not counted in tradeable capital */
+  solGasReserve: number;
   openPositions: number;
   capturedAt: string;
   topTokens: WalletTokenBalance[];
@@ -232,6 +241,7 @@ export async function fetchPredictionWalletSnapshot(): Promise<PredictionWalletS
       mint: h.mint,
       symbol: h.symbol,
       amount: h.amount,
+      decimals: h.decimals,
       priceUsd,
       valueUsd: h.amount * priceUsd,
     };
@@ -266,6 +276,7 @@ export async function fetchPredictionWalletSnapshot(): Promise<PredictionWalletS
       mint: MINT_SOL,
       symbol: "SOL",
       amount: sol,
+      decimals: 9,
       priceUsd: solPriceUsd,
       valueUsd: solValueUsd,
     },
@@ -277,6 +288,12 @@ export async function fetchPredictionWalletSnapshot(): Promise<PredictionWalletS
 
   const totalWorthUsd = solValueUsd + tokensValueUsd + positionValueUsd;
 
+  const solGasReserve = TRADING_LIMITS.minSolReserve;
+  const tradeableSol = Math.max(0, sol - solGasReserve);
+  const tradeableSolUsd = tradeableSol * solPriceUsd;
+  const tradeableSplUsd = tokenRows.reduce((s, t) => s + t.valueUsd, 0);
+  const tradeableCapitalUsd = tradeableSolUsd + tradeableSplUsd;
+
   return {
     address,
     sol,
@@ -286,6 +303,8 @@ export async function fetchPredictionWalletSnapshot(): Promise<PredictionWalletS
     tokensValueUsd,
     positionValueUsd,
     totalWorthUsd,
+    tradeableCapitalUsd,
+    solGasReserve,
     openPositions,
     capturedAt: new Date().toISOString(),
     topTokens,

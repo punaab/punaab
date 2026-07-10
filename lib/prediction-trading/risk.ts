@@ -10,6 +10,7 @@ export interface RiskContext {
   legs: Map<string, LegLedger>;
   tradesToday: number;
   usdcDeployedToday: number;
+  /** Liquid capital (USDC + swappable SOL/SPL) used for sizing / affordability */
   walletUsdc: number;
 }
 
@@ -95,13 +96,14 @@ export function validateSignal(
     return { ok: false, reason: "daily_trade_cap" };
   }
 
-  // Live: don't spend more than wallet − reserve
+  // Live: don't spend more than tradeable capital − reserve
+  // (USDC is topped up via auto-swap from SOL/SPL before the buy)
   if (
     !isDryRun() &&
     ctx.walletUsdc > 0 &&
     signal.depositUsdc > ctx.walletUsdc - limits.scalpUsdcReserve
   ) {
-    return { ok: false, reason: "insufficient_wallet_usdc" };
+    return { ok: false, reason: "insufficient_tradeable_capital" };
   }
 
   return { ok: true };

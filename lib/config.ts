@@ -432,10 +432,16 @@ export const PREDICTION_TRADING_LIMITS = {
   scalpMaxSecondsToClose: Number(
     process.env.PREDICTION_SCALP_MAX_SECONDS_TO_CLOSE ?? "900",
   ),
-  /** Fraction of (wallet USDC − reserve) per scalp trade */
+  /** Fraction of (tradeable capital − reserve) per scalp trade */
   scalpPctOfWallet: Number(process.env.PREDICTION_SCALP_PCT_OF_WALLET ?? "0.05"),
+  /** Keep this much USDC unspent after sizing / funding swaps */
   scalpUsdcReserve: Number(process.env.PREDICTION_SCALP_USDC_RESERVE ?? "10"),
   scalpMaxUsdcPerTrade: Number(process.env.PREDICTION_SCALP_MAX_USDC ?? "15"),
+  /** Auto-swap SOL/SPL → USDC before Forecast buys when USDC is short */
+  autoFundUsdc:
+    process.env.PREDICTION_AUTO_FUND_USDC?.trim().toLowerCase() !== "false",
+  /** Skip dust bags when funding USDC */
+  minFundTokenUsd: Number(process.env.PREDICTION_MIN_FUND_TOKEN_USD ?? "1"),
   scalpAllowPolymarket:
     process.env.PREDICTION_SCALP_ALLOW_POLYMARKET?.trim().toLowerCase() === "true",
   scalpLongshotEnabled:

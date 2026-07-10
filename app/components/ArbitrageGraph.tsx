@@ -175,6 +175,10 @@ export default function ArbitrageGraph({ prediction, hubBalances }: Props) {
     wallet?.totalWorthUsd ??
     prediction?.latestWallet?.totalWorthUsd ??
     solValue + tokensValue + posValue;
+  const tradeableCapital =
+    wallet?.tradeableCapitalUsd ??
+    prediction?.latestWallet?.tradeableCapitalUsd ??
+    Math.max(0, totalEquity - posValue);
   const topTokens = wallet?.topTokens ?? [];
   const solPrice = wallet?.solPriceUsd ?? 0;
   const walletCapturedAt =
@@ -233,9 +237,13 @@ export default function ArbitrageGraph({ prediction, hubBalances }: Props) {
           </span>
         </div>
         <div className="arb-wallet-card">
-          <span className="arb-wallet-label">USDC</span>
-          <span className="arb-wallet-value">{usdc.toFixed(2)}</span>
-          <span className="arb-wallet-sub">trading balance</span>
+          <span className="arb-wallet-label">Trading capital</span>
+          <span className="arb-wallet-value">
+            {formatUsd(tradeableCapital)}
+          </span>
+          <span className="arb-wallet-sub">
+            {formatUsd(usdc)} USDC · auto-swaps SOL/SPL
+          </span>
         </div>
         <div className="arb-wallet-card">
           <span className="arb-wallet-label">SOL</span>

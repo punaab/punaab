@@ -30,6 +30,8 @@ export interface WalletBalancePoint {
   positionValueUsd: number;
   /** Full wallet worth when available (SOL + tokens + positions) */
   totalWorthUsd?: number;
+  /** Liquid capital for Forecast (excludes gas reserve + open positions) */
+  tradeableCapitalUsd?: number;
   openPositions: number;
 }
 
