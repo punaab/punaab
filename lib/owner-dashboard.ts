@@ -22,6 +22,7 @@ import { getAlchemyApiSnapshot } from "./alchemy-apis";
 import { getLlmStatus } from "./aii-llm";
 import { getCatNftCatalog, getCatNftShopStats, catNftApiUrl, catNftGalleryUrl } from "./punaab-cat-nfts";
 import { fetchMusicShopForDashboard } from "./music-dashboard";
+import { fetchPredictionDashboard } from "./prediction-dashboard";
 
 export interface OwnerDashboard {
   agent: { name: string; handle: string };
@@ -67,6 +68,7 @@ export interface OwnerDashboard {
     catalog: Awaited<ReturnType<typeof getCatNftCatalog>>;
   };
   musicNftShop: Awaited<ReturnType<typeof fetchMusicShopForDashboard>>;
+  prediction: Awaited<ReturnType<typeof fetchPredictionDashboard>>;
   llm: ReturnType<typeof getLlmStatus>;
 }
 
@@ -92,6 +94,7 @@ export async function getOwnerDashboard(): Promise<OwnerDashboard> {
     musicNftShop,
     tradeSignerMode,
     tradeHasSigner,
+    prediction,
   ] = await Promise.all([
     getCurrentThought(),
     getPlans(),
@@ -113,6 +116,7 @@ export async function getOwnerDashboard(): Promise<OwnerDashboard> {
     fetchMusicShopForDashboard(),
     getTradeSignerMode(),
     hasAnyTradeSignerAsync(),
+    fetchPredictionDashboard(),
   ]);
 
   const campaign = campaignLoad.campaign;
@@ -171,6 +175,7 @@ export async function getOwnerDashboard(): Promise<OwnerDashboard> {
       },
       activity,
       alchemy: alchemyApis,
+      prediction,
     }),
     campaign,
     campaignPersisted: campaignLoad.persisted,
@@ -183,6 +188,7 @@ export async function getOwnerDashboard(): Promise<OwnerDashboard> {
       catalog: catNftCatalog,
     },
     musicNftShop,
+    prediction,
     llm: getLlmStatus(),
   };
 }

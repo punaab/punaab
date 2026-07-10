@@ -34,6 +34,7 @@ const HELP_TEXT = `<b>Punaab Command Bot</b>
 /apps — built apps &amp; games
 /wallets — Base + Solana balances
 /trades — recent swap activity
+/prediction — Up/Down prediction trader status
 /tick — run heartbeat now
 
 <b>Control</b>
@@ -106,6 +107,10 @@ export async function handleTelegramMessage(msg: TelegramMessage): Promise<void>
 
     case "/trades":
       await cmdTrades(chatId);
+      break;
+
+    case "/prediction":
+      await cmdPrediction(chatId);
       break;
 
     case "/tick":
@@ -309,6 +314,32 @@ async function cmdTrades(chatId: number): Promise<void> {
     }
   }
 
+  await sendTelegramMessage(chatId, lines.join("\n"), { parseMode: "HTML" });
+}
+
+async function cmdPrediction(chatId: number): Promise<void> {
+  const d = await getOwnerDashboard();
+  const p = d.prediction;
+  const lines = [
+    `<b>Prediction trader</b>`,
+    `Enabled: ${p.enabled ? "yes" : "no"}`,
+    `Dry run: ${p.dryRun ? "yes" : "no"}`,
+    `Jupiter API: ${p.hasApiKey ? "key set" : "missing JUPITER_API_KEY"}`,
+    `Signer: ${p.hasSigner ? "yes" : "need SOLANA_AGENT_PRIVATE_KEY"}`,
+    `API access: ${p.apiAccess.ok ? "OK" : "geoBlocked" in p.apiAccess && p.apiAccess.geoBlocked ? "GEO BLOCKED" : "error"}`,
+    `Trades today: ${p.tradesToday}`,
+    `USDC deployed: $${p.usdcDeployedToday.toFixed(2)}`,
+  ];
+  if (p.lastTick) {
+    lines.push(
+      ``,
+      `Last tick: ${p.lastTick.marketsScanned ?? 0} markets, ${(p.lastTick.signals as unknown[])?.length ?? 0} signals`,
+    );
+  }
+  if (!p.apiAccess.ok && p.apiAccess.error) {
+    lines.push(`\n<i>${escapeHtml(String(p.apiAccess.error).slice(0, 160))}</i>`);
+  }
+  lines.push(`\nLocal: npm run prediction-trader`);
   await sendTelegramMessage(chatId, lines.join("\n"), { parseMode: "HTML" });
 }
 

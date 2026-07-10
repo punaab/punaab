@@ -1,11 +1,16 @@
 import { Redis } from "@upstash/redis";
 
 /** Upstash REST client — supports standalone Upstash and Vercel KV env names. */
+function envValue(name: string): string | undefined {
+  const v = process.env[name]?.trim();
+  return v ? v : undefined;
+}
+
 export function createRedisClient(): Redis {
   const url =
-    process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL;
+    envValue("UPSTASH_REDIS_REST_URL") ?? envValue("KV_REST_API_URL");
   const token =
-    process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN;
+    envValue("UPSTASH_REDIS_REST_TOKEN") ?? envValue("KV_REST_API_TOKEN");
 
   if (!url || !token) {
     throw new Error(
@@ -14,7 +19,7 @@ export function createRedisClient(): Redis {
     );
   }
 
-  if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
+  if (envValue("UPSTASH_REDIS_REST_URL") && envValue("UPSTASH_REDIS_REST_TOKEN")) {
     return Redis.fromEnv();
   }
 

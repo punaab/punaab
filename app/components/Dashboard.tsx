@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import AdminNav from "./AdminNav";
+import ArbitrageGraph from "./ArbitrageGraph";
 import Web3CommandCenter from "./Web3CommandCenter";
 import CampaignWatch from "./CampaignWatch";
 import CatNftShop from "./CatNftShop";
@@ -292,54 +294,71 @@ export default function Dashboard() {
   const profile = mb?.profile;
 
   return (
-    <div className="dashboard">
-      <header className="dashboard-header">
-        <div>
-          <h1>Punaab Command</h1>
-          <p className="subtitle">Owner dashboard · Moltbook agent operations</p>
+    <div className="admin-shell dashboard">
+      <header className="admin-topbar">
+        <div className="admin-brand">
+          <h1>Punaab</h1>
+          <span className="admin-brand-sub">command</span>
         </div>
-        <div className="header-actions">
-          <div className="pulse">
+        <div className="admin-topbar-actions">
+          <div className="pulse pulse-compact">
             <span className={`pulse-dot ${online ? "" : "offline"}`} />
-            {online ? "HEARTBEAT LIVE" : "HEARTBEAT STALE"}
+            {online ? "LIVE" : "STALE"}
           </div>
           <button
             type="button"
-            className="btn-ghost"
+            className="btn-compact"
             disabled={heartbeatRunning}
             onClick={() => void runHeartbeatNow()}
           >
-            {heartbeatRunning ? "Running…" : "Run heartbeat"}
+            {heartbeatRunning ? "…" : "Heartbeat"}
           </button>
-          <button type="button" className="btn-ghost" onClick={logout}>
-            Logout
+          <button type="button" className="btn-compact btn-compact-ghost" onClick={logout}>
+            Out
           </button>
         </div>
       </header>
 
-      {state?.status.brainBlocked && (
-        <p className="login-error">
-          Brain blocked: {state.status.lastPlanReason?.includes("anthropic_credits")
-            ? "LLM credits exhausted — add Anthropic billing OR set AII_CLOUD_API_KEY from cloud.aiiware.com (100 free/day)."
-            : state.status.lastPlanReason?.includes("no_llm_provider")
-              ? "No LLM configured — set ANTHROPIC_API_KEY and/or AII_CLOUD_API_KEY on Vercel."
-              : state.status.lastPlanReason ?? "brain_error"}
-        </p>
-      )}
-      {state?.status.heartbeatStale && !state?.status.brainBlocked && (
-        <p className="login-error">
-          Heartbeat stale — cron may not be firing. Add GitHub secrets{" "}
-          <code>CRON_SECRET</code> + <code>PROD_URL=https://www.punaab.com</code>, or use Run heartbeat.
-        </p>
+      <AdminNav
+        online={Boolean(online)}
+        karma={profile?.karma}
+        unread={mb?.unreadCount}
+      />
+
+      {(state?.status.brainBlocked ||
+        state?.status.heartbeatStale ||
+        error ||
+        mb?.error) && (
+        <div className="admin-alerts">
+          {state?.status.brainBlocked && (
+            <p className="login-error admin-alert">
+              Brain blocked: {state.status.lastPlanReason?.includes("anthropic_credits")
+                ? "LLM credits exhausted."
+                : state.status.lastPlanReason?.includes("no_llm_provider")
+                  ? "No LLM configured."
+                  : state.status.lastPlanReason ?? "brain_error"}
+            </p>
+          )}
+          {state?.status.heartbeatStale && !state?.status.brainBlocked && (
+            <p className="login-error admin-alert">
+              Heartbeat stale — use Heartbeat or fix cron secrets.
+            </p>
+          )}
+          {error && <p className="login-error admin-alert">{error}</p>}
+          {mb?.error && <p className="login-error admin-alert">Moltbook: {mb.error}</p>}
+        </div>
       )}
 
-      {error && <p className="login-error">{error}</p>}
-      {mb?.error && (
-        <p className="login-error">Moltbook: {mb.error}</p>
-      )}
+      <section id="admin-arb" className="admin-section">
+        <ArbitrageGraph
+          prediction={state?.web3Hub?.prediction}
+          hubBalances={state?.web3Hub?.snapshot?.balances}
+        />
+      </section>
 
-      {/* Moltbook hero */}
-      <section className="moltbook-hero panel panel-wide">
+      <section id="admin-agent" className="admin-section">
+      {/* Moltbook hero — compact */}
+      <section className="moltbook-hero panel panel-wide admin-compact-panel">
         <div className="hero-profile">
           <div className="avatar-wrap">
             {profile?.avatar_url ? (
@@ -406,11 +425,11 @@ export default function Dashboard() {
         </div>
       </section>
 
-      {/* Punaab built apps/games — always surfaced here */}
-      <section className="panel panel-wide built-section">
-        <h2>Punaab Built</h2>
-        <p className="muted section-hint">
-          Apps, games, and tools punaab publishes — links appear here automatically
+      {/* Punaab built apps/games */}
+      <section className="panel panel-wide built-section admin-compact-panel">
+        <h2>Built</h2>
+        <p className="muted section-hint admin-hint-compact">
+          Apps & tools punaab publishes
         </p>
         {!state?.publishedLinks?.length && !state?.apps?.length && (
           <p className="muted">Nothing built yet.</p>
@@ -451,19 +470,7 @@ export default function Dashboard() {
         </div>
       </section>
 
-      <Web3CommandCenter hub={state?.web3Hub} onRefresh={fetchState} />
-
-      <CampaignWatch
-        campaign={state?.campaign}
-        campaignPersisted={state?.campaignPersisted}
-        campaignError={state?.campaignError}
-        onRefresh={fetchState}
-      />
-
-      <CatNftShop data={state?.catNftShop} onRefresh={fetchState} />
-      <MusicNftShop data={state?.musicNftShop} onRefresh={fetchState} />
-
-      <div className="grid layout-main">
+      <div className="grid layout-main admin-main-grid">
         {/* Left column — Moltbook activity */}
         <div className="column-moltbook">
           <section className="panel panel-activity">
@@ -766,8 +773,28 @@ export default function Dashboard() {
           </section>
         </div>
       </div>
+      </section>
 
-      <section className="panel panel-wide heartbeat-log">
+      <section id="admin-web3" className="admin-section">
+        <Web3CommandCenter hub={state?.web3Hub} onRefresh={fetchState} />
+      </section>
+
+      <section id="admin-campaign" className="admin-section">
+        <CampaignWatch
+          campaign={state?.campaign}
+          campaignPersisted={state?.campaignPersisted}
+          campaignError={state?.campaignError}
+          onRefresh={fetchState}
+        />
+      </section>
+
+      <section id="admin-nfts" className="admin-section admin-nfts-grid">
+        <CatNftShop data={state?.catNftShop} onRefresh={fetchState} />
+        <MusicNftShop data={state?.musicNftShop} onRefresh={fetchState} />
+      </section>
+
+      <section id="admin-logs" className="admin-section">
+      <section className="panel panel-wide heartbeat-log admin-compact-panel">
         <h2>Heartbeat Log</h2>
         <ul className="activity-list">
           {state?.tickLog?.map((tick, i) => (
@@ -783,6 +810,7 @@ export default function Dashboard() {
             </li>
           ))}
         </ul>
+      </section>
       </section>
     </div>
   );

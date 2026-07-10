@@ -255,6 +255,13 @@ export default function Web3CommandCenter({ hub, onRefresh }: Props) {
 
       <AlchemyApiPanels data={hub.alchemy} onRefresh={onRefresh} />
 
+      {hub.prediction && (
+        <p className="muted web3-panel-hint web3-prediction-ref">
+          Up/Down arb radar at top · {hub.prediction.tradesToday} trades today ·{" "}
+          <code>npm run prediction-trader</code>
+        </p>
+      )}
+
       <footer className="web3-footer muted">
         CU-safe: Alchemy APIs cached {hub.infra.holdingsCacheSec}s (Refresh APIs busts cache).
         Use filtered Custom Webhooks — never empty address/topic filters.

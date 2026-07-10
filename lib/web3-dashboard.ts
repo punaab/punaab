@@ -15,6 +15,11 @@ import type { AgentActivity } from "./owner-state";
 import type { TradeLogEntry } from "./trading";
 import type { Web3Snapshot } from "./web3-monitor";
 import type { AlchemyApiSnapshot } from "./alchemy-apis";
+import type { fetchPredictionDashboard } from "./prediction-dashboard";
+
+export type PredictionDashboard = Awaited<
+  ReturnType<typeof fetchPredictionDashboard>
+>;
 
 export interface Web3Hub {
   webhookUrl: string;
@@ -38,6 +43,7 @@ export interface Web3Hub {
   };
   agentActivity: AgentActivity[];
   alchemy: AlchemyApiSnapshot | null;
+  prediction?: PredictionDashboard | null;
 }
 
 export function buildWeb3Hub(params: {
@@ -46,6 +52,7 @@ export function buildWeb3Hub(params: {
   trading: Web3Hub["trading"];
   activity: AgentActivity[];
   alchemy: AlchemyApiSnapshot | null;
+  prediction?: PredictionDashboard | null;
 }): Web3Hub {
   const web3Actions = new Set([
     "trade_analyze",
@@ -73,6 +80,7 @@ export function buildWeb3Hub(params: {
     trading: params.trading,
     agentActivity: params.activity.filter((a) => web3Actions.has(a.action)),
     alchemy: params.alchemy,
+    prediction: params.prediction ?? null,
   };
 }
 

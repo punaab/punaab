@@ -386,6 +386,79 @@ export const TRADING_LIMITS = {
   defaultSlippageBps: Number(process.env.TRADING_SLIPPAGE_BPS ?? "100"),
 } as const;
 
+/** Jupiter Prediction Markets — short-term Up/Down (YES/NO) on Solana. */
+export function getJupiterApiKey(): string | undefined {
+  return process.env.JUPITER_API_KEY?.trim() || undefined;
+}
+
+export function isPredictionTradingEnabled(): boolean {
+  const v = process.env.PREDICTION_TRADING_ENABLED?.trim().toLowerCase();
+  if (v === "false" || v === "0" || v === "no") return false;
+  if (v === "true" || v === "1" || v === "yes") return true;
+  return isTradingEnabled();
+}
+
+export const PREDICTION_MINT_USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+export const PREDICTION_MINT_JUPUSD =
+  "JuprjznTrTSp2UFa3ZBUFgwdAmtZCq4MQCwysN55USD";
+
+/** 1_000_000 native units = $1.00 USD per Jupiter Prediction API. */
+export const PREDICTION_PRICE_SCALE = 1_000_000;
+
+export const PREDICTION_TRADING_LIMITS = {
+  maxUsdcPerLeg: Number(process.env.PREDICTION_MAX_USDC_PER_LEG ?? "25"),
+  maxUsdcPerMarket: Number(process.env.PREDICTION_MAX_USDC_PER_MARKET ?? "50"),
+  maxOpenMarkets: Number(process.env.PREDICTION_MAX_OPEN_MARKETS ?? "6"),
+  minCombinedEdgeBps: Number(process.env.PREDICTION_MIN_COMBINED_EDGE_BPS ?? "200"),
+  tailMaxPrice: Number(process.env.PREDICTION_TAIL_MAX_PRICE ?? "0.40"),
+  favoriteMinPrice: Number(process.env.PREDICTION_FAVORITE_MIN_PRICE ?? "0.60"),
+  resolutionSnipeEnabled:
+    process.env.PREDICTION_RESOLUTION_SNIPE_ENABLED?.trim().toLowerCase() === "true",
+  rotationEnabled:
+    process.env.PREDICTION_ROTATION_ENABLED?.trim().toLowerCase() !== "false",
+  /** Inventory MM buys both tails — off by default; use directional scalp instead */
+  inventoryMmEnabled:
+    process.env.PREDICTION_INVENTORY_MM_ENABLED?.trim().toLowerCase() === "true",
+  /**
+   * Directional scalp (Polymarket-style): buy Up/Down at 1–30¢ when mispriced,
+   * hold to $1. Volume + repetition. Default ON.
+   */
+  scalpEnabled:
+    process.env.PREDICTION_SCALP_ENABLED?.trim().toLowerCase() !== "false",
+  scalpMaxEntryPrice: Number(process.env.PREDICTION_SCALP_MAX_ENTRY ?? "0.30"),
+  scalpMinEntryPrice: Number(process.env.PREDICTION_SCALP_MIN_ENTRY ?? "0.01"),
+  /** Min fair−price edge in dollars (e.g. 0.08 = 8¢) */
+  scalpMinEdge: Number(process.env.PREDICTION_SCALP_MIN_EDGE ?? "0.06"),
+  scalpMaxSecondsToClose: Number(
+    process.env.PREDICTION_SCALP_MAX_SECONDS_TO_CLOSE ?? "900",
+  ),
+  /** Fraction of (wallet USDC − reserve) per scalp trade */
+  scalpPctOfWallet: Number(process.env.PREDICTION_SCALP_PCT_OF_WALLET ?? "0.05"),
+  scalpUsdcReserve: Number(process.env.PREDICTION_SCALP_USDC_RESERVE ?? "10"),
+  scalpMaxUsdcPerTrade: Number(process.env.PREDICTION_SCALP_MAX_USDC ?? "15"),
+  scalpAllowPolymarket:
+    process.env.PREDICTION_SCALP_ALLOW_POLYMARKET?.trim().toLowerCase() === "true",
+  scalpLongshotEnabled:
+    process.env.PREDICTION_SCALP_LONGSHOT?.trim().toLowerCase() !== "false",
+  scalpLongshotMaxPrice: Number(process.env.PREDICTION_SCALP_LONGSHOT_MAX ?? "0.10"),
+  scalpLongshotFairMultiple: Number(
+    process.env.PREDICTION_SCALP_LONGSHOT_FAIR_MULT ?? "2",
+  ),
+  scalpTakeProfitEnabled:
+    process.env.PREDICTION_SCALP_TAKE_PROFIT?.trim().toLowerCase() === "true",
+  scalpTakeProfitPrice: Number(process.env.PREDICTION_SCALP_TP_PRICE ?? "0.90"),
+  maxTradesPerDay: Number(process.env.PREDICTION_MAX_TRADES_PER_DAY ?? "500"),
+  pollIntervalMs: Number(process.env.PREDICTION_POLL_INTERVAL_MS ?? "15000"),
+  minSecondsToClose: Number(process.env.PREDICTION_MIN_SECONDS_TO_CLOSE ?? "45"),
+  minOrderUsdc: 5,
+  /** Jupiter Forecast: 5–250 USDC per docs */
+  maxForecastOrderUsdc: Number(process.env.PREDICTION_MAX_FORECAST_USDC ?? "250"),
+  /** Cap Polymarket fetches per tick to avoid Jupiter API 429s */
+  maxPolymarketScans: Number(process.env.PREDICTION_MAX_POLYMARKET_SCANS ?? "4"),
+  /** Max signals executed per tick (arb + scalp) */
+  maxSignalsPerTick: Number(process.env.PREDICTION_MAX_SIGNALS_PER_TICK ?? "3"),
+} as const;
+
 export function getTelegramBotToken(): string | undefined {
   return process.env.TELEGRAM_BOT_TOKEN;
 }
