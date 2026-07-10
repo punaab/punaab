@@ -25,7 +25,11 @@ export interface WalletBalancePoint {
   address: string;
   sol: number;
   usdc: number;
+  solValueUsd?: number;
+  tokensValueUsd?: number;
   positionValueUsd: number;
+  /** Full wallet worth when available (SOL + tokens + positions) */
+  totalWorthUsd?: number;
   openPositions: number;
 }
 

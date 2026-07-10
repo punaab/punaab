@@ -457,6 +457,16 @@ export const PREDICTION_TRADING_LIMITS = {
   maxPolymarketScans: Number(process.env.PREDICTION_MAX_POLYMARKET_SCANS ?? "4"),
   /** Max signals executed per tick (arb + scalp) */
   maxSignalsPerTick: Number(process.env.PREDICTION_MAX_SIGNALS_PER_TICK ?? "3"),
+  /**
+   * Min ms between Jupiter Prediction API calls (org-wide sliding window).
+   * Free portal tier ≈ 1 RPS — default 1100. Raise if you still see 429s;
+   * lower only on Developer+ plans (see https://dev.jup.ag/docs/portal/rate-limits).
+   */
+  jupiterMinIntervalMs: Number(
+    process.env.PREDICTION_JUPITER_MIN_INTERVAL_MS ?? "1100",
+  ),
+  /** Retries on 429 before failing an order/scan call */
+  jupiterMaxRetries: Number(process.env.PREDICTION_JUPITER_MAX_RETRIES ?? "4"),
 } as const;
 
 export function getTelegramBotToken(): string | undefined {

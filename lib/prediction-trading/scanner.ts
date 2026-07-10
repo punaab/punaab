@@ -4,7 +4,6 @@ import {
   getMarket,
   getOrderbook,
   getTradingStatus,
-  listEvents,
   listForecastMarkets,
   searchEvents,
 } from "./client";
@@ -40,7 +39,9 @@ async function snapshotFromMarket(
     return null;
   }
 
-  const orderbook = await getOrderbook(summary.marketId);
+  const orderbook = await getOrderbook(summary.marketId, {
+    marketPrices: summary,
+  });
   const closeIso = summary.closeTime;
   const secondsToClose = secondsUntil(closeIso);
   const windowSeconds = inferWindowSeconds(title);
@@ -77,22 +78,25 @@ async function snapshotFromForecastPair(
 ): Promise<MarketSnapshot | null> {
   if (up.status === "closed" || down.status === "closed") return null;
 
-  const [upFull, downFull, upOb, downOb] = await Promise.all([
-    getMarket(up.marketId),
-    getMarket(down.marketId),
-    getOrderbook(up.marketId),
-    getOrderbook(down.marketId),
-  ]);
+  // Sequential orderbooks only — list already has titles/prices; avoid GET /markets burst
+  const upOb = await getOrderbook(up.marketId, { marketPrices: up });
+  const downOb = await getOrderbook(down.marketId, { marketPrices: down });
 
   const title =
-    upFull.title ??
-    upFull.question ??
-    downFull.title ??
-    downFull.question ??
+    up.title ??
+    up.question ??
+    down.title ??
+    down.question ??
     forecastRoundKey(up.marketId);
 
-  const yesDollars = upOb.yesDollars;
-  const noDollars = downOb.yesDollars;
+  const yesDollars =
+    up.buyYesPriceUsd && up.buyYesPriceUsd > 0
+      ? up.buyYesPriceUsd
+      : upOb.yesDollars;
+  const noDollars =
+    down.buyYesPriceUsd && down.buyYesPriceUsd > 0
+      ? down.buyYesPriceUsd
+      : downOb.yesDollars;
   const combined = yesDollars + noDollars;
   const orderbook: PredictionOrderbook = {
     marketId: up.marketId,
@@ -106,7 +110,7 @@ async function snapshotFromForecastPair(
     noLevels: downOb.yesLevels,
   };
 
-  const closeIso = upFull.closeTime ?? downFull.closeTime;
+  const closeIso = up.closeTime ?? down.closeTime;
   const secondsToClose = secondsUntil(closeIso);
   const windowSeconds = inferWindowSeconds(title);
 
@@ -114,16 +118,15 @@ async function snapshotFromForecastPair(
     market: {
       marketId: up.marketId,
       title,
-      question: upFull.question,
-      openTime: upFull.openTime ?? downFull.openTime,
+      question: up.question ?? down.question,
+      openTime: up.openTime ?? down.openTime,
       closeTime: closeIso,
-      resolveAt: upFull.resolveAt ?? downFull.resolveAt,
-      result: upFull.result ?? downFull.result,
-      provider: "bisonfi",
-      tradable: upFull.tradable !== false && downFull.tradable !== false,
-      outcomeMint: upFull.outcomeMint,
+      resolveAt: up.resolveAt ?? down.resolveAt,
+      result: up.result ?? down.result,
+      provider: up.provider ?? down.provider ?? "bisonfi",
+      tradable: up.tradable !== false && down.tradable !== false,
+      outcomeMint: up.outcomeMint,
     },
-    pairedMarketId: down.marketId,
     orderbook,
     secondsToClose,
     fairProbYes: estimateFairProbYes({
@@ -133,6 +136,7 @@ async function snapshotFromForecastPair(
     }),
     isUpDown: true,
     isForecast: true,
+    pairedMarketId: down.marketId,
   };
 }
 
@@ -178,32 +182,12 @@ export async function scanLiveCryptoMarkets(): Promise<MarketSnapshot[]> {
   const snapshots: MarketSnapshot[] = [];
   const seen = new Set<string>();
 
-  // Jupiter Forecast — native 15m BTC up/down
+  // Jupiter Forecast — native 15m BTC up/down (single listEvents; no duplicate scan)
   try {
     const forecast = await listForecastMarkets();
     await addForecastSnapshots(forecast, snapshots, seen);
   } catch (error) {
     console.warn("[prediction-scanner] listForecastMarkets:", error);
-  }
-
-  // Also pick up any bisonfi markets from live crypto events
-  try {
-    const events = await listEvents({
-      category: "crypto",
-      filter: "live",
-      provider: "bisonfi",
-      includeMarkets: true,
-    });
-    for (const event of events) {
-      const bisonMarkets = event.markets.filter((m) =>
-        m.marketId.startsWith("BISON-"),
-      );
-      if (bisonMarkets.length) {
-        await addForecastSnapshots(bisonMarkets, snapshots, seen);
-      }
-    }
-  } catch (error) {
-    console.warn("[prediction-scanner] listEvents bisonfi:", error);
   }
 
   // Optional: other Jupiter-aggregated markets (off by default — we trade Forecast)

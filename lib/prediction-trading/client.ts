@@ -8,6 +8,7 @@ import {
   getJupiterApiKey,
   PREDICTION_MINT_USDC,
   PREDICTION_PRICE_SCALE,
+  PREDICTION_TRADING_LIMITS,
 } from "../config";
 import {
   bestBid,
@@ -31,6 +32,7 @@ export class PredictionApiError extends Error {
     message: string,
     public status: number,
     public geoBlocked = false,
+    public retryAfterMs?: number,
   ) {
     super(message);
     this.name = "PredictionApiError";
@@ -45,29 +47,102 @@ function apiKey(): string {
   return key;
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey(),
-      ...(init?.headers ?? {}),
-    },
-  });
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
-  if (!res.ok) {
+/** Serialize + pace calls so Free-tier 1 RPS (and shared org limits) aren't burst. */
+let requestChain: Promise<void> = Promise.resolve();
+let lastRequestAt = 0;
+
+function parseRetryAfterMs(res: Response): number | undefined {
+  const retryAfter = res.headers.get("retry-after");
+  if (retryAfter) {
+    const sec = Number(retryAfter);
+    if (Number.isFinite(sec) && sec > 0) return Math.ceil(sec * 1000);
+  }
+  const reset = res.headers.get("x-ratelimit-reset");
+  if (reset) {
+    const asNum = Number(reset);
+    if (Number.isFinite(asNum)) {
+      // epoch seconds or ms
+      const resetMs = asNum > 1e12 ? asNum : asNum * 1000;
+      const wait = resetMs - Date.now();
+      if (wait > 0) return Math.min(wait, 60_000);
+    }
+  }
+  return undefined;
+}
+
+async function pacedFetch(
+  path: string,
+  init?: RequestInit,
+): Promise<Response> {
+  const minInterval = Math.max(
+    200,
+    PREDICTION_TRADING_LIMITS.jupiterMinIntervalMs,
+  );
+
+  const run = async (): Promise<Response> => {
+    const wait = Math.max(0, minInterval - (Date.now() - lastRequestAt));
+    if (wait > 0) await sleep(wait);
+    lastRequestAt = Date.now();
+    return fetch(`${BASE}${path}`, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey(),
+        ...(init?.headers ?? {}),
+      },
+    });
+  };
+
+  const scheduled = requestChain.then(run, run);
+  requestChain = scheduled.then(
+    () => undefined,
+    () => undefined,
+  );
+  return scheduled;
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const maxAttempts = Math.max(1, PREDICTION_TRADING_LIMITS.jupiterMaxRetries + 1);
+  let lastError: PredictionApiError | undefined;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const res = await pacedFetch(path, init);
+
+    if (res.ok) {
+      return (await res.json()) as T;
+    }
+
     const body = await res.text().catch(() => "");
     const geoBlocked =
       res.status === 403 &&
       /geo|restricted|blocked|unavailable/i.test(body);
-    throw new PredictionApiError(
+    const retryAfterMs = parseRetryAfterMs(res);
+    lastError = new PredictionApiError(
       `Prediction API ${path} failed (${res.status}): ${body.slice(0, 200)}`,
       res.status,
       geoBlocked,
+      retryAfterMs,
     );
+
+    if (res.status === 429 && attempt < maxAttempts) {
+      const backoff =
+        retryAfterMs ??
+        Math.min(30_000, PREDICTION_TRADING_LIMITS.jupiterMinIntervalMs * 2 ** attempt);
+      console.warn(
+        `[prediction-api] 429 on ${path}; retry ${attempt}/${maxAttempts - 1} in ${backoff}ms`,
+      );
+      await sleep(backoff);
+      continue;
+    }
+
+    throw lastError;
   }
 
-  return (await res.json()) as T;
+  throw lastError ?? new PredictionApiError(`Prediction API ${path} failed`, 500);
 }
 
 function parseMarket(raw: Record<string, unknown>): PredictionMarketSummary {
@@ -222,6 +297,15 @@ export async function getMarket(
 
 export async function getOrderbook(
   marketId: string,
+  options?: {
+    /** Prefer these buy prices (from list/events) — avoids an extra GET /markets */
+    marketPrices?: Pick<
+      PredictionMarketSummary,
+      "buyYesPriceUsd" | "buyNoPriceUsd"
+    >;
+    /** Extra GET /markets for buy prices (expensive; default off) */
+    fetchMarketPrices?: boolean;
+  },
 ): Promise<PredictionOrderbook> {
   const raw = await request<Record<string, unknown>>(
     `/orderbook/${encodeURIComponent(marketId)}`,
@@ -234,16 +318,26 @@ export async function getOrderbook(
   let yesDollars = cheapestLevel(yesLevels) || bestBid(yesLevels);
   let noDollars = cheapestLevel(noLevels) || bestBid(noLevels);
 
-  try {
-    const market = await getMarket(marketId);
-    if (market.buyYesPriceUsd != null && market.buyYesPriceUsd > 0) {
-      yesDollars = market.buyYesPriceUsd;
+  const fromList = options?.marketPrices;
+  if (fromList?.buyYesPriceUsd != null && fromList.buyYesPriceUsd > 0) {
+    yesDollars = fromList.buyYesPriceUsd;
+  }
+  if (fromList?.buyNoPriceUsd != null && fromList.buyNoPriceUsd > 0) {
+    noDollars = fromList.buyNoPriceUsd;
+  }
+
+  if (options?.fetchMarketPrices) {
+    try {
+      const market = await getMarket(marketId);
+      if (market.buyYesPriceUsd != null && market.buyYesPriceUsd > 0) {
+        yesDollars = market.buyYesPriceUsd;
+      }
+      if (market.buyNoPriceUsd != null && market.buyNoPriceUsd > 0) {
+        noDollars = market.buyNoPriceUsd;
+      }
+    } catch {
+      // orderbook-only fallback
     }
-    if (market.buyNoPriceUsd != null && market.buyNoPriceUsd > 0) {
-      noDollars = market.buyNoPriceUsd;
-    }
-  } catch {
-    // orderbook-only fallback
   }
 
   const combined = yesDollars + noDollars;

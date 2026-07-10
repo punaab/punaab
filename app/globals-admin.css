@@ -536,6 +536,60 @@
   text-decoration: underline;
 }
 
+.arb-tokens-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  margin: -0.25rem 0 0.75rem;
+  min-width: 0;
+}
+
+.arb-tokens-label {
+  font-size: 0.65rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.arb-tokens-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.arb-token-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  padding: 0.2rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.22);
+  font-size: 0.72rem;
+  line-height: 1.2;
+}
+
+.arb-token-sym {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.arb-token-amt {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.arb-token-val {
+  color: var(--cyan);
+  font-variant-numeric: tabular-nums;
+}
+
 .arb-sparks-col {
   display: flex;
   flex-direction: column;

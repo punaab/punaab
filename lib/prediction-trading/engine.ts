@@ -67,7 +67,10 @@ export async function runPredictionTick(): Promise<PredictionTickSummary> {
         address: walletSnap.address,
         sol: walletSnap.sol,
         usdc: walletSnap.usdc,
+        solValueUsd: walletSnap.solValueUsd,
+        tokensValueUsd: walletSnap.tokensValueUsd,
         positionValueUsd: walletSnap.positionValueUsd,
+        totalWorthUsd: walletSnap.totalWorthUsd,
         openPositions: walletSnap.openPositions,
       });
     }
@@ -174,8 +177,8 @@ export async function runPredictionTick(): Promise<PredictionTickSummary> {
   for (const s of allSignals) {
     const key = `${s.marketId}:${s.side}:${s.isBuy}:${s.strategy}`;
     if (seen.has(key)) continue;
-    // Don't buy both sides of same market in one tick (breaks directional thesis)
-    if (s.isBuy) {
+    // Instant temporal arb needs both YES+NO in one tick; block only for directional strategies
+    if (s.isBuy && !s.strategy.startsWith("temporal_arb")) {
       const otherSide = s.side === "yes" ? "no" : "yes";
       if (
         toExecute.some(

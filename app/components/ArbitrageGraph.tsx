@@ -122,7 +122,11 @@ export default function ArbitrageGraph({ prediction, hubBalances }: Props) {
   const wallet = prediction?.wallet;
   const markets = latest?.markets ?? [];
   const edgeSeries = history.map((h) => h.bestEdgeBps);
-  const usdcSeries = walletHistory.map((h) => h.usdc + h.positionValueUsd);
+  const usdcSeries = walletHistory.map(
+    (h) =>
+      h.totalWorthUsd ??
+      (h.solValueUsd ?? 0) + h.usdc + h.positionValueUsd,
+  );
   const bestEdge = latest?.bestEdgeBps ?? 0;
   const hasArb = bestEdge >= 200;
   const sorted = [...markets].sort((a, b) => b.edgeBps - a.edgeBps);
@@ -152,7 +156,18 @@ export default function ArbitrageGraph({ prediction, hubBalances }: Props) {
         : 0;
   const posValue =
     wallet?.positionValueUsd ?? prediction?.latestWallet?.positionValueUsd ?? 0;
-  const totalEquity = usdc + posValue;
+  const solValue =
+    wallet?.solValueUsd ??
+    prediction?.latestWallet?.solValueUsd ??
+    0;
+  const tokensValue =
+    wallet?.tokensValueUsd ?? prediction?.latestWallet?.tokensValueUsd ?? usdc;
+  const totalEquity =
+    wallet?.totalWorthUsd ??
+    prediction?.latestWallet?.totalWorthUsd ??
+    solValue + tokensValue + posValue;
+  const topTokens = wallet?.topTokens ?? [];
+  const solPrice = wallet?.solPriceUsd ?? 0;
   const walletCapturedAt =
     wallet && "capturedAt" in wallet
       ? (wallet as { capturedAt?: string }).capturedAt
@@ -199,11 +214,13 @@ export default function ArbitrageGraph({ prediction, hubBalances }: Props) {
       {/* Live wallet balances */}
       <div className="arb-wallet-grid">
         <div className="arb-wallet-card arb-wallet-primary">
-          <span className="arb-wallet-label">Wallet value</span>
+          <span className="arb-wallet-label">Wallet worth</span>
           <span className="arb-wallet-value">{formatUsd(totalEquity)}</span>
           <span className="arb-wallet-sub">
+            {formatUsd(solValue || sol * solPrice)} SOL
+            {" · "}
             {formatUsd(usdc)} USDC
-            {posValue > 0 ? ` + ${formatUsd(posValue)} positions` : ""}
+            {posValue > 0 ? ` · ${formatUsd(posValue)} pos` : ""}
           </span>
         </div>
         <div className="arb-wallet-card">
@@ -214,7 +231,11 @@ export default function ArbitrageGraph({ prediction, hubBalances }: Props) {
         <div className="arb-wallet-card">
           <span className="arb-wallet-label">SOL</span>
           <span className="arb-wallet-value">{sol.toFixed(4)}</span>
-          <span className="arb-wallet-sub">gas reserve</span>
+          <span className="arb-wallet-sub">
+            {solPrice > 0
+              ? `${formatUsd(solValue || sol * solPrice)} @ $${solPrice.toFixed(0)}`
+              : "gas reserve"}
+          </span>
         </div>
         <div className="arb-wallet-card">
           <span className="arb-wallet-label">Today</span>
@@ -253,6 +274,29 @@ export default function ArbitrageGraph({ prediction, hubBalances }: Props) {
         )}
       </div>
 
+      {topTokens.length > 0 && (
+        <div className="arb-tokens-row">
+          <span className="arb-tokens-label">Top balances</span>
+          <ul className="arb-tokens-list">
+            {topTokens.map((t) => (
+              <li key={t.mint} className="arb-token-chip">
+                <span className="arb-token-sym">{t.symbol}</span>
+                <span className="arb-token-amt">
+                  {t.amount >= 100
+                    ? t.amount.toFixed(0)
+                    : t.amount >= 1
+                      ? t.amount.toFixed(2)
+                      : t.amount.toFixed(4)}
+                </span>
+                <span className="arb-token-val">
+                  {t.valueUsd > 0 ? formatUsd(t.valueUsd) : "—"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {!address && (
         <p className="muted arb-empty">
           Set <code>TRADING_SOLANA_ADDRESS</code> to show live wallet balances.
@@ -283,7 +327,7 @@ export default function ArbitrageGraph({ prediction, hubBalances }: Props) {
           </div>
           <div className="arb-spark-panel">
             <div className="arb-spark-label">
-              <span>Wallet equity</span>
+              <span>Wallet worth</span>
               <span className="arb-edge-hot">{formatUsd(totalEquity)}</span>
             </div>
             <Sparkline

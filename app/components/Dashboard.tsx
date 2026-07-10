@@ -248,6 +248,7 @@ export default function Dashboard() {
   const [state, setState] = useState<AdminState | null>(null);
   const [error, setError] = useState("");
   const [heartbeatRunning, setHeartbeatRunning] = useState(false);
+  const [avatarBusy, setAvatarBusy] = useState(false);
 
   const fetchState = useCallback(async () => {
     try {
@@ -285,6 +286,25 @@ export default function Dashboard() {
     }
   }
 
+  async function setMoltbookAvatar() {
+    setAvatarBusy(true);
+    setError("");
+    try {
+      const res = await fetch("/api/admin/avatar", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        throw new Error(
+          data.error ?? data.hint ?? "Avatar upload failed",
+        );
+      }
+      await fetchState();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Avatar upload failed");
+    } finally {
+      setAvatarBusy(false);
+    }
+  }
+
   const online =
     state?.status.lastTickAt &&
     !state?.status.heartbeatStale &&
@@ -312,6 +332,15 @@ export default function Dashboard() {
             onClick={() => void runHeartbeatNow()}
           >
             {heartbeatRunning ? "…" : "Heartbeat"}
+          </button>
+          <button
+            type="button"
+            className="btn-compact"
+            disabled={avatarBusy}
+            onClick={() => void setMoltbookAvatar()}
+            title="Upload public/punaab-avatar.png to Moltbook"
+          >
+            {avatarBusy ? "…" : "Set PFP"}
           </button>
           <button type="button" className="btn-compact btn-compact-ghost" onClick={logout}>
             Out
@@ -368,7 +397,11 @@ export default function Dashboard() {
                 className="avatar"
               />
             ) : (
-              <div className="avatar avatar-placeholder">P</div>
+              <img
+                src="/punaab-avatar.png"
+                alt={profile?.name ?? "punaab"}
+                className="avatar"
+              />
             )}
             {profile?.is_claimed && (
               <span className="claimed-badge" title="Claimed agent">✓</span>
