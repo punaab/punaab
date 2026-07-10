@@ -221,7 +221,9 @@ export async function listEvents(params: {
   category?: string;
   filter?: "new" | "live" | "trending" | "upcoming";
   provider?: "polymarket" | "kalshi" | "bisonfi";
+  /** @deprecated use tags — Jupiter OpenAPI uses `tags` */
   tag?: string;
+  tags?: string;
   includeMarkets?: boolean;
   limit?: number;
 }): Promise<PredictionEvent[]> {
@@ -229,7 +231,11 @@ export async function listEvents(params: {
   if (params.category) qs.set("category", params.category);
   if (params.filter) qs.set("filter", params.filter);
   if (params.provider) qs.set("provider", params.provider);
-  if (params.tag) qs.set("tag", params.tag);
+  const tagValue = params.tags ?? params.tag;
+  if (tagValue) {
+    qs.set("tags", tagValue);
+    qs.set("tag", tagValue); // docs example still uses tag=
+  }
   if (params.includeMarkets !== false) qs.set("includeMarkets", "true");
   if (params.limit) qs.set("end", String(params.limit));
 
@@ -254,17 +260,27 @@ export async function listEvents(params: {
   });
 }
 
-/** Jupiter Forecast — native 15m BTC up/down (provider=bisonfi). */
+/**
+ * Jupiter Forecast — live bisonfi 15m BTC up/down.
+ * Must use filter=live: without it the API returns upcoming rounds with
+ * tradable=false and no buyYesPriceUsd (marketsScanned stays 0).
+ */
 export async function listForecastMarkets(): Promise<PredictionMarketSummary[]> {
   const events = await listEvents({
     provider: "bisonfi",
     category: "crypto",
-    tag: "15m",
+    tags: "15m",
+    filter: "live",
     includeMarkets: true,
   });
   return events
     .flatMap((e) => e.markets)
-    .filter((m) => m.provider === "bisonfi" && m.tradable !== false);
+    .filter(
+      (m) =>
+        (m.provider === "bisonfi" || m.marketId.startsWith("BISON-")) &&
+        m.tradable === true &&
+        (m.lifecycleStatus == null || m.lifecycleStatus === "open"),
+    );
 }
 
 export async function searchEvents(

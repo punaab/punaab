@@ -11,7 +11,7 @@ import {
 import { estimateFairProbYes, inferWindowSeconds } from "./fair-value";
 import {
   midProbFromBuys,
-  resolveMarketBuyPrice,
+  isExecutableBuyPrice,
   validateForecastBuyPair,
 } from "./pricing";
 import type { MarketSnapshot, PredictionMarketSummary, PredictionOrderbook } from "./types";
@@ -25,10 +25,17 @@ export function isUpDownMarketTitle(title: string): boolean {
 
 function secondsUntil(iso?: string | number): number {
   if (iso == null) return Number.MAX_SAFE_INTEGER;
-  const ms =
-    typeof iso === "number"
-      ? iso * 1000
-      : new Date(iso).getTime();
+  if (typeof iso === "number") {
+    const ms = iso < 1e12 ? iso * 1000 : iso;
+    return Math.floor((ms - Date.now()) / 1000);
+  }
+  // Unix seconds as string (e.g. "1710000000") vs ISO
+  if (/^\d+$/.test(iso)) {
+    const n = Number(iso);
+    const ms = n < 1e12 ? n * 1000 : n;
+    return Math.floor((ms - Date.now()) / 1000);
+  }
+  const ms = new Date(iso).getTime();
   if (!Number.isFinite(ms)) return Number.MAX_SAFE_INTEGER;
   return Math.floor((ms - Date.now()) / 1000);
 }
@@ -78,7 +85,7 @@ async function snapshotFromMarket(
   };
 }
 
-/** Pair BISON-*-UP / BISON-*-DOWN using fresh GET /markets buyYes prices (docs). */
+/** Pair BISON-*-UP / BISON-*-DOWN using buyYes prices (list or fresh GET /markets). */
 async function snapshotFromForecastPair(
   up: PredictionMarketSummary,
   down: PredictionMarketSummary,
@@ -87,42 +94,52 @@ async function snapshotFromForecastPair(
   if (up.lifecycleStatus === "settled" || down.lifecycleStatus === "settled") {
     return null;
   }
+  if (up.lifecycleStatus === "resolving" || down.lifecycleStatus === "resolving") {
+    return null;
+  }
 
-  // Fresh market pricing — never trust list embeds or orderbook lowest bids
-  const [upQuote, downQuote] = [
-    await getForecastBuyPrice(up.marketId),
-    await getForecastBuyPrice(down.marketId),
-  ];
+  // Prefer prices already on the live list response (avoids extra RPS / 429s)
+  let yesDollars = up.buyYesPriceUsd ?? 0;
+  let noDollars = down.buyYesPriceUsd ?? 0;
+  let upSell = up.sellYesPriceUsd;
+  let downSell = down.sellYesPriceUsd;
+  let upMeta = up;
+  let downMeta = down;
+
+  const needFresh =
+    !isExecutableBuyPrice(yesDollars) ||
+    !isExecutableBuyPrice(noDollars) ||
+    up.tradable !== true ||
+    down.tradable !== true;
+
+  if (needFresh) {
+    const upQuote = await getForecastBuyPrice(up.marketId);
+    const downQuote = await getForecastBuyPrice(down.marketId);
+    upMeta = { ...up, ...upQuote.market };
+    downMeta = { ...down, ...downQuote.market };
+    yesDollars = upQuote.price;
+    noDollars = downQuote.price;
+    upSell = upQuote.sell;
+    downSell = downQuote.sell;
+
+    if (
+      upQuote.market.tradable === false ||
+      downQuote.market.tradable === false ||
+      upQuote.market.lifecycleStatus === "resolving" ||
+      downQuote.market.lifecycleStatus === "resolving"
+    ) {
+      return null;
+    }
+  }
 
   if (
-    upQuote.market.tradable === false ||
-    downQuote.market.tradable === false ||
-    upQuote.market.lifecycleStatus === "resolving" ||
-    downQuote.market.lifecycleStatus === "resolving"
+    !isExecutableBuyPrice(yesDollars) ||
+    !isExecutableBuyPrice(noDollars)
   ) {
     return null;
   }
 
-  const yesDollars = upQuote.price;
-  const noDollars = downQuote.price;
   const pair = validateForecastBuyPair(yesDollars, noDollars);
-
-  // Still emit snapshot for radar/fair-value when prices exist but aren't arb-ready
-  const hasPrices =
-    resolveMarketBuyPrice({
-      buyYesPriceUsd: yesDollars,
-      forecastSide: true,
-    }).source === "market_buy" &&
-    resolveMarketBuyPrice({
-      buyYesPriceUsd: noDollars,
-      forecastSide: true,
-    }).source === "market_buy";
-
-  if (!hasPrices) {
-    // One or both sides missing executable market buys — skip (no stub fallback)
-    return null;
-  }
-
   const combined = yesDollars + noDollars;
   const orderbook: PredictionOrderbook = {
     marketId: up.marketId,
@@ -136,40 +153,32 @@ async function snapshotFromForecastPair(
   };
 
   const title =
-    upQuote.market.title ??
+    upMeta.title ??
     up.title ??
     up.question ??
-    downQuote.market.title ??
+    downMeta.title ??
     down.title ??
     down.question ??
     forecastRoundKey(up.marketId);
 
   const closeIso =
-    upQuote.market.closeTime ??
-    downQuote.market.closeTime ??
-    up.closeTime ??
-    down.closeTime;
+    upMeta.closeTime ?? downMeta.closeTime ?? up.closeTime ?? down.closeTime;
   const secondsToClose = secondsUntil(closeIso);
   const windowSeconds = inferWindowSeconds(title);
-  const fairProbYes = midProbFromBuys(
-    yesDollars,
-    noDollars,
-    upQuote.sell,
-    downQuote.sell,
-  );
+  const fairProbYes = midProbFromBuys(yesDollars, noDollars, upSell, downSell);
 
   return {
     market: {
       marketId: up.marketId,
       title,
-      question: upQuote.market.question ?? up.question ?? down.question,
-      openTime: upQuote.market.openTime ?? up.openTime ?? down.openTime,
+      question: upMeta.question ?? up.question ?? down.question,
+      openTime: upMeta.openTime ?? up.openTime ?? down.openTime,
       closeTime: closeIso,
-      resolveAt: upQuote.market.resolveAt ?? up.resolveAt ?? down.resolveAt,
-      result: upQuote.market.result ?? up.result ?? down.result,
+      resolveAt: upMeta.resolveAt ?? up.resolveAt ?? down.resolveAt,
+      result: upMeta.result ?? up.result ?? down.result,
       provider: up.provider ?? down.provider ?? "bisonfi",
       tradable: true,
-      outcomeMint: upQuote.market.outcomeMint ?? up.outcomeMint,
+      outcomeMint: upMeta.outcomeMint ?? up.outcomeMint,
     },
     orderbook,
     secondsToClose,
@@ -227,10 +236,18 @@ export async function scanLiveCryptoMarkets(): Promise<MarketSnapshot[]> {
   const snapshots: MarketSnapshot[] = [];
   const seen = new Set<string>();
 
-  // Jupiter Forecast — native 15m BTC up/down (single listEvents; no duplicate scan)
+  // Jupiter Forecast — live bisonfi 15m only (filter=live is required)
   try {
     const forecast = await listForecastMarkets();
+    console.log(
+      `[prediction-scanner] live forecast markets=${forecast.length}`,
+    );
     await addForecastSnapshots(forecast, snapshots, seen);
+    if (forecast.length === 0) {
+      console.warn(
+        "[prediction-scanner] no tradable BISON markets (between rounds?)",
+      );
+    }
   } catch (error) {
     console.warn("[prediction-scanner] listForecastMarkets:", error);
   }
