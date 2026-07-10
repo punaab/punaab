@@ -514,6 +514,52 @@ export function getSiteUrl(): string {
   return "http://localhost:3000";
 }
 
+/** X / Twitter — Consumer Key (same as API Key). */
+export function getXApiKey(): string | undefined {
+  return (
+    process.env.X_API_KEY?.trim() ||
+    process.env.X_CONSUMER_KEY?.trim() ||
+    undefined
+  );
+}
+
+export function getXApiSecret(): string | undefined {
+  return process.env.X_API_SECRET?.trim() || undefined;
+}
+
+export function getXBearerToken(): string | undefined {
+  return process.env.X_BEARER_TOKEN?.trim() || undefined;
+}
+
+export function getXClientId(): string | undefined {
+  return process.env.X_CLIENT_ID?.trim() || undefined;
+}
+
+export function getXClientSecret(): string | undefined {
+  return process.env.X_CLIENT_SECRET?.trim() || undefined;
+}
+
+/** OAuth 1.0a user tokens (optional if using OAuth 2.0 PKCE connect). */
+export function getXAccessToken(): string | undefined {
+  return process.env.X_ACCESS_TOKEN?.trim() || undefined;
+}
+
+export function getXAccessTokenSecret(): string | undefined {
+  return process.env.X_ACCESS_TOKEN_SECRET?.trim() || undefined;
+}
+
+export function isXCrossPostEnabled(): boolean {
+  const v = process.env.X_CROSSPOST_ENABLED?.trim().toLowerCase();
+  if (v === "false" || v === "0" || v === "no") return false;
+  return true;
+}
+
+export function getXCallbackUrl(): string {
+  const explicit = process.env.X_CALLBACK_URL?.trim();
+  if (explicit) return explicit.replace(/\/$/, "");
+  return `${getSiteUrl()}/api/auth/x/callback`;
+}
+
 /** Suno API key — AI music generation for on-chain music NFTs. */
 export function getSunoApiKey(): string | undefined {
   return process.env.SUNO_API_KEY?.trim() || undefined;

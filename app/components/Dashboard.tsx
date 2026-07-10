@@ -248,8 +248,14 @@ export default function Dashboard() {
   const [state, setState] = useState<AdminState | null>(null);
   const [error, setError] = useState("");
   const [heartbeatRunning, setHeartbeatRunning] = useState(false);
-  const [avatarBusy, setAvatarBusy] = useState(false);
   const [predTickBusy, setPredTickBusy] = useState(false);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const [xStatus, setXStatus] = useState<{
+    connected?: boolean;
+    username?: string;
+    configured?: boolean;
+    callbackUrl?: string;
+  } | null>(null);
 
   const fetchState = useCallback(async () => {
     try {
@@ -267,6 +273,26 @@ export default function Dashboard() {
     const id = setInterval(fetchState, 30_000);
     return () => clearInterval(id);
   }, [fetchState]);
+
+  useEffect(() => {
+    void fetch("/api/auth/x/status")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data) setXStatus(data);
+      })
+      .catch(() => undefined);
+
+    const params = new URLSearchParams(window.location.search);
+    const connected = params.get("x_connected");
+    const xErr = params.get("x_error");
+    if (connected) {
+      setError("");
+      window.history.replaceState({}, "", "/admin");
+    } else if (xErr) {
+      setError(`X connect failed: ${xErr}`);
+      window.history.replaceState({}, "", "/admin");
+    }
+  }, []);
 
   async function logout() {
     await fetch("/api/admin/logout", { method: "POST" });
@@ -369,6 +395,19 @@ export default function Dashboard() {
           >
             {avatarBusy ? "…" : "Set PFP"}
           </button>
+          <a
+            className="btn-compact"
+            href="/api/auth/x/start"
+            title={
+              xStatus?.connected
+                ? `Connected as @${xStatus.username ?? "x"}`
+                : `Connect @notbitcoinceo — callback ${xStatus?.callbackUrl ?? ""}`
+            }
+          >
+            {xStatus?.connected
+              ? `X @${xStatus.username ?? "ok"}`
+              : "Connect X"}
+          </a>
           <button type="button" className="btn-compact btn-compact-ghost" onClick={logout}>
             Out
           </button>

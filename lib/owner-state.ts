@@ -88,6 +88,34 @@ export async function appendActivity(
   } catch (error) {
     console.error("[owner-state] appendActivity failed:", error);
   }
+
+  // Soft cross-post Moltbook posts/comments → X (@notbitcoinceo)
+  const crossActions = new Set([
+    "post",
+    "comment",
+    "showcase",
+    "promote_cat_nft",
+    "promote_music_drop",
+    "announce_music_drop_live",
+    "offer_help",
+    "onchain_insight",
+    "promote_anthem_comment",
+  ]);
+  if (crossActions.has(entry.action) && (entry.content || entry.summary)) {
+    void import("./x-twitter")
+      .then(({ crossPostMoltbookActivity }) =>
+        crossPostMoltbookActivity({
+          action: entry.action,
+          title: entry.summary,
+          content: entry.content,
+          targetUrl: entry.targetUrl,
+        }),
+      )
+      .catch((error) => {
+        console.warn("[owner-state] x crosspost:", error);
+      });
+  }
+
   return full;
 }
 
