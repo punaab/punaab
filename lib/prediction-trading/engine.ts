@@ -13,6 +13,7 @@ import {
   getAllLegs,
   getTradesToday,
   getUsdcDeployedToday,
+  pruneNonForecastLegs,
   saveLeg,
   setLastTickSummary,
 } from "./state";
@@ -45,6 +46,18 @@ export async function runPredictionTick(): Promise<PredictionTickSummary> {
     summary.errors.push(gate.reason ?? "disabled");
     await setLastTickSummary(summary);
     return summary;
+  }
+
+  // Drop stale POLY ledger legs that blocked slots / confused the radar
+  try {
+    const removed = await pruneNonForecastLegs(
+      PREDICTION_TRADING_LIMITS.scalpAllowPolymarket,
+    );
+    if (removed.length) {
+      summary.errors.push(`pruned_legs:${removed.length}`);
+    }
+  } catch (error) {
+    console.warn("[prediction-engine] prune legs:", error);
   }
 
   const access = await checkPredictionApiAccess();
@@ -177,6 +190,15 @@ export async function runPredictionTick(): Promise<PredictionTickSummary> {
   for (const s of allSignals) {
     const key = `${s.marketId}:${s.side}:${s.isBuy}:${s.strategy}`;
     if (seen.has(key)) continue;
+
+    // Forecast-only by default — never execute POLY stub books
+    if (
+      !s.marketId.startsWith("BISON-") &&
+      !PREDICTION_TRADING_LIMITS.scalpAllowPolymarket
+    ) {
+      continue;
+    }
+
     // Instant temporal arb needs both YES+NO in one tick; block only for directional strategies
     if (s.isBuy && !s.strategy.startsWith("temporal_arb")) {
       const otherSide = s.side === "yes" ? "no" : "yes";

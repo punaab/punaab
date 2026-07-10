@@ -80,6 +80,76 @@ export async function saveLeg(leg: LegLedger): Promise<void> {
   }
 }
 
+export async function deleteLeg(marketId: string): Promise<void> {
+  try {
+    await getRedis().hdel(LEGS_KEY, marketId);
+  } catch (error) {
+    console.error("[prediction-state] deleteLeg:", error);
+  }
+}
+
+/**
+ * Drop Polymarket / non-Forecast ledger legs so they don't block open-market slots.
+ * Keep BISON-* unless allowPolymarket is on.
+ */
+export async function pruneNonForecastLegs(
+  allowPolymarket = false,
+): Promise<string[]> {
+  if (allowPolymarket) return [];
+  const removed: string[] = [];
+  const legs = await getAllLegs();
+  for (const [marketId] of legs) {
+    if (!marketId.startsWith("BISON-")) {
+      await deleteLeg(marketId);
+      removed.push(marketId);
+    }
+  }
+  return removed;
+}
+
+/** Credible radar row — rejects stub 1¢ books and non-Forecast junk. */
+export function isCredibleArbMarket(
+  m: ArbMarketSnapshot,
+  allowPolymarket = false,
+): boolean {
+  const isBison = m.marketId.startsWith("BISON-");
+  const isPoly = m.marketId.startsWith("POLY-");
+  if (isPoly && !allowPolymarket) return false;
+  if (!isBison && !allowPolymarket) return false;
+  if (m.yes > 0 && m.yes < 0.04) return false;
+  if (m.no > 0 && m.no < 0.04) return false;
+  if (m.combined > 0 && m.combined < 0.82) return false;
+  if (m.edgeBps >= 5000) return false; // ≥50% "edge" is almost always bad data
+  return true;
+}
+
+export async function getArbHistory(limit = 24): Promise<ArbHistoryPoint[]> {
+  try {
+    const allowPoly =
+      process.env.PREDICTION_SCALP_ALLOW_POLYMARKET?.trim().toLowerCase() ===
+      "true";
+    const raw = await getRedis().lrange(ARB_HISTORY_KEY, 0, limit - 1);
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map((v) => parseRedisValue<ArbHistoryPoint>(v))
+      .filter((e): e is ArbHistoryPoint => e != null)
+      .map((point) => {
+        const markets = point.markets.filter((m) =>
+          isCredibleArbMarket(m, allowPoly),
+        );
+        const bestEdgeBps = markets.reduce(
+          (max, m) => Math.max(max, m.edgeBps),
+          0,
+        );
+        return { ...point, markets, bestEdgeBps };
+      })
+      .reverse();
+  } catch (error) {
+    console.error("[prediction-state] getArbHistory:", error);
+    return [];
+  }
+}
+
 export async function getTradesToday(): Promise<number> {
   try {
     const key = `${TRADES_TODAY_KEY}:${utcDay()}`;
@@ -167,24 +237,29 @@ export async function getLastTickSummary(): Promise<PredictionTickSummary | null
 export async function appendArbHistory(point: ArbHistoryPoint): Promise<void> {
   try {
     const r = getRedis();
-    await r.lpush(ARB_HISTORY_KEY, JSON.stringify(point));
+    // Only persist credible Forecast rows so Redis doesn't keep stub POLY edges
+    const allowPoly =
+      process.env.PREDICTION_SCALP_ALLOW_POLYMARKET?.trim().toLowerCase() ===
+      "true";
+    const markets = point.markets.filter((m) =>
+      isCredibleArbMarket(m, allowPoly),
+    );
+    const bestEdgeBps = markets.reduce(
+      (max, m) => Math.max(max, m.edgeBps),
+      0,
+    );
+    await r.lpush(
+      ARB_HISTORY_KEY,
+      JSON.stringify({
+        ...point,
+        markets,
+        bestEdgeBps,
+        marketsScanned: point.marketsScanned,
+      }),
+    );
     await r.ltrim(ARB_HISTORY_KEY, 0, ARB_HISTORY_MAX - 1);
   } catch (error) {
     console.error("[prediction-state] appendArbHistory:", error);
-  }
-}
-
-export async function getArbHistory(limit = 24): Promise<ArbHistoryPoint[]> {
-  try {
-    const raw = await getRedis().lrange(ARB_HISTORY_KEY, 0, limit - 1);
-    if (!Array.isArray(raw)) return [];
-    return raw
-      .map((v) => parseRedisValue<ArbHistoryPoint>(v))
-      .filter((e): e is ArbHistoryPoint => e != null)
-      .reverse();
-  } catch (error) {
-    console.error("[prediction-state] getArbHistory:", error);
-    return [];
   }
 }
 

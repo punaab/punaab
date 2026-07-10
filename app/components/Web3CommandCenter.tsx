@@ -257,8 +257,8 @@ export default function Web3CommandCenter({ hub, onRefresh }: Props) {
 
       {hub.prediction && (
         <p className="muted web3-panel-hint web3-prediction-ref">
-          Up/Down arb radar at top · {hub.prediction.tradesToday} trades today ·{" "}
-          <code>npm run prediction-trader</code>
+          Up/Down arb radar at top · {hub.prediction.tradesToday} trades today ·
+          cron every 2m or admin <code>Pred tick</code>
         </p>
       )}
 

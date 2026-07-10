@@ -249,6 +249,7 @@ export default function Dashboard() {
   const [error, setError] = useState("");
   const [heartbeatRunning, setHeartbeatRunning] = useState(false);
   const [avatarBusy, setAvatarBusy] = useState(false);
+  const [predTickBusy, setPredTickBusy] = useState(false);
 
   const fetchState = useCallback(async () => {
     try {
@@ -305,6 +306,23 @@ export default function Dashboard() {
     }
   }
 
+  async function runPredictionTickNow() {
+    setPredTickBusy(true);
+    setError("");
+    try {
+      const res = await fetch("/api/admin/prediction-tick", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.ok === false) {
+        throw new Error(data.error ?? "prediction_tick_failed");
+      }
+      await fetchState();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Prediction tick failed");
+    } finally {
+      setPredTickBusy(false);
+    }
+  }
+
   const online =
     state?.status.lastTickAt &&
     !state?.status.heartbeatStale &&
@@ -332,6 +350,15 @@ export default function Dashboard() {
             onClick={() => void runHeartbeatNow()}
           >
             {heartbeatRunning ? "…" : "Heartbeat"}
+          </button>
+          <button
+            type="button"
+            className="btn-compact"
+            disabled={predTickBusy}
+            onClick={() => void runPredictionTickNow()}
+            title="Run one Jupiter Forecast prediction tick now"
+          >
+            {predTickBusy ? "…" : "Pred tick"}
           </button>
           <button
             type="button"

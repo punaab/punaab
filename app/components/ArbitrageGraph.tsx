@@ -127,9 +127,18 @@ export default function ArbitrageGraph({ prediction, hubBalances }: Props) {
       h.totalWorthUsd ??
       (h.solValueUsd ?? 0) + h.usdc + h.positionValueUsd,
   );
-  const bestEdge = latest?.bestEdgeBps ?? 0;
+  const sorted = [...markets]
+    .filter((m) => {
+      if (m.marketId.startsWith("POLY-")) return false;
+      if (m.yes > 0 && m.yes < 0.04) return false;
+      if (m.no > 0 && m.no < 0.04) return false;
+      if (m.combined > 0 && m.combined < 0.82) return false;
+      if (m.edgeBps >= 5000) return false;
+      return true;
+    })
+    .sort((a, b) => b.edgeBps - a.edgeBps);
+  const bestEdge = sorted[0]?.edgeBps ?? 0;
   const hasArb = bestEdge >= 200;
-  const sorted = [...markets].sort((a, b) => b.edgeBps - a.edgeBps);
   const trades = prediction?.log ?? [];
   const openLegs = prediction?.openLegs ?? [];
   const positions = wallet?.positions ?? [];
@@ -322,7 +331,7 @@ export default function ArbitrageGraph({ prediction, hubBalances }: Props) {
               values={edgeSeries}
               color="var(--success)"
               fillId="arbSparkEdge"
-              emptyLabel="Run prediction-trader"
+              emptyLabel="Awaiting cron tick"
             />
           </div>
           <div className="arb-spark-panel">
@@ -355,8 +364,8 @@ export default function ArbitrageGraph({ prediction, hubBalances }: Props) {
           </div>
           {!sorted.length && (
             <p className="muted arb-empty">
-              No live Jupiter Forecast markets.{" "}
-              <code>npm run prediction-trader:once</code>
+              No live Forecast markets yet. Cron runs every 2m, or click{" "}
+              <strong>Pred tick</strong> in the top bar.
             </p>
           )}
           {sorted.slice(0, 6).map((m) => {
@@ -371,10 +380,18 @@ export default function ArbitrageGraph({ prediction, hubBalances }: Props) {
                     {shortTitle(m.title)}
                   </span>
                   <span className="arb-market-id">
-                    Jupiter Forecast ·{" "}
+                    {m.marketId.startsWith("BISON-") || m.isForecast
+                      ? "Jupiter Forecast"
+                      : m.marketId.startsWith("POLY-")
+                        ? "Polymarket"
+                        : "Prediction"}{" "}
+                    ·{" "}
                     {m.secondsToClose != null && m.secondsToClose < 900
                       ? `${Math.floor(m.secondsToClose / 60)}m left`
-                      : m.marketId.replace(/^BISON-/, "").slice(0, 16)}
+                      : m.marketId
+                          .replace(/^BISON-/, "")
+                          .replace(/^POLY-/, "P-")
+                          .slice(0, 16)}
                   </span>
                 </div>
                 <span className="arb-price yes">{formatCents(m.yes)}</span>

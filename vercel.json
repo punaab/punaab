@@ -6,6 +6,10 @@
     {
       "path": "/api/cron/heartbeat",
       "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/prediction",
+      "schedule": "*/2 * * * *"
     }
   ]
 }

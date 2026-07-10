@@ -16,10 +16,15 @@ import {
   getTradesToday,
   getUsdcDeployedToday,
   getWalletHistory,
+  pruneNonForecastLegs,
 } from "./prediction-trading/state";
 import { fetchPredictionWalletSnapshot } from "./prediction-trading/wallet";
 
 export async function fetchPredictionDashboard() {
+  await pruneNonForecastLegs(
+    PREDICTION_TRADING_LIMITS.scalpAllowPolymarket,
+  ).catch(() => null);
+
   const [
     access,
     lastTick,
@@ -48,6 +53,12 @@ export async function fetchPredictionDashboard() {
   const latestArb = arbHistory[arbHistory.length - 1] ?? null;
   const latestWallet = walletHistory[walletHistory.length - 1] ?? null;
 
+  const openLegs = [...legs.values()].filter(
+    (l) =>
+      PREDICTION_TRADING_LIMITS.scalpAllowPolymarket ||
+      l.marketId.startsWith("BISON-"),
+  );
+
   return {
     enabled: isPredictionTradingEnabled(),
     tradingEnabled: isTradingEnabled(),
@@ -59,7 +70,7 @@ export async function fetchPredictionDashboard() {
     apiAccess: access,
     lastTick,
     log,
-    openLegs: [...legs.values()],
+    openLegs,
     tradesToday,
     usdcDeployedToday: usdcToday,
     arbHistory,
