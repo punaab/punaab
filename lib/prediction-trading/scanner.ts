@@ -1,6 +1,7 @@
 import { PREDICTION_TRADING_LIMITS } from "../config";
 import {
   forecastRoundKey,
+  getForecastBuyPrice,
   getMarket,
   getOrderbook,
   getTradingStatus,
@@ -8,6 +9,11 @@ import {
   searchEvents,
 } from "./client";
 import { estimateFairProbYes, inferWindowSeconds } from "./fair-value";
+import {
+  midProbFromBuys,
+  resolveMarketBuyPrice,
+  validateForecastBuyPair,
+} from "./pricing";
 import type { MarketSnapshot, PredictionMarketSummary, PredictionOrderbook } from "./types";
 
 const UP_DOWN_PATTERN =
@@ -41,6 +47,7 @@ async function snapshotFromMarket(
 
   const orderbook = await getOrderbook(summary.marketId, {
     marketPrices: summary,
+    fetchMarketPrices: true,
   });
   const closeIso = summary.closeTime;
   const secondsToClose = secondsUntil(closeIso);
@@ -71,32 +78,51 @@ async function snapshotFromMarket(
   };
 }
 
-/** Pair BISON-*-UP / BISON-*-DOWN into one combined orderbook snapshot. */
+/** Pair BISON-*-UP / BISON-*-DOWN using fresh GET /markets buyYes prices (docs). */
 async function snapshotFromForecastPair(
   up: PredictionMarketSummary,
   down: PredictionMarketSummary,
 ): Promise<MarketSnapshot | null> {
   if (up.status === "closed" || down.status === "closed") return null;
+  if (up.lifecycleStatus === "settled" || down.lifecycleStatus === "settled") {
+    return null;
+  }
 
-  // Sequential orderbooks only — list already has titles/prices; avoid GET /markets burst
-  const upOb = await getOrderbook(up.marketId, { marketPrices: up });
-  const downOb = await getOrderbook(down.marketId, { marketPrices: down });
+  // Fresh market pricing — never trust list embeds or orderbook lowest bids
+  const [upQuote, downQuote] = [
+    await getForecastBuyPrice(up.marketId),
+    await getForecastBuyPrice(down.marketId),
+  ];
 
-  const title =
-    up.title ??
-    up.question ??
-    down.title ??
-    down.question ??
-    forecastRoundKey(up.marketId);
+  if (
+    upQuote.market.tradable === false ||
+    downQuote.market.tradable === false ||
+    upQuote.market.lifecycleStatus === "resolving" ||
+    downQuote.market.lifecycleStatus === "resolving"
+  ) {
+    return null;
+  }
 
-  const yesDollars =
-    up.buyYesPriceUsd && up.buyYesPriceUsd > 0
-      ? up.buyYesPriceUsd
-      : upOb.yesDollars;
-  const noDollars =
-    down.buyYesPriceUsd && down.buyYesPriceUsd > 0
-      ? down.buyYesPriceUsd
-      : downOb.yesDollars;
+  const yesDollars = upQuote.price;
+  const noDollars = downQuote.price;
+  const pair = validateForecastBuyPair(yesDollars, noDollars);
+
+  // Still emit snapshot for radar/fair-value when prices exist but aren't arb-ready
+  const hasPrices =
+    resolveMarketBuyPrice({
+      buyYesPriceUsd: yesDollars,
+      forecastSide: true,
+    }).source === "market_buy" &&
+    resolveMarketBuyPrice({
+      buyYesPriceUsd: noDollars,
+      forecastSide: true,
+    }).source === "market_buy";
+
+  if (!hasPrices) {
+    // One or both sides missing executable market buys — skip (no stub fallback)
+    return null;
+  }
+
   const combined = yesDollars + noDollars;
   const orderbook: PredictionOrderbook = {
     marketId: up.marketId,
@@ -105,27 +131,45 @@ async function snapshotFromForecastPair(
     yesDollars,
     noDollars,
     combinedDollars: combined,
-    edgeBps: combined > 0 ? Math.round((1 - combined) * 10_000) : 0,
-    yesLevels: upOb.yesLevels,
-    noLevels: downOb.yesLevels,
+    edgeBps: pair.edgeBps,
+    priceSource: "market_buy",
   };
 
-  const closeIso = up.closeTime ?? down.closeTime;
+  const title =
+    upQuote.market.title ??
+    up.title ??
+    up.question ??
+    downQuote.market.title ??
+    down.title ??
+    down.question ??
+    forecastRoundKey(up.marketId);
+
+  const closeIso =
+    upQuote.market.closeTime ??
+    downQuote.market.closeTime ??
+    up.closeTime ??
+    down.closeTime;
   const secondsToClose = secondsUntil(closeIso);
   const windowSeconds = inferWindowSeconds(title);
+  const fairProbYes = midProbFromBuys(
+    yesDollars,
+    noDollars,
+    upQuote.sell,
+    downQuote.sell,
+  );
 
   return {
     market: {
       marketId: up.marketId,
       title,
-      question: up.question ?? down.question,
-      openTime: up.openTime ?? down.openTime,
+      question: upQuote.market.question ?? up.question ?? down.question,
+      openTime: upQuote.market.openTime ?? up.openTime ?? down.openTime,
       closeTime: closeIso,
-      resolveAt: up.resolveAt ?? down.resolveAt,
-      result: up.result ?? down.result,
+      resolveAt: upQuote.market.resolveAt ?? up.resolveAt ?? down.resolveAt,
+      result: upQuote.market.result ?? up.result ?? down.result,
       provider: up.provider ?? down.provider ?? "bisonfi",
-      tradable: up.tradable !== false && down.tradable !== false,
-      outcomeMint: up.outcomeMint,
+      tradable: true,
+      outcomeMint: upQuote.market.outcomeMint ?? up.outcomeMint,
     },
     orderbook,
     secondsToClose,
@@ -133,6 +177,7 @@ async function snapshotFromForecastPair(
       orderbook,
       secondsToClose,
       windowSeconds,
+      overrideFair: fairProbYes,
     }),
     isUpDown: true,
     isForecast: true,

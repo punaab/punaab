@@ -12,10 +12,10 @@ import {
 } from "../config";
 import {
   bestBid,
-  cheapestLevel,
+  isExecutableBuyPrice,
   microToDollars,
   parseOrderbookSide,
-  type OrderbookLevel,
+  resolveMarketBuyPrice,
 } from "./pricing";
 import type {
   PredictionEvent,
@@ -147,7 +147,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 function parseMarket(raw: Record<string, unknown>): PredictionMarketSummary {
   const marketId = String(raw.marketId ?? raw.id ?? "");
-  const pricingRaw = raw.pricing as Record<string, unknown> | undefined;
+  const pricingRaw = (raw.pricing as Record<string, unknown> | undefined) ?? {};
+  // Prefer nested pricing.*; fall back to top-level (API migrations)
+  const buyYes = pricingRaw.buyYesPriceUsd ?? raw.buyYesPriceUsd;
+  const buyNo = pricingRaw.buyNoPriceUsd ?? raw.buyNoPriceUsd;
+  const sellYes = pricingRaw.sellYesPriceUsd ?? raw.sellYesPriceUsd;
+  const sellNo = pricingRaw.sellNoPriceUsd ?? raw.sellNoPriceUsd;
   return {
     marketId,
     title: raw.title ? String(raw.title) : undefined,
@@ -163,12 +168,15 @@ function parseMarket(raw: Record<string, unknown>): PredictionMarketSummary {
     outcomes: Array.isArray(raw.outcomes)
       ? raw.outcomes.map(String)
       : undefined,
-    buyYesPriceUsd: pricingRaw?.buyYesPriceUsd != null
-      ? microToDollars(pricingRaw.buyYesPriceUsd)
+    lifecycleStatus: raw.lifecycleStatus
+      ? String(raw.lifecycleStatus)
       : undefined,
-    buyNoPriceUsd: pricingRaw?.buyNoPriceUsd != null
-      ? microToDollars(pricingRaw.buyNoPriceUsd)
-      : undefined,
+    buyYesPriceUsd:
+      buyYes != null ? microToDollars(buyYes) : undefined,
+    buyNoPriceUsd: buyNo != null ? microToDollars(buyNo) : undefined,
+    sellYesPriceUsd:
+      sellYes != null ? microToDollars(sellYes) : undefined,
+    sellNoPriceUsd: sellNo != null ? microToDollars(sellNo) : undefined,
   };
 }
 
@@ -298,13 +306,15 @@ export async function getMarket(
 export async function getOrderbook(
   marketId: string,
   options?: {
-    /** Prefer these buy prices (from list/events) — avoids an extra GET /markets */
+    /** Prefer these buy prices (from fresh GET /markets) */
     marketPrices?: Pick<
       PredictionMarketSummary,
       "buyYesPriceUsd" | "buyNoPriceUsd"
     >;
-    /** Extra GET /markets for buy prices (expensive; default off) */
+    /** Extra GET /markets for buy prices */
     fetchMarketPrices?: boolean;
+    /** Forecast single-outcome market: only buyYes is meaningful */
+    forecastSide?: boolean;
   },
 ): Promise<PredictionOrderbook> {
   const raw = await request<Record<string, unknown>>(
@@ -314,30 +324,63 @@ export async function getOrderbook(
   const yesLevels = parseOrderbookSide(raw.yes_dollars ?? raw.yes);
   const noLevels = parseOrderbookSide(raw.no_dollars ?? raw.no);
 
-  // Prefer market buy prices when available; orderbook bids are depth hints
-  let yesDollars = cheapestLevel(yesLevels) || bestBid(yesLevels);
-  let noDollars = cheapestLevel(noLevels) || bestBid(noLevels);
+  // Bids are for sells / fair mid — NEVER use cheapest bid as buy price
+  const yesBid = bestBid(yesLevels);
+  const noBid = bestBid(noLevels);
 
-  const fromList = options?.marketPrices;
-  if (fromList?.buyYesPriceUsd != null && fromList.buyYesPriceUsd > 0) {
-    yesDollars = fromList.buyYesPriceUsd;
-  }
-  if (fromList?.buyNoPriceUsd != null && fromList.buyNoPriceUsd > 0) {
-    noDollars = fromList.buyNoPriceUsd;
-  }
-
-  if (options?.fetchMarketPrices) {
+  let marketPrices = options?.marketPrices;
+  if (options?.fetchMarketPrices || !marketPrices) {
     try {
       const market = await getMarket(marketId);
-      if (market.buyYesPriceUsd != null && market.buyYesPriceUsd > 0) {
-        yesDollars = market.buyYesPriceUsd;
-      }
-      if (market.buyNoPriceUsd != null && market.buyNoPriceUsd > 0) {
-        noDollars = market.buyNoPriceUsd;
-      }
+      marketPrices = {
+        buyYesPriceUsd: market.buyYesPriceUsd,
+        buyNoPriceUsd: market.buyNoPriceUsd,
+      };
     } catch {
-      // orderbook-only fallback
+      // fall through
     }
+  }
+
+  const yesResolved = resolveMarketBuyPrice({
+    buyYesPriceUsd: marketPrices?.buyYesPriceUsd,
+    buyNoPriceUsd: undefined,
+    forecastSide: options?.forecastSide === true,
+  });
+  const noResolved = options?.forecastSide
+    ? { price: 0, source: "none" as const }
+    : resolveMarketBuyPrice({
+        buyYesPriceUsd: undefined,
+        buyNoPriceUsd: marketPrices?.buyNoPriceUsd,
+      });
+
+  // Binary markets: yes buy + no buy from market fields
+  let yesDollars = yesResolved.price;
+  let noDollars = noResolved.price;
+  let priceSource: PredictionOrderbook["priceSource"] = "none";
+
+  if (options?.forecastSide) {
+    yesDollars = yesResolved.price;
+    noDollars = 0;
+    priceSource = yesResolved.source === "market_buy" ? "market_buy" : "none";
+  } else if (
+    isExecutableBuyPrice(marketPrices?.buyYesPriceUsd) &&
+    isExecutableBuyPrice(marketPrices?.buyNoPriceUsd)
+  ) {
+    yesDollars = marketPrices!.buyYesPriceUsd!;
+    noDollars = marketPrices!.buyNoPriceUsd!;
+    priceSource = "market_buy";
+  } else if (isExecutableBuyPrice(marketPrices?.buyYesPriceUsd)) {
+    yesDollars = marketPrices!.buyYesPriceUsd!;
+    // Complement only for display — strategies must not arb on this alone
+    noDollars = isExecutableBuyPrice(marketPrices?.buyNoPriceUsd)
+      ? marketPrices!.buyNoPriceUsd!
+      : 0;
+    priceSource = noDollars > 0 ? "market_buy" : "mixed";
+  } else {
+    // Last resort display only — mark as bid_proxy so strategies skip arb
+    yesDollars = yesBid;
+    noDollars = noBid;
+    priceSource = yesBid > 0 || noBid > 0 ? "bid_proxy" : "none";
   }
 
   const combined = yesDollars + noDollars;
@@ -351,8 +394,25 @@ export async function getOrderbook(
     noDollars,
     combinedDollars: combined,
     edgeBps,
+    priceSource,
     yesLevels,
     noLevels,
+  };
+}
+
+/** Fresh buy price for a Forecast outcome market (UP or DOWN). */
+export async function getForecastBuyPrice(
+  marketId: string,
+): Promise<{ price: number; sell?: number; market: PredictionMarketSummary }> {
+  const market = await getMarket(marketId);
+  const resolved = resolveMarketBuyPrice({
+    buyYesPriceUsd: market.buyYesPriceUsd,
+    forecastSide: true,
+  });
+  return {
+    price: resolved.price,
+    sell: market.sellYesPriceUsd,
+    market,
   };
 }
 

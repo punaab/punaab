@@ -25,6 +25,9 @@ export interface PredictionMarketSummary {
   outcomes?: string[];
   buyYesPriceUsd?: number;
   buyNoPriceUsd?: number;
+  sellYesPriceUsd?: number;
+  sellNoPriceUsd?: number;
+  lifecycleStatus?: string;
 }
 
 export interface PredictionMarket {
@@ -48,6 +51,8 @@ export interface PredictionOrderbook {
   noDollars: number;
   combinedDollars: number;
   edgeBps: number;
+  /** How buy prices were obtained — never trust bid_proxy for arb. */
+  priceSource?: "market_buy" | "bid_proxy" | "mixed" | "none";
   yesLevels?: Array<{ priceUsd: number; quantity: number }>;
   noLevels?: Array<{ priceUsd: number; quantity: number }>;
 }

@@ -1,5 +1,9 @@
 import { PREDICTION_TRADING_LIMITS } from "../../config";
-import { combinedCostOk } from "../risk";
+import {
+  isExecutableBuyPrice,
+  validateBinaryBuyPair,
+  validateForecastBuyPair,
+} from "../pricing";
 import type { LegLedger, MarketSnapshot, TradeSignal } from "../types";
 
 export function signalsTemporalArb(
@@ -13,72 +17,110 @@ export function signalsTemporalArb(
     PREDICTION_TRADING_LIMITS.minOrderUsdc,
   );
 
-  // Instant arb: both sides cheap right now
-  if (combinedCostOk(orderbook.combinedDollars)) {
-    if (orderbook.yesDollars > 0 && orderbook.yesDollars <= 0.97) {
+  // Never arb on bid-proxy / stub books (classic no@0.01 bug)
+  if (
+    orderbook.priceSource === "bid_proxy" ||
+    orderbook.priceSource === "none"
+  ) {
+    return [];
+  }
+
+  const yes = orderbook.yesDollars;
+  const no = orderbook.noDollars;
+  const pair = snap.isForecast
+    ? validateForecastBuyPair(yes, no)
+    : validateBinaryBuyPair(yes, no);
+
+  // Instant arb: both sides executable and combined edge clears floor
+  if (pair.ok) {
+    if (isExecutableBuyPrice(yes)) {
       signals.push({
         strategy: "temporal_arb_instant",
         marketId: market.marketId,
         side: "yes",
         isBuy: true,
         depositUsdc: deposit,
-        reason: `instant_arb yes@${orderbook.yesDollars.toFixed(2)} combined=${orderbook.combinedDollars.toFixed(3)}`,
-        expectedEdgeBps: orderbook.edgeBps,
+        reason: `instant_arb yes@${yes.toFixed(3)} combined=${pair.combined.toFixed(3)} src=${orderbook.priceSource ?? "market"}`,
+        expectedEdgeBps: pair.edgeBps,
       });
     }
-    if (orderbook.noDollars > 0 && orderbook.noDollars <= 0.97) {
+    if (isExecutableBuyPrice(no)) {
       signals.push({
         strategy: "temporal_arb_instant",
         marketId: market.marketId,
         side: "no",
         isBuy: true,
         depositUsdc: deposit,
-        reason: `instant_arb no@${orderbook.noDollars.toFixed(2)} combined=${orderbook.combinedDollars.toFixed(3)}`,
-        expectedEdgeBps: orderbook.edgeBps,
+        reason: `instant_arb no@${no.toFixed(3)} combined=${pair.combined.toFixed(3)} src=${orderbook.priceSource ?? "market"}`,
+        expectedEdgeBps: pair.edgeBps,
       });
     }
     return signals;
   }
 
+  // If either leg is a stub/missing buy price, do not stage — wait for clean books
+  if (!isExecutableBuyPrice(yes) || !isExecutableBuyPrice(no)) {
+    return [];
+  }
+
   // Staged arb: one leg already staged, buy second when combined avg works
   if (leg?.stagedSide && leg.stagedPrice != null) {
+    if (!isExecutableBuyPrice(leg.stagedPrice)) return [];
     const otherSide = leg.stagedSide === "yes" ? "no" : "yes";
-    const otherPrice =
-      otherSide === "yes" ? orderbook.yesDollars : orderbook.noDollars;
+    const otherPrice = otherSide === "yes" ? yes : no;
+    if (!isExecutableBuyPrice(otherPrice)) return [];
     const combined = leg.stagedPrice + otherPrice;
-    if (combinedCostOk(combined)) {
+    const stagedPair = snap.isForecast
+      ? validateForecastBuyPair(
+          otherSide === "yes" ? otherPrice : leg.stagedPrice,
+          otherSide === "no" ? otherPrice : leg.stagedPrice,
+        )
+      : validateBinaryBuyPair(
+          otherSide === "yes" ? otherPrice : leg.stagedPrice,
+          otherSide === "no" ? otherPrice : leg.stagedPrice,
+        );
+    // For staged, validate the completed pair edge even if validateForecast
+    // uses both as up/down — edge check is what matters
+    const edgeBps = Math.round((1 - combined) * 10_000);
+    if (
+      edgeBps >= PREDICTION_TRADING_LIMITS.minCombinedEdgeBps &&
+      combined <= 0.98 &&
+      combined >= 0.82
+    ) {
       signals.push({
         strategy: "temporal_arb_staged",
         marketId: market.marketId,
         side: otherSide,
         isBuy: true,
         depositUsdc: deposit,
-        reason: `staged_arb ${otherSide}@${otherPrice.toFixed(2)} + staged ${leg.stagedSide}@${leg.stagedPrice.toFixed(2)} = ${combined.toFixed(3)}`,
-        expectedEdgeBps: Math.round((1 - combined) * 10_000),
+        reason: `staged_arb ${otherSide}@${otherPrice.toFixed(3)} + staged ${leg.stagedSide}@${leg.stagedPrice.toFixed(3)} = ${combined.toFixed(3)}`,
+        expectedEdgeBps: edgeBps,
       });
     }
+    void stagedPair;
     return signals;
   }
 
-  // Stage first cheap leg (tail 5-40c or any side that makes future pair plausible)
+  // Stage first cheap-but-executable leg (not stub floors)
   const tailMax = PREDICTION_TRADING_LIMITS.tailMaxPrice;
-  if (orderbook.yesDollars > 0 && orderbook.yesDollars <= tailMax) {
+  const tailMin = Math.max(0.04, Number(process.env.PREDICTION_MIN_BUY_PRICE ?? "0.04"));
+  if (yes >= tailMin && yes <= tailMax) {
     signals.push({
       strategy: "temporal_arb_staged",
       marketId: market.marketId,
       side: "yes",
       isBuy: true,
       depositUsdc: deposit,
-      reason: `stage_cheap_yes@${orderbook.yesDollars.toFixed(2)}`,
+      reason: `stage_cheap_yes@${yes.toFixed(3)}`,
     });
-  } else if (orderbook.noDollars > 0 && orderbook.noDollars <= tailMax) {
+  } else if (no >= tailMin && no <= tailMax) {
     signals.push({
       strategy: "temporal_arb_staged",
       marketId: market.marketId,
       side: "no",
       isBuy: true,
       depositUsdc: deposit,
-      reason: `stage_cheap_no@${orderbook.noDollars.toFixed(2)}`,
+      reason: `stage_cheap_no@${no.toFixed(3)}`,
     });
   }
 
@@ -101,51 +143,70 @@ export function recordStagedLeg(
     updatedAt: now,
   };
 
-  if (signal.strategy.startsWith("temporal_arb_staged") && signal.isBuy) {
+  if (signal.strategy === "temporal_arb_instant") {
     return {
       ...base,
-      stagedSide: signal.side,
-      stagedPrice: price,
-      stagedAt: now,
-      updatedAt: now,
-      ...(signal.side === "yes"
-        ? { yesCostUsd: base.yesCostUsd + signal.depositUsdc }
-        : { noCostUsd: base.noCostUsd + signal.depositUsdc }),
-    };
-  }
-
-  if (signal.strategy.startsWith("temporal_arb")) {
-    return {
-      ...base,
+      yesCostUsd:
+        signal.side === "yes"
+          ? base.yesCostUsd + signal.depositUsdc
+          : base.yesCostUsd,
+      noCostUsd:
+        signal.side === "no"
+          ? base.noCostUsd + signal.depositUsdc
+          : base.noCostUsd,
       stagedSide: undefined,
       stagedPrice: undefined,
       stagedAt: undefined,
       updatedAt: now,
-      ...(signal.side === "yes"
-        ? { yesCostUsd: base.yesCostUsd + signal.depositUsdc }
-        : { noCostUsd: base.noCostUsd + signal.depositUsdc }),
     };
   }
 
-  if (signal.isBuy && signal.strategy === "directional_scalp") {
+  if (signal.strategy === "temporal_arb_staged") {
+    // Completing the other leg
+    if (leg?.stagedSide && leg.stagedSide !== signal.side) {
+      return {
+        ...base,
+        yesCostUsd:
+          signal.side === "yes"
+            ? base.yesCostUsd + signal.depositUsdc
+            : base.yesCostUsd,
+        noCostUsd:
+          signal.side === "no"
+            ? base.noCostUsd + signal.depositUsdc
+            : base.noCostUsd,
+        stagedSide: undefined,
+        stagedPrice: undefined,
+        stagedAt: undefined,
+        updatedAt: now,
+      };
+    }
     return {
       ...base,
+      yesCostUsd:
+        signal.side === "yes"
+          ? base.yesCostUsd + signal.depositUsdc
+          : base.yesCostUsd,
+      noCostUsd:
+        signal.side === "no"
+          ? base.noCostUsd + signal.depositUsdc
+          : base.noCostUsd,
+      stagedSide: signal.side,
+      stagedPrice: price,
+      stagedAt: now,
       updatedAt: now,
-      ...(signal.side === "yes"
-        ? { yesCostUsd: base.yesCostUsd + signal.depositUsdc }
-        : { noCostUsd: base.noCostUsd + signal.depositUsdc }),
     };
   }
 
-  if (signal.isBuy) {
-    return {
-      ...base,
-      updatedAt: now,
-      ...(signal.side === "yes"
-        ? { yesCostUsd: base.yesCostUsd + signal.depositUsdc }
-        : { noCostUsd: base.noCostUsd + signal.depositUsdc }),
-    };
-  }
-
-  return base;
+  return {
+    ...base,
+    yesCostUsd:
+      signal.side === "yes"
+        ? base.yesCostUsd + signal.depositUsdc
+        : base.yesCostUsd,
+    noCostUsd:
+      signal.side === "no"
+        ? base.noCostUsd + signal.depositUsdc
+        : base.noCostUsd,
+    updatedAt: now,
+  };
 }

@@ -1,5 +1,6 @@
 import { PREDICTION_TRADING_LIMITS } from "../../config";
 import { fairEdgeSide } from "../fair-value";
+import { minExecutableBuyPrice } from "../pricing";
 import type { LegLedger, MarketSnapshot, TradeSignal } from "../types";
 
 export interface ScalpContext {
@@ -33,8 +34,16 @@ export function signalsDirectionalScalp(
   // Prefer Forecast; allow Polymarket Up/Down if flag set
   if (!snap.isForecast && !limits.scalpAllowPolymarket) return [];
 
+  // Skip bid-proxy stubs (classic 1¢ false edges)
+  if (
+    orderbook.priceSource === "bid_proxy" ||
+    orderbook.priceSource === "none"
+  ) {
+    return [];
+  }
+
   const maxEntry = limits.scalpMaxEntryPrice; // e.g. 0.30
-  const minEntry = limits.scalpMinEntryPrice; // e.g. 0.01
+  const minEntry = Math.max(limits.scalpMinEntryPrice, minExecutableBuyPrice());
 
   const yes = orderbook.yesDollars;
   const no = orderbook.noDollars;

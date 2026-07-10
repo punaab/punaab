@@ -7,12 +7,19 @@ import {
   signalsDirectionalScalp,
   sizeScalpDeposit,
 } from "../lib/prediction-trading/strategies/directional-scalp";
+import {
+  isExecutableBuyPrice,
+  validateForecastBuyPair,
+} from "../lib/prediction-trading/pricing";
 import type { MarketSnapshot } from "../lib/prediction-trading/types";
 
 function snap(
   yes: number,
   no: number,
-  opts?: Partial<MarketSnapshot> & { fairProbYes?: number },
+  opts?: Partial<MarketSnapshot> & {
+    fairProbYes?: number;
+    priceSource?: MarketSnapshot["orderbook"]["priceSource"];
+  },
 ): MarketSnapshot {
   const marketId = opts?.market?.marketId ?? "m1";
   const combined = yes + no;
@@ -29,6 +36,7 @@ function snap(
       noDollars: no,
       combinedDollars: combined,
       edgeBps: Math.round((1 - combined) * 10_000),
+      priceSource: opts?.priceSource ?? "market_buy",
     },
     secondsToClose: opts?.secondsToClose ?? 600,
     fairProbYes: opts?.fairProbYes ?? 0.5,
@@ -56,6 +64,38 @@ if (instant.length < 2) {
   failed++;
 }
 
+// Classic bug: yes@0.35 + no@0.01 from lowest bid — must NOT trade
+const stub = signalsTemporalArb(snap(0.35, 0.01), undefined);
+if (stub.length !== 0) {
+  console.error("FAIL: stub no@0.01 must not arb", stub);
+  failed++;
+}
+
+const stubPair = validateForecastBuyPair(0.35, 0.01);
+if (stubPair.ok) {
+  console.error("FAIL: validateForecastBuyPair should reject stub", stubPair);
+  failed++;
+}
+
+if (isExecutableBuyPrice(0.01)) {
+  console.error("FAIL: 0.01 must not be executable");
+  failed++;
+}
+
+if (!isExecutableBuyPrice(0.35)) {
+  console.error("FAIL: 0.35 should be executable");
+  failed++;
+}
+
+const bidProxy = signalsTemporalArb(
+  snap(0.47, 0.49, { priceSource: "bid_proxy" }),
+  undefined,
+);
+if (bidProxy.length !== 0) {
+  console.error("FAIL: bid_proxy books must not arb", bidProxy);
+  failed++;
+}
+
 const staged = signalsTemporalArb(snap(0.32, 0.68), undefined);
 if (staged.length === 0 || staged[0].strategy !== "temporal_arb_staged") {
   console.error("FAIL: cheap tail should stage", staged);
@@ -74,6 +114,17 @@ if (
   scalpUp[0].side !== "yes"
 ) {
   console.error("FAIL: should scalp YES at 5¢ with fair 25%", scalpUp);
+  failed++;
+}
+
+// No scalp on 1¢ stub even if fair looks high
+const noStubScalp = signalsDirectionalScalp(
+  snap(0.01, 0.90, { fairProbYes: 0.4, isForecast: true }),
+  undefined,
+  { walletUsdc: 100, tradesToday: 0 },
+);
+if (noStubScalp.length !== 0) {
+  console.error("FAIL: 1¢ stub must not scalp", noStubScalp);
   failed++;
 }
 
@@ -107,7 +158,7 @@ if (sized < 5 || sized > 15) {
 
 if (failed === 0) {
   console.log(
-    "prediction-sanity: OK (arb + directional scalp + wallet sizing)",
+    "prediction-sanity: OK (arb + stub rejection + directional scalp)",
   );
   process.exit(0);
 } else {

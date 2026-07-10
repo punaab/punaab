@@ -16,12 +16,21 @@ import {
   createClaimTransaction,
   createOrder,
   executeOrder,
+  getForecastBuyPrice,
+  getMarket,
   getOrderStatus,
   isForecastMarket,
+  forecastDownMarketId,
+  forecastUpMarketId,
   resolveForecastOrder,
   usdcToNative,
   type CreateOrderResult,
 } from "./client";
+import {
+  isExecutableBuyPrice,
+  priceMovedAgainstBuy,
+  validateForecastBuyPair,
+} from "./pricing";
 import type { PredictionPosition, TradeSignal } from "./types";
 import {
   appendPredictionLog,
@@ -176,6 +185,72 @@ export async function executeBuySignal(
           options?.pairedMarketId,
         )
       : { marketId: signal.marketId, isYes: signal.side === "yes" };
+
+    // Re-fetch buy price immediately before order (Jupiter trading-lifecycle docs)
+    const livePrice = await (async () => {
+      if (forecast) {
+        const q = await getForecastBuyPrice(orderTarget.marketId);
+        return q.price;
+      }
+      const m = await getMarket(orderTarget.marketId);
+      return orderTarget.isYes
+        ? (m.buyYesPriceUsd ?? 0)
+        : (m.buyNoPriceUsd ?? 0);
+    })();
+
+    if (!isExecutableBuyPrice(livePrice)) {
+      await appendPredictionLog({
+        strategy: signal.strategy,
+        marketId: signal.marketId,
+        side: signal.side,
+        isBuy: true,
+        depositUsdc,
+        dryRun: false,
+        reason: signal.reason,
+        error: `stale_or_stub_price:${livePrice}`,
+      });
+      return { ok: false, error: "price_not_executable" };
+    }
+
+    // Parse signaled price from reason when present (yes@0.350)
+    const signaledMatch = signal.reason.match(/@(0\.\d+)/);
+    const signaledPrice = signaledMatch ? Number(signaledMatch[1]) : livePrice;
+    if (priceMovedAgainstBuy(signaledPrice, livePrice)) {
+      await appendPredictionLog({
+        strategy: signal.strategy,
+        marketId: signal.marketId,
+        side: signal.side,
+        isBuy: true,
+        depositUsdc,
+        dryRun: false,
+        reason: signal.reason,
+        error: `adverse_slip:${signaledPrice}->${livePrice}`,
+      });
+      return { ok: false, error: "adverse_slippage" };
+    }
+
+    // Instant arb: confirm pair still clears edge on fresh prices
+    if (forecast && signal.strategy === "temporal_arb_instant") {
+      const upId = forecastUpMarketId(signal.marketId);
+      const downId =
+        options?.pairedMarketId ?? forecastDownMarketId(signal.marketId);
+      const upQ = await getForecastBuyPrice(upId);
+      const downQ = await getForecastBuyPrice(downId);
+      const pair = validateForecastBuyPair(upQ.price, downQ.price);
+      if (!pair.ok) {
+        await appendPredictionLog({
+          strategy: signal.strategy,
+          marketId: signal.marketId,
+          side: signal.side,
+          isBuy: true,
+          depositUsdc,
+          dryRun: false,
+          reason: signal.reason,
+          error: `arb_gone:${pair.reason}:${pair.combined.toFixed(3)}`,
+        });
+        return { ok: false, error: "arb_edge_gone" };
+      }
+    }
 
     const build = await createOrder({
       ownerPubkey: wallet,
