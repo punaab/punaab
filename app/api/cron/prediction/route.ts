@@ -6,6 +6,11 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 /** Forecast pricing is paced (~1 RPS); allow a full scan + orders. */
 export const maxDuration = 120;
+/**
+ * Jupiter Prediction blocks US + South Korea IPs.
+ * Prefer Singapore egress for cron ticks (not iad1/sfo1).
+ */
+export const preferredRegion = ["sin1"];
 
 function authorize(request: NextRequest): boolean {
   if (

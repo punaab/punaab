@@ -16,6 +16,7 @@ import {
   getTradesToday,
   getUsdcDeployedToday,
   getWalletHistory,
+  isPredictionGeoBlockedCached,
   pruneNonForecastLegs,
 } from "./prediction-trading/state";
 import { fetchPredictionWalletSnapshot } from "./prediction-trading/wallet";
@@ -35,6 +36,7 @@ export async function fetchPredictionDashboard() {
     arbHistory,
     walletHistory,
     wallet,
+    geoCached,
   ] = await Promise.all([
     checkPredictionApiAccess().catch((e) => ({
       ok: false,
@@ -48,6 +50,7 @@ export async function fetchPredictionDashboard() {
     getArbHistory(24),
     getWalletHistory(24),
     fetchPredictionWalletSnapshot().catch(() => null),
+    isPredictionGeoBlockedCached().catch(() => false),
   ]);
 
   const latestArb = arbHistory[arbHistory.length - 1] ?? null;
@@ -59,6 +62,18 @@ export async function fetchPredictionDashboard() {
       l.marketId.startsWith("BISON-"),
   );
 
+  const apiAccess =
+    geoCached || lastTick?.geoBlocked
+      ? {
+          ...access,
+          ok: false,
+          geoBlocked: true,
+          error:
+            ("error" in access && access.error) ||
+            "Jupiter Prediction blocked for US/KR IPs (orders)",
+        }
+      : access;
+
   return {
     enabled: isPredictionTradingEnabled(),
     tradingEnabled: isTradingEnabled(),
@@ -67,7 +82,7 @@ export async function fetchPredictionDashboard() {
     hasSigner: hasPredictionSigner(),
     walletAddress: getTradingSolanaAddress() ?? null,
     limits: PREDICTION_TRADING_LIMITS,
-    apiAccess: access,
+    apiAccess,
     lastTick,
     log,
     openLegs,

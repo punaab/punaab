@@ -39,6 +39,22 @@ export class PredictionApiError extends Error {
   }
 }
 
+/** Jupiter blocks US + South Korea IPs from Prediction trading (orders). */
+export function isPredictionGeoBlockResponse(
+  status: number,
+  body: string,
+): boolean {
+  if (/unsupported_region/i.test(body)) return true;
+  if (/not available in your region/i.test(body)) return true;
+  if (
+    (status === 403 || status === 451) &&
+    /geo|restricted|blocked|unavailable|region/i.test(body)
+  ) {
+    return true;
+  }
+  return false;
+}
+
 function apiKey(): string {
   const key = getJupiterApiKey();
   if (!key) {
@@ -117,9 +133,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
 
     const body = await res.text().catch(() => "");
-    const geoBlocked =
-      res.status === 403 &&
-      /geo|restricted|blocked|unavailable/i.test(body);
+    const geoBlocked = isPredictionGeoBlockResponse(res.status, body);
     const retryAfterMs = parseRetryAfterMs(res);
     lastError = new PredictionApiError(
       `Prediction API ${path} failed (${res.status}): ${body.slice(0, 200)}`,
@@ -127,6 +141,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       geoBlocked,
       retryAfterMs,
     );
+
+    // Region blocks won't succeed on retry — fail fast
+    if (geoBlocked) {
+      throw lastError;
+    }
 
     if (res.status === 429 && attempt < maxAttempts) {
       const backoff =

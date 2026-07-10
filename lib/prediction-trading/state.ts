@@ -42,6 +42,9 @@ const USDC_TODAY_KEY = "prediction:usdc_today";
 const LAST_TICK_KEY = "prediction:last_tick";
 const ARB_HISTORY_KEY = "prediction:arb_history";
 const WALLET_HISTORY_KEY = "prediction:wallet_history";
+const GEO_BLOCKED_KEY = "prediction:geo_blocked";
+/** Remember unsupported_region so we stop burning /orders from US IPs */
+const GEO_BLOCKED_TTL_SEC = 6 * 3600;
 const ARB_HISTORY_MAX = 48;
 const WALLET_HISTORY_MAX = 48;
 
@@ -233,6 +236,38 @@ export async function getLastTickSummary(): Promise<PredictionTickSummary | null
     return parseRedisValue<PredictionTickSummary>(raw);
   } catch {
     return null;
+  }
+}
+
+export async function isPredictionGeoBlockedCached(): Promise<boolean> {
+  try {
+    const v = await getRedis().get(GEO_BLOCKED_KEY);
+    return v === "1" || v === "true";
+  } catch {
+    return false;
+  }
+}
+
+export async function markPredictionGeoBlocked(
+  reason = "unsupported_region",
+): Promise<void> {
+  try {
+    await getRedis().set(GEO_BLOCKED_KEY, "1", {
+      ex: GEO_BLOCKED_TTL_SEC,
+    });
+    console.warn(
+      `[prediction-state] geo-blocked for ${GEO_BLOCKED_TTL_SEC}s: ${reason}`,
+    );
+  } catch (error) {
+    console.error("[prediction-state] markPredictionGeoBlocked:", error);
+  }
+}
+
+export async function clearPredictionGeoBlocked(): Promise<void> {
+  try {
+    await getRedis().del(GEO_BLOCKED_KEY);
+  } catch (error) {
+    console.error("[prediction-state] clearPredictionGeoBlocked:", error);
   }
 }
 

@@ -5,6 +5,8 @@ import { runPredictionTick } from "@/lib/prediction-trading/engine";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
+/** Same non-US egress as cron — Jupiter blocks US/KR Prediction trading. */
+export const preferredRegion = ["sin1"];
 
 /** Owner-triggered Forecast prediction tick (same as cron). */
 export async function POST() {

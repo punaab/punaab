@@ -10,9 +10,12 @@ import { scanLiveCryptoMarkets } from "./scanner";
 import {
   appendArbHistory,
   appendWalletHistory,
+  clearPredictionGeoBlocked,
   getAllLegs,
   getTradesToday,
   getUsdcDeployedToday,
+  isPredictionGeoBlockedCached,
+  markPredictionGeoBlocked,
   pruneNonForecastLegs,
   saveLeg,
   setLastTickSummary,
@@ -66,8 +69,22 @@ export async function runPredictionTick(): Promise<PredictionTickSummary> {
     summary.ok = false;
     summary.geoBlocked = access.geoBlocked;
     summary.errors.push(access.error ?? "api_unreachable");
+    if (access.geoBlocked) {
+      await markPredictionGeoBlocked(access.error ?? "api_geo");
+    }
     await setLastTickSummary(summary);
     return summary;
+  }
+
+  // Jupiter blocks US/KR IPs on /orders — don't spam buys from a blocked egress
+  const geoCached = await isPredictionGeoBlockedCached();
+  if (geoCached && !isDryRun()) {
+    summary.ok = false;
+    summary.geoBlocked = true;
+    summary.errors.push(
+      "geo_blocked: Jupiter Prediction unavailable from this IP (US/KR). Run trader from a non-US region or wait for cache TTL.",
+    );
+    // Still scan for radar, but skip live orders below
   }
 
   // Wallet snapshot early — size bets to full tradeable capital (SOL/SPL → USDC)
@@ -232,6 +249,16 @@ export async function runPredictionTick(): Promise<PredictionTickSummary> {
 
   summary.signals = toExecute;
 
+  if ((geoCached || summary.geoBlocked) && !isDryRun()) {
+    summary.ok = false;
+    summary.geoBlocked = true;
+    if (!summary.errors.some((e) => e.startsWith("geo_blocked"))) {
+      summary.errors.push("geo_blocked: skipping live orders");
+    }
+    await setLastTickSummary(summary);
+    return summary;
+  }
+
   for (const signal of toExecute) {
     const snap = snapshots.find((x) => x.market.marketId === signal.marketId);
 
@@ -305,6 +332,9 @@ export async function runPredictionTick(): Promise<PredictionTickSummary> {
           : `${signal.strategy}:${signal.marketId}:dry_run`,
       );
 
+      // Successful live order proves egress is allowed
+      await clearPredictionGeoBlocked().catch(() => undefined);
+
       let leg = ctx.legs.get(signal.marketId);
       if (signal.strategy === "rotation") {
         leg = leg
@@ -328,6 +358,15 @@ export async function runPredictionTick(): Promise<PredictionTickSummary> {
       ctx.tradesToday += 1;
     } else if (result.error) {
       summary.errors.push(`${signal.strategy}:${result.error}`);
+      if (result.geoBlocked) {
+        summary.geoBlocked = true;
+        summary.ok = false;
+        await markPredictionGeoBlocked(result.error);
+        summary.errors.push(
+          "geo_blocked: stopping further orders this tick (US/KR IP)",
+        );
+        break;
+      }
     }
   }
 

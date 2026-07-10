@@ -24,6 +24,7 @@ import {
   forecastUpMarketId,
   resolveForecastOrder,
   usdcToNative,
+  PredictionApiError,
   type CreateOrderResult,
 } from "./client";
 import {
@@ -128,7 +129,12 @@ function clampDepositUsdc(usdc: number, marketId: string): number {
 export async function executeBuySignal(
   signal: TradeSignal,
   options?: { pairedMarketId?: string },
-): Promise<{ ok: boolean; signature?: string; error?: string }> {
+): Promise<{
+  ok: boolean;
+  signature?: string;
+  error?: string;
+  geoBlocked?: boolean;
+}> {
   const dryRun = isDryRun();
   const wallet = getTradingSolanaAddress();
 
@@ -287,6 +293,9 @@ export async function executeBuySignal(
     return { ok: true, signature };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    const geoBlocked =
+      (error instanceof PredictionApiError && error.geoBlocked) ||
+      /unsupported_region|not available in your region/i.test(message);
     await appendPredictionLog({
       strategy: signal.strategy,
       marketId: signal.marketId,
@@ -297,7 +306,7 @@ export async function executeBuySignal(
       reason: signal.reason,
       error: message,
     });
-    return { ok: false, error: message };
+    return { ok: false, error: message, geoBlocked };
   }
 }
 
