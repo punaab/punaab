@@ -1276,6 +1276,33 @@ export async function runHeartbeatTick(
       ? `[${plan.action}] ${plan.reason}`
       : `Completed tick: ${plan.action}`;
     await setCurrentThought(thought);
+
+    // X side-quest: reply to mentions + ~1 original post/day from Moltbook energy
+    try {
+      const { runXEngageTick } = await import("@/lib/x-engage");
+      const xEngage = await runXEngageTick();
+      if (xEngage.skipped) {
+        summary.executed.push(`x_engage_skip:${xEngage.skipped}`);
+      } else {
+        if (xEngage.repliesPosted > 0) {
+          summary.executed.push(`x_replies:${xEngage.repliesPosted}`);
+        }
+        if (xEngage.dailyPosted) {
+          summary.executed.push("x_daily_original");
+        }
+        if (xEngage.repliesAttempted === 0 && !xEngage.dailyAttempted) {
+          summary.executed.push("x_engage_idle");
+        }
+        for (const err of xEngage.errors.slice(0, 3)) {
+          summary.errors.push(`x_engage:${err}`);
+        }
+      }
+    } catch (error) {
+      const message = formatError("x_engage", error);
+      summary.errors.push(message);
+      console.warn(message);
+    }
+
     await appendTickLog(summary);
 
     console.log(

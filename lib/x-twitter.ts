@@ -9,6 +9,7 @@ import {
   getXApiKey,
   getXApiSecret,
   isXCrossPostEnabled,
+  isXEngageEnabled,
 } from "./config";
 import { getValidXUserAccessToken, getXConnectionStatus } from "./x-auth";
 
@@ -98,9 +99,25 @@ export function formatMoltbookForX(params: {
   return text.slice(0, 280);
 }
 
+export type CreateXPostOptions = {
+  /** When set, posts as a reply to this tweet id. */
+  replyToTweetId?: string;
+  /** Bypass crosspost kill-switch (used by engage/reply path). */
+  force?: boolean;
+};
+
+function tweetBody(text: string, replyToTweetId?: string): Record<string, unknown> {
+  const body: Record<string, unknown> = { text };
+  if (replyToTweetId) {
+    body.reply = { in_reply_to_tweet_id: replyToTweetId };
+  }
+  return body;
+}
+
 async function postTweetOAuth2(
   text: string,
   accessToken: string,
+  replyToTweetId?: string,
 ): Promise<XPostResult> {
   const res = await fetch("https://api.x.com/2/tweets", {
     method: "POST",
@@ -108,7 +125,7 @@ async function postTweetOAuth2(
       Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify(tweetBody(text, replyToTweetId)),
   });
   const json = (await res.json().catch(() => ({}))) as {
     data?: { id?: string; text?: string };
@@ -129,7 +146,10 @@ async function postTweetOAuth2(
   return { ok: true, id: json.data?.id, text: json.data?.text ?? text };
 }
 
-async function postTweetOAuth1(text: string): Promise<XPostResult> {
+async function postTweetOAuth1(
+  text: string,
+  replyToTweetId?: string,
+): Promise<XPostResult> {
   const consumerKey = getXApiKey();
   const consumerSecret = getXApiSecret();
   const token = getXAccessToken();
@@ -152,7 +172,7 @@ async function postTweetOAuth1(text: string): Promise<XPostResult> {
       }),
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify(tweetBody(text, replyToTweetId)),
   });
   const json = (await res.json().catch(() => ({}))) as {
     data?: { id?: string; text?: string };
@@ -168,8 +188,11 @@ async function postTweetOAuth1(text: string): Promise<XPostResult> {
   return { ok: true, id: json.data?.id, text: json.data?.text ?? text };
 }
 
-export async function createXPost(text: string): Promise<XPostResult> {
-  if (!isXCrossPostEnabled()) {
+export async function createXPost(
+  text: string,
+  options: CreateXPostOptions = {},
+): Promise<XPostResult> {
+  if (!options.force && !isXCrossPostEnabled()) {
     return { ok: false, skipped: true, error: "x_crosspost_disabled" };
   }
   const trimmed = text.trim();
@@ -179,11 +202,11 @@ export async function createXPost(text: string): Promise<XPostResult> {
 
   const oauth2 = await getValidXUserAccessToken();
   if (oauth2) {
-    return postTweetOAuth2(trimmed, oauth2);
+    return postTweetOAuth2(trimmed, oauth2, options.replyToTweetId);
   }
 
   if (getXAccessToken() && getXAccessTokenSecret()) {
-    return postTweetOAuth1(trimmed);
+    return postTweetOAuth1(trimmed, options.replyToTweetId);
   }
 
   return {
@@ -192,6 +215,21 @@ export async function createXPost(text: string): Promise<XPostResult> {
     error:
       "x_not_connected — open /admin and click Connect X (OAuth), or set X_ACCESS_TOKEN + X_ACCESS_TOKEN_SECRET",
   };
+}
+
+/** Authenticated GET against api.x.com (OAuth 2 user token preferred). */
+export async function xApiGet(
+  pathWithQuery: string,
+): Promise<{ ok: boolean; status: number; json: unknown }> {
+  const oauth2 = await getValidXUserAccessToken();
+  if (!oauth2) {
+    return { ok: false, status: 401, json: { error: "no_user_token" } };
+  }
+  const res = await fetch(`https://api.x.com${pathWithQuery}`, {
+    headers: { Authorization: `Bearer ${oauth2}` },
+  });
+  const json = await res.json().catch(() => ({}));
+  return { ok: res.ok, status: res.status, json };
 }
 
 export async function crossPostMoltbookActivity(params: {
@@ -221,12 +259,18 @@ export async function crossPostMoltbookActivity(params: {
   return result;
 }
 
-export async function canPostToX(): Promise<{
+export async function canPostToX(options?: {
+  /** Allow posting when engage is on even if crosspost is off. */
+  allowEngageOnly?: boolean;
+}): Promise<{
   ok: boolean;
   reason?: string;
   username?: string;
 }> {
-  if (!isXCrossPostEnabled()) {
+  const postingAllowed =
+    isXCrossPostEnabled() ||
+    (options?.allowEngageOnly === true && isXEngageEnabled());
+  if (!postingAllowed) {
     return { ok: false, reason: "disabled" };
   }
   const status = await getXConnectionStatus();

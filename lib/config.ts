@@ -554,6 +554,26 @@ export function isXCrossPostEnabled(): boolean {
   return true;
 }
 
+/** Reply to comments/mentions on X (chill funny). Default on when crosspost enabled. */
+export function isXEngageEnabled(): boolean {
+  const v = process.env.X_ENGAGE_ENABLED?.trim().toLowerCase();
+  if (v === "false" || v === "0" || v === "no") return false;
+  if (v === "true" || v === "1" || v === "yes") return true;
+  return isXCrossPostEnabled();
+}
+
+/** Max mention replies per heartbeat tick. */
+export function getXReplyMaxPerTick(): number {
+  return Math.max(0, Number(process.env.X_REPLY_MAX_PER_TICK ?? "1"));
+}
+
+/** Once-per-day original X post inspired by Moltbook (default on). */
+export function isXDailyOriginalEnabled(): boolean {
+  const v = process.env.X_DAILY_ORIGINAL?.trim().toLowerCase();
+  if (v === "false" || v === "0" || v === "no") return false;
+  return true;
+}
+
 export function getXCallbackUrl(): string {
   const explicit = process.env.X_CALLBACK_URL?.trim();
   if (explicit) return explicit.replace(/\/$/, "");
