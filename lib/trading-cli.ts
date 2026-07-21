@@ -39,11 +39,22 @@ function sessionLooksActive(data: unknown): boolean {
   if (!data || typeof data !== "object") return false;
   const d = data as Record<string, unknown>;
   if (d.valid === true || d.verified === true) return true;
+  if (d.status === "active" || d.status === "approved") return true;
   if (d.sessionState === "approved" || d.remoteStatus === "approved") return true;
   const session = d.session;
   if (session && typeof session === "object") {
     const s = session as Record<string, unknown>;
-    if (s.valid === true || s.sessionState === "approved") return true;
+    if (s.valid === true || s.sessionState === "approved" || s.status === "active") {
+      return true;
+    }
+  }
+  const sessions = d.sessionsByChain as
+    | Record<string, { status?: string; walletAddress?: string }>
+    | undefined;
+  if (sessions?.evm) {
+    const st = (sessions.evm.status || "").toLowerCase();
+    if (st === "active" || st === "approved" || st === "connected") return true;
+    if (sessions.evm.walletAddress) return true; // address present ⇒ session usable
   }
   return d.activeSigner === "session";
 }

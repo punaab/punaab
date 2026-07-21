@@ -26,6 +26,10 @@ import {
 import { privateKeyToAccount } from "viem/accounts";
 import { arbitrum } from "viem/chains";
 import { runAlchemyCli } from "../lib/alchemy-cli";
+import {
+  getCachedCliSessionAddresses,
+  isAlchemyCliSessionReady,
+} from "../lib/trading-cli";
 
 function loadEnv(name: string) {
   const p = resolve(process.cwd(), name);
@@ -48,20 +52,26 @@ const SOLANA_CHAIN_ID = 7565164;
 const ARB_CHAIN_ID = 42161;
 const USDC_SOL = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 const DEFAULT_EVM = "0x310648bd5ad77b4a4dd8725d53902d52e475ec73";
+/** Alchemy Agent Wallet Solana — Forecast cannot sign from here */
+const ALCHEMY_SOL_SESSION = "6VoBMcEgfdWSCBYBJ46QkzyHiZ2S4WU6YWRdej5zUbhZ";
+const FORECAST_HOT_DEFAULT = "4vXgHk3WNd5of5JmfX9upzeDb7RzA6SwBzgXzsYGtKHA";
 
 const execute = process.argv.includes("--execute");
 const amountIdx = process.argv.indexOf("--amount");
 const amountUsdc =
   amountIdx >= 0 && process.argv[amountIdx + 1]
     ? Number(process.argv[amountIdx + 1])
-    : 240;
+    : 235;
+const toIdx = process.argv.indexOf("--to");
+const toOverride =
+  toIdx >= 0 && process.argv[toIdx + 1] ? process.argv[toIdx + 1]!.trim() : "";
 
 function getSolRecipient(): string {
-  return (
-    process.env.TRADING_SOLANA_ADDRESS?.trim() ||
-    process.env.WATCH_SOLANA_ADDRESS?.trim() ||
-    ""
-  );
+  // Prefer Forecast hot wallet — Jupiter prediction signs here, not Alchemy Sol session
+  if (toOverride) return toOverride;
+  const trading = process.env.TRADING_SOLANA_ADDRESS?.trim();
+  if (trading && trading !== ALCHEMY_SOL_SESSION) return trading;
+  return FORECAST_HOT_DEFAULT;
 }
 
 function arbRpc(): string {
@@ -76,9 +86,20 @@ async function getSessionEvm(): Promise<{
   address?: string;
   status?: string;
 }> {
+  const ready = await isAlchemyCliSessionReady();
+  const cached = getCachedCliSessionAddresses();
+  if (ready || cached.evm) {
+    return {
+      ready,
+      address: cached.evm ?? DEFAULT_EVM,
+      status: ready ? "active" : "unknown",
+    };
+  }
+
+  // Fallback parse (status without --verify)
   const result = await runAlchemyCli(["wallet", "status"]);
   if (!result.ok || !result.data || typeof result.data !== "object") {
-    return { ready: false };
+    return { ready: false, status: "unavailable" };
   }
   const d = result.data as Record<string, unknown>;
   const sessions = d.sessionsByChain as
@@ -87,11 +108,20 @@ async function getSessionEvm(): Promise<{
   const address =
     sessions?.evm?.walletAddress ??
     (typeof d.walletAddress === "string" ? d.walletAddress : undefined);
-  const ready = d.valid === true || d.status === "active";
+  const st =
+    (sessions?.evm?.status as string | undefined) ??
+    (typeof d.status === "string" ? d.status : undefined) ??
+    (typeof d.sessionState === "string" ? d.sessionState : undefined);
+  const looksReady =
+    d.valid === true ||
+    d.verified === true ||
+    st === "active" ||
+    st === "approved" ||
+    Boolean(address);
   return {
-    ready,
-    address,
-    status: typeof d.status === "string" ? d.status : undefined,
+    ready: looksReady,
+    address: address ?? DEFAULT_EVM,
+    status: st,
   };
 }
 
@@ -132,7 +162,14 @@ async function createDebridgeTx(params: {
 async function main() {
   const sol = getSolRecipient();
   if (!sol) {
-    console.error("Set TRADING_SOLANA_ADDRESS in .env");
+    console.error("Set TRADING_SOLANA_ADDRESS in .env (Forecast hot wallet)");
+    process.exit(1);
+  }
+  if (sol === ALCHEMY_SOL_SESSION && !toOverride) {
+    console.error(
+      "Refusing to bridge to Alchemy Solana session wallet — Forecast cannot sign there.\n" +
+        `Use TRADING_SOLANA_ADDRESS (${FORECAST_HOT_DEFAULT}) or pass --to <pubkey> explicitly.`,
+    );
     process.exit(1);
   }
 
@@ -145,7 +182,7 @@ async function main() {
   const evm =
     account?.address ??
     session.address ??
-    process.env.TRADING_BASE_ADDRESS?.trim() ??
+    process.env.ALCHEMY_WALLET_EVM?.trim() ??
     DEFAULT_EVM;
 
   const publicClient = createPublicClient({
@@ -216,21 +253,31 @@ async function main() {
 
   if (!execute) {
     console.log(
-      "\nDry-run only. To bridge:\n" +
-        "  1) alchemy wallet connect   # session is currently expired\n" +
-        "  2) npx tsx scripts/bridge-arb-usdc-to-sol.ts --execute --amount " +
+      "\nDry-run only. To bridge into Forecast hot wallet:\n" +
+        "  npx tsx scripts/bridge-arb-usdc-to-sol.ts --execute --amount " +
         amount +
-        "\n",
+        "\n" +
+        `  recipient=${sol} (Jupiter Forecast signing wallet)\n`,
     );
     return;
   }
 
   if (!session.ready && !account) {
     console.error(
-      "Cannot execute: Alchemy session expired and no EVM_AGENT_PRIVATE_KEY.\n" +
-        "Run: alchemy wallet connect",
+      "Cannot execute: Alchemy CLI session not detected and no EVM_AGENT_PRIVATE_KEY.\n" +
+        "If Alchemy dashboard shows an active session, re-run after: alchemy wallet status --verify\n" +
+        "Or bridge manually: https://app.debridge.finance/ (Arb USDC → Sol USDC → " +
+        sol +
+        ")",
     );
     process.exit(1);
+  }
+
+  if (!session.ready && account) {
+    console.log("Session detector soft-fail; continuing with EVM_AGENT_PRIVATE_KEY.");
+  }
+  if (session.ready && !account) {
+    console.log("Using Alchemy CLI session for Arb signing.");
   }
 
   const valueWei = BigInt(quote.fixFee ?? quote.tx.value ?? "0");
@@ -323,38 +370,21 @@ async function main() {
   }
 
   const valueEth = formatEther(BigInt(fresh.fixFee ?? fresh.tx.value ?? "0"));
-  console.log(
-    "Session wallets need a raw calldata send. Trying contract call with data blob via rpc wallet_sendCalls…",
-  );
+  console.log("Sending deBridge order via Alchemy session smart wallet…");
 
-  const sendCalls = await runAlchemyCli(
-    [
-      "evm",
-      "rpc",
-      "wallet_sendCalls",
-      JSON.stringify({
-        version: "2.0.0",
-        from: evm,
-        chainId: "0xa4b1",
-        atomicRequired: true,
-        calls: [
-          {
-            to: fresh.tx.to,
-            data: fresh.tx.data,
-            value: `0x${BigInt(fresh.fixFee ?? fresh.tx.value ?? "0").toString(16)}`,
-          },
-        ],
-      }),
-      "-n",
-      "arb-mainnet",
-    ],
-    { timeoutMs: 180_000 },
+  const { sendCallsViaAlchemySession } = await import(
+    "../lib/alchemy-session-send"
   );
+  const sent = await sendCallsViaAlchemySession({
+    to: fresh.tx.to as Address,
+    data: fresh.tx.data as Hex,
+    valueWei: BigInt(fresh.fixFee ?? fresh.tx.value ?? "0"),
+  });
 
-  if (!sendCalls.ok) {
+  if (!sent.ok) {
     console.error(
-      "wallet_sendCalls failed. After reconnect, either set EVM_AGENT_PRIVATE_KEY for this address, or bridge manually at https://app.debridge.finance/\n",
-      sendCalls.error ?? sendCalls.data,
+      "Session sendCalls failed. Bridge manually at https://app.debridge.finance/\n",
+      sent.error,
     );
     console.log(
       JSON.stringify(
@@ -364,9 +394,11 @@ async function main() {
             from: evm,
             toSolana: sol,
             amountUsdc: amount,
-            expectReceiveUsdc: Number(fresh.estimation?.dstChainTokenOut?.amount ?? 0) / 1e6,
+            expectReceiveUsdc:
+              Number(fresh.estimation?.dstChainTokenOut?.amount ?? 0) / 1e6,
             fixFeeEth: valueEth,
             contract: fresh.tx.to,
+            note: "USDC approve may already be set for deBridge spender",
           },
         },
         null,
@@ -376,7 +408,20 @@ async function main() {
     process.exit(1);
   }
 
-  console.log("bridge submitted", sendCalls.data);
+  console.log(
+    JSON.stringify(
+      {
+        ok: true,
+        callId: sent.callId,
+        txHash: sent.txHash,
+        orderId: fresh.orderId,
+        toSolana: sol,
+        amountUsdc: amount,
+      },
+      null,
+      2,
+    ),
+  );
 }
 
 main().catch((e) => {

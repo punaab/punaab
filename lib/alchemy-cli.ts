@@ -14,32 +14,42 @@ export async function runAlchemyCli(
   args: string[],
   options?: { timeoutMs?: number },
 ): Promise<AlchemyCliResult> {
-  const cmd = process.env.ALCHEMY_CLI_PATH ?? "alchemy";
+  const cmd =
+    process.env.ALCHEMY_CLI_PATH ??
+    (process.platform === "win32" ? "alchemy.cmd" : "alchemy");
   const fullArgs = ["--json", "--no-interactive", ...args];
 
   try {
     const { stdout, stderr } = await execFileAsync(cmd, fullArgs, {
       timeout: options?.timeoutMs ?? 120_000,
       maxBuffer: 4 * 1024 * 1024,
+      shell: process.platform === "win32",
       env: {
         ...process.env,
         ALCHEMY_API_KEY: process.env.ALCHEMY_API_KEY,
       },
     });
 
-    if (stderr?.trim()) {
-      try {
-        const errJson = JSON.parse(stderr) as { error?: string; message?: string };
-        return {
-          ok: false,
-          error: errJson.error ?? errJson.message ?? stderr.slice(0, 300),
-        };
-      } catch {
-        // stderr may be warnings
+    // Prefer stdout JSON; stderr is often warnings that must not kill a valid session
+    const raw = stdout?.trim() || stderr?.trim() || "";
+    if (!raw) {
+      return { ok: false, error: "alchemy_cli_empty_output" };
+    }
+
+    let data: unknown;
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      // stdout may include banner lines — extract last JSON object
+      const start = raw.lastIndexOf("{");
+      const end = raw.lastIndexOf("}");
+      if (start >= 0 && end > start) {
+        data = JSON.parse(raw.slice(start, end + 1));
+      } else {
+        return { ok: false, error: `alchemy_cli_non_json:${raw.slice(0, 200)}` };
       }
     }
 
-    const data = JSON.parse(stdout) as unknown;
     const cliError = parseCliJsonError(data);
     if (cliError) {
       return { ok: false, error: cliError, data };
@@ -47,13 +57,19 @@ export async function runAlchemyCli(
     return { ok: true, data };
   } catch (error) {
     const exec = error as { stdout?: string; stderr?: string; message?: string };
-    if (exec.stdout?.trim()) {
+    const blob = exec.stdout?.trim() || exec.stderr?.trim() || "";
+    if (blob) {
       try {
-        const data = JSON.parse(exec.stdout) as unknown;
+        const start = blob.indexOf("{");
+        const end = blob.lastIndexOf("}");
+        const json =
+          start >= 0 && end > start ? blob.slice(start, end + 1) : blob;
+        const data = JSON.parse(json) as unknown;
         const cliError = parseCliJsonError(data);
         if (cliError) {
           return { ok: false, error: cliError, data };
         }
+        return { ok: true, data };
       } catch {
         // fall through
       }

@@ -499,19 +499,30 @@ export default function ArbitrageGraph({
         <div className="arb-tokens-row">
           <span className="arb-tokens-label">
             Forecast hot wallet (signing) · not Alchemy
+            {" · "}
+            {prediction?.dryRun
+              ? "DRY RUN"
+              : prediction?.enabled
+                ? "LIVE"
+                : "OFF"}
           </span>
           <ul className="arb-tokens-list">
             <li className="arb-token-chip">
-              <span className="arb-token-sym">worth</span>
-              <span className="arb-token-amt">{formatUsd(forecastWorth)}</span>
+              <span className="arb-token-sym">live USDC</span>
+              <span className="arb-token-amt">{formatUsd(forecastUsdc)}</span>
               <span className="arb-token-val">
                 {forecastAddress ? shortAddr(forecastAddress) : "—"}
               </span>
             </li>
             <li className="arb-token-chip">
-              <span className="arb-token-sym">USDC</span>
-              <span className="arb-token-amt">{formatUsd(forecastUsdc)}</span>
-              <span className="arb-token-val">{forecastSol.toFixed(4)} SOL</span>
+              <span className="arb-token-sym">worth</span>
+              <span className="arb-token-amt">{formatUsd(forecastWorth)}</span>
+              <span className="arb-token-val">
+                {forecastSol.toFixed(4)} SOL
+                {forecastPosValue > 0
+                  ? ` · pos ${formatUsd(forecastPosValue)}`
+                  : ""}
+              </span>
             </li>
           </ul>
         </div>
