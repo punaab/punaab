@@ -16,6 +16,9 @@
     "prediction-trader": "tsx scripts/prediction-trader.ts",
     "prediction-trader:once": "tsx scripts/prediction-trader.ts --once",
     "prediction-sanity": "tsx scripts/prediction-sanity.ts",
+    "bridge-arb-to-sol": "tsx scripts/bridge-arb-usdc-to-sol.ts",
+    "copy-trade:once": "tsx scripts/copy-trade-once.ts",
+    "opensolve:once": "tsx scripts/opensolve-once.ts",
     "deploy-music-nft": "tsx scripts/deploy-music-nft.ts"
   },
   "dependencies": {

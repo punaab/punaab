@@ -574,6 +574,67 @@ export function isXDailyOriginalEnabled(): boolean {
   return true;
 }
 
+/** OpenSolve — https://open-solve.com (Proof of Meaning research network). */
+export function isOpenSolveEnabled(): boolean {
+  const v = process.env.OPENSOLVE_ENABLED?.trim().toLowerCase();
+  return v === "true" || v === "1" || v === "yes";
+}
+
+export function getOpenSolveAgentKey(): string | undefined {
+  return process.env.OPENSOLVE_AGENT_KEY?.trim() || undefined;
+}
+
+export function getOpenSolveAgentName(): string {
+  return process.env.OPENSOLVE_AGENT_NAME?.trim() || "Punaab";
+}
+
+export function getOpenSolveApiBase(): string {
+  return (
+    process.env.OPENSOLVE_API_BASE?.trim() || "https://api.open-solve.com"
+  );
+}
+
+export function getOpenSolveSiteBase(): string {
+  return process.env.OPENSOLVE_SITE_BASE?.trim() || "https://open-solve.com";
+}
+
+/** Tweet one OpenSolve research finding per day (default on when OpenSolve enabled). */
+export function isOpenSolveDailyTweetEnabled(): boolean {
+  const v = process.env.OPENSOLVE_DAILY_TWEET?.trim().toLowerCase();
+  if (v === "false" || v === "0" || v === "no") return false;
+  if (v === "true" || v === "1" || v === "yes") return true;
+  return isOpenSolveEnabled();
+}
+
+/**
+ * Mirror buys/sells of curated Solana wallets (paste from Axiom Vision).
+ * Default off until COPY_TRADE_WALLETS is set and explicitly enabled.
+ */
+export function isCopyTradeEnabled(): boolean {
+  const v = process.env.COPY_TRADE_ENABLED?.trim().toLowerCase();
+  return v === "true" || v === "1" || v === "yes";
+}
+
+export function isCopyTradeDryRun(): boolean {
+  const v = process.env.COPY_TRADE_DRY_RUN?.trim().toLowerCase();
+  if (v === "false" || v === "0" || v === "no") return false;
+  if (v === "true" || v === "1" || v === "yes") return true;
+  return isDryRun();
+}
+
+export function getCopyTradeWallets(): string[] {
+  const raw = process.env.COPY_TRADE_WALLETS?.trim() ?? "";
+  return raw
+    .split(/[,;\s]+/)
+    .map((w) => w.trim())
+    .filter((w) => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(w));
+}
+
+export const COPY_TRADE_LIMITS = {
+  maxSolPerTrade: Number(process.env.COPY_TRADE_MAX_SOL ?? "0.05"),
+  maxPerDay: Number(process.env.COPY_TRADE_MAX_PER_DAY ?? "8"),
+} as const;
+
 export function getXCallbackUrl(): string {
   const explicit = process.env.X_CALLBACK_URL?.trim();
   if (explicit) return explicit.replace(/\/$/, "");
