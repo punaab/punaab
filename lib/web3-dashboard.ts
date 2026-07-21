@@ -1,6 +1,8 @@
 import {
   getAlchemyApiKey,
   getAlchemyHoldingsCacheSec,
+  getAlchemyWalletEvmAddress,
+  getAlchemyWalletSolanaAddress,
   getAlchemyWebhookSigningKey,
   getSiteUrl,
   getTradingBaseAddress,
@@ -30,6 +32,10 @@ export interface Web3Hub {
     dryRun: boolean;
     dasEnabled: boolean;
     holdingsCacheSec: number;
+    /** Alchemy Agent Wallet (admin primary display) */
+    alchemyEvm?: string;
+    alchemySolana?: string;
+    /** Hot-wallet / signing addresses (may differ from Alchemy session) */
     tradingSolana?: string;
     tradingBase?: string;
   };
@@ -71,6 +77,8 @@ export function buildWeb3Hub(params: {
       dryRun: isDryRun(),
       dasEnabled: isAlchemyDasEnabled(),
       holdingsCacheSec: getAlchemyHoldingsCacheSec(),
+      alchemyEvm: getAlchemyWalletEvmAddress(),
+      alchemySolana: getAlchemyWalletSolanaAddress(),
       tradingSolana: getTradingSolanaAddress(),
       tradingBase: getTradingBaseAddress(),
     },

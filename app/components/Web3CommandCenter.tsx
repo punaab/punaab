@@ -109,15 +109,17 @@ export default function Web3CommandCenter({ hub, onRefresh }: Props) {
       <div className="web3-grid">
         {/* Wallets */}
         <div className="web3-panel">
-          <h3 className="web3-panel-title">Wallet radar</h3>
+          <h3 className="web3-panel-title">Alchemy Agent Wallet</h3>
           {hub.snapshot && (
             <p className="muted web3-panel-hint">
-              Snapshot {timeAgo(hub.snapshot.capturedAt)} · refreshes on heartbeat
-              (max 1/day)
+              Snapshot {timeAgo(hub.snapshot.capturedAt)} · Alchemy session
+              wallets (Arb / Base / ETH / Sol)
             </p>
           )}
           {!balances.length && (
-            <p className="muted">Set WATCH_BASE_ADDRESS / WATCH_SOLANA_ADDRESS</p>
+            <p className="muted">
+              Set ALCHEMY_WALLET_EVM / ALCHEMY_WALLET_SOLANA (or WATCH_*)
+            </p>
           )}
           <div className="web3-wallet-grid">
             {balances.map((b) => {
@@ -147,9 +149,26 @@ export default function Web3CommandCenter({ hub, onRefresh }: Props) {
               );
             })}
           </div>
+          {(hub.infra.alchemyEvm || hub.infra.alchemySolana) && (
+            <div className="web3-trading-addrs">
+              <span className="web3-panel-subtitle">Alchemy session addresses</span>
+              {hub.infra.alchemyEvm && (
+                <div className="web3-addr-row">
+                  <span className="chain-base">EVM</span>
+                  <code>{shortAddr(hub.infra.alchemyEvm)}</code>
+                </div>
+              )}
+              {hub.infra.alchemySolana && (
+                <div className="web3-addr-row">
+                  <span className="chain-sol">SOL</span>
+                  <code>{shortAddr(hub.infra.alchemySolana)}</code>
+                </div>
+              )}
+            </div>
+          )}
           {(hub.infra.tradingSolana || hub.infra.tradingBase) && (
             <div className="web3-trading-addrs">
-              <span className="web3-panel-subtitle">Agent trading wallets</span>
+              <span className="web3-panel-subtitle">Signing / hot wallets</span>
               {hub.infra.tradingSolana && (
                 <div className="web3-addr-row">
                   <span className="chain-sol">SOL</span>
@@ -194,7 +213,7 @@ export default function Web3CommandCenter({ hub, onRefresh }: Props) {
         <div className="web3-panel">
           <h3 className="web3-panel-title">Trade log</h3>
           <p className="muted web3-panel-hint">
-            Jupiter (Solana) + 0x / Wallet APIs (Base)
+            Alchemy session + Jupiter / 0x swaps from heartbeat
           </p>
           {!tradeLog.length && (
             <p className="muted web3-empty">No trades yet</p>

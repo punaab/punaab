@@ -75,7 +75,7 @@ export default function AlchemyApiPanels({ data, onRefresh }: Props) {
             {data.primaryBase && (
               <>
                 {" "}
-                · Base <code>{shortAddr(data.primaryBase)}</code>
+                · EVM <code>{shortAddr(data.primaryBase)}</code>
               </>
             )}
             {data.primarySolana && (

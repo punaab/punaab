@@ -218,6 +218,52 @@ export function getWatchSolanaAddress(): string | undefined {
   return addr;
 }
 
+/**
+ * Alchemy Agent Wallet (CLI session) — preferred for /admin portfolio display.
+ * Defaults to the funded Punaab Alchemy session EVM if unset.
+ */
+export function getAlchemyWalletEvmAddress(): string | undefined {
+  const explicit =
+    process.env.ALCHEMY_WALLET_EVM?.trim() ||
+    process.env.ALCHEMY_SESSION_EVM?.trim();
+  if (explicit && /^0x[0-9a-fA-F]{40}$/i.test(explicit)) return explicit;
+  // Funded Alchemy Agent Wallet (Arb USDC) used by CLI session
+  return "0x310648bd5ad77b4a4dd8725d53902d52e475ec73";
+}
+
+/** Alchemy Agent Wallet Solana side (CLI session). */
+export function getAlchemyWalletSolanaAddress(): string | undefined {
+  const explicit =
+    process.env.ALCHEMY_WALLET_SOLANA?.trim() ||
+    process.env.ALCHEMY_SESSION_SOLANA?.trim();
+  if (
+    explicit &&
+    !explicit.startsWith("0x") &&
+    /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(explicit)
+  ) {
+    return explicit;
+  }
+  return "6VoBMcEgfdWSCBYBJ46QkzyHiZ2S4WU6YWRdej5zUbhZ";
+}
+
+/** EVM address shown in admin / Alchemy Data APIs (Alchemy wallet first). */
+export function getAdminDisplayEvmAddress(): string | undefined {
+  return (
+    getAlchemyWalletEvmAddress() ||
+    getTradingBaseAddress() ||
+    getWatchBaseAddress()
+  );
+}
+
+/** Solana address shown in admin / Alchemy Data APIs (Alchemy wallet first). */
+export function getAdminDisplaySolanaAddress(): string | undefined {
+  return (
+    getAlchemyWalletSolanaAddress() ||
+    getTradingSolanaAddress() ||
+    getWatchSolanaAddress()
+  );
+}
+
 /** EVM hot wallet private key (0x…) for Alchemy Wallet APIs on Base. */
 export function getEvmAgentPrivateKey(): string | undefined {
   const key = process.env.EVM_AGENT_PRIVATE_KEY?.trim();
@@ -276,17 +322,30 @@ export interface WatchTargets {
   ethereum: string[];
 }
 
-/** Addresses to monitor, grouped by chain. */
+/** Addresses to monitor, grouped by chain. Prefers Alchemy Agent Wallet. */
 export function getWatchTargets(): WatchTargets {
   const base: string[] = [];
   const solana: string[] = [];
   const ethereum: string[] = [];
 
+  const alchemyEvm = getAlchemyWalletEvmAddress();
+  if (alchemyEvm) {
+    base.push(alchemyEvm);
+    ethereum.push(alchemyEvm);
+  }
+
+  const alchemySol = getAlchemyWalletSolanaAddress();
+  if (alchemySol) solana.push(alchemySol);
+
   const ownerBase = getWatchBaseAddress();
-  if (ownerBase) base.push(ownerBase);
+  if (ownerBase && !base.some((a) => a.toLowerCase() === ownerBase.toLowerCase())) {
+    base.push(ownerBase);
+  }
 
   const ownerSolana = getWatchSolanaAddress();
-  if (ownerSolana) solana.push(ownerSolana);
+  if (ownerSolana && !solana.includes(ownerSolana)) {
+    solana.push(ownerSolana);
+  }
 
   const legacyEvm = (process.env.WATCH_WALLET_ADDRESSES ?? "")
     .split(",")

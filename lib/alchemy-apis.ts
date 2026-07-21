@@ -8,10 +8,12 @@ import {
   normalizeSolanaAddress,
 } from "./alchemy-address";
 import {
+  getAdminDisplayEvmAddress,
+  getAdminDisplaySolanaAddress,
   getAlchemyApiKey,
   getAlchemyHoldingsCacheSec,
-  getTradingBaseAddress,
-  getTradingSolanaAddress,
+  getAlchemyWalletEvmAddress,
+  getAlchemyWalletSolanaAddress,
   getWatchTargets,
 } from "./config";
 import { fetchSolanaWalletHoldings } from "./solana-alchemy";
@@ -318,15 +320,26 @@ async function evmJsonRpc<T>(
 function resolvePrimaryAddresses(): { base?: string; solana?: string } {
   const watches = getWatchTargets();
   const base = normalizeEvmAddress(
-    getTradingBaseAddress() ?? watches.base[0] ?? watches.ethereum[0],
+    getAdminDisplayEvmAddress() ??
+      getAlchemyWalletEvmAddress() ??
+      watches.base[0] ??
+      watches.ethereum[0],
   );
   const solana = normalizeSolanaAddress(
-    getTradingSolanaAddress() ?? watches.solana[0],
+    getAdminDisplaySolanaAddress() ??
+      getAlchemyWalletSolanaAddress() ??
+      watches.solana[0],
   );
   return { base, solana };
 }
 
-const EVM_PORTFOLIO_NETWORKS = ["base-mainnet", "eth-mainnet"] as const;
+const EVM_TOKEN_NETWORKS = [
+  "arb-mainnet",
+  "base-mainnet",
+  "eth-mainnet",
+] as const;
+
+const EVM_NFT_NETWORKS: EvmNftNetwork[] = ["base-mainnet", "eth-mainnet"];
 
 function mapNftV3Row(network: EvmNftNetwork, owner: string, n: NftV3Owned): NftRow {
   const imageUrl =
@@ -392,7 +405,7 @@ async function fetchEvmNfts(
   let spamExcluded = true;
   const errors: string[] = [];
 
-  for (const network of EVM_PORTFOLIO_NETWORKS) {
+  for (const network of EVM_NFT_NETWORKS) {
     try {
       const result = await getNFTsForOwner(apiKey, network, evm, 8);
       items.push(...result.ownedNfts.map((n) => mapNftV3Row(network, evm, n)));
@@ -482,7 +495,7 @@ async function fetchPortfolioTokens(
   const rows: PortfolioTokenRow[] = [];
 
   if (base) {
-    for (const network of EVM_PORTFOLIO_NETWORKS) {
+    for (const network of EVM_TOKEN_NETWORKS) {
       try {
         const data = await portfolioPost<{
           data?: {

@@ -447,6 +447,9 @@ export default function Dashboard() {
       <section id="admin-arb" className="admin-section">
         <ArbitrageGraph
           prediction={state?.web3Hub?.prediction}
+          alchemy={state?.web3Hub?.alchemy}
+          alchemyEvm={state?.web3Hub?.infra?.alchemyEvm}
+          alchemySolana={state?.web3Hub?.infra?.alchemySolana}
           hubBalances={state?.web3Hub?.snapshot?.balances}
         />
       </section>

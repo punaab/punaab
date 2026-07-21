@@ -1,17 +1,21 @@
 "use client";
 
 import type { Web3Hub } from "@/lib/web3-dashboard";
+import type { AlchemyApiSnapshot, PortfolioTokenRow } from "@/lib/alchemy-apis";
 
 type Prediction = NonNullable<Web3Hub["prediction"]>;
 
 interface Props {
   prediction: Prediction | null | undefined;
+  alchemy?: AlchemyApiSnapshot | null;
   hubBalances?: Array<{
     chain: string;
     address: string;
     balance: string;
     symbol: string;
   }>;
+  alchemyEvm?: string;
+  alchemySolana?: string;
 }
 
 function shortTitle(title: string, max = 28): string {
@@ -30,6 +34,55 @@ function formatCents(usd: number): string {
 function formatUsd(n: number): string {
   if (!Number.isFinite(n)) return "—";
   return `$${n.toFixed(n >= 100 ? 0 : 2)}`;
+}
+
+function parseTokenBalance(raw: string): number {
+  const n = Number(String(raw).replace(/,/g, ""));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function alchemyPortfolioSummary(alchemy: AlchemyApiSnapshot | null | undefined) {
+  const tokens: PortfolioTokenRow[] = alchemy?.portfolio?.tokens ?? [];
+  let usdc = 0;
+  let eth = 0;
+  let sol = 0;
+  for (const t of tokens) {
+    const bal = parseTokenBalance(t.balance);
+    const sym = (t.symbol || "").toUpperCase();
+    const net = (t.network || "").toLowerCase();
+    if (sym === "USDC" || sym === "USDC.E") usdc += bal;
+    else if (sym === "ETH" || (t.isNative && (net.includes("eth") || net.includes("arb") || net.includes("base")))) {
+      eth += bal;
+    } else if (sym === "SOL" || (t.isNative && net.includes("solana"))) {
+      sol += bal;
+    }
+  }
+  const solRow = tokens.find(
+    (t) =>
+      (t.symbol || "").toUpperCase() === "SOL" ||
+      (t.isNative && (t.network || "").includes("solana")),
+  );
+  if (solRow) sol = parseTokenBalance(solRow.balance);
+
+  const arbUsdc = tokens
+    .filter(
+      (t) =>
+        (t.symbol || "").toUpperCase().includes("USDC") &&
+        (t.network || "").toLowerCase().includes("arb"),
+    )
+    .reduce((s, t) => s + parseTokenBalance(t.balance), 0);
+
+  return {
+    usdc,
+    eth,
+    sol,
+    arbUsdc,
+    tokenCount: tokens.length,
+    transferCount: alchemy?.transfers?.items?.length ?? 0,
+    tokens,
+    evm: alchemy?.primaryBase,
+    solana: alchemy?.primarySolana,
+  };
 }
 
 function timeAgo(iso: string | null | undefined): string {
@@ -115,7 +168,13 @@ function Sparkline({
   );
 }
 
-export default function ArbitrageGraph({ prediction, hubBalances }: Props) {
+export default function ArbitrageGraph({
+  prediction,
+  alchemy,
+  hubBalances,
+  alchemyEvm,
+  alchemySolana,
+}: Props) {
   const history = prediction?.arbHistory ?? [];
   const walletHistory = prediction?.walletHistory ?? [];
   const latest = prediction?.latestArb;
@@ -143,7 +202,11 @@ export default function ArbitrageGraph({ prediction, hubBalances }: Props) {
   const openLegs = prediction?.openLegs ?? [];
   const positions = wallet?.positions ?? [];
 
-  const address =
+  const alch = alchemyPortfolioSummary(alchemy);
+  const displayEvm = alchemyEvm ?? alch.evm ?? null;
+  const displaySol = alchemySolana ?? alch.solana ?? null;
+
+  const forecastAddress =
     wallet?.address ??
     prediction?.walletAddress ??
     prediction?.latestWallet?.address ??
@@ -151,18 +214,28 @@ export default function ArbitrageGraph({ prediction, hubBalances }: Props) {
 
   const hubSol = hubBalances?.find((b) => {
     if (!b.chain.includes("solana") || b.symbol !== "SOL") return false;
-    if (!address) return true;
-    return b.address === address;
+    if (displaySol) return b.address === displaySol;
+    if (!forecastAddress) return true;
+    return b.address === forecastAddress;
   });
 
-  const usdc = wallet?.usdc ?? prediction?.latestWallet?.usdc ?? 0;
+  // Prefer Alchemy portfolio (Arb USDC etc.) over Jupiter Forecast hot wallet
+  const usdc =
+    alch.usdc > 0
+      ? alch.usdc
+      : (wallet?.usdc ?? prediction?.latestWallet?.usdc ?? 0);
+  const arbUsdc = alch.arbUsdc;
+  const solFromAlchemy = alch.sol;
+  const ethFromAlchemy = alch.eth;
   const solRaw = wallet?.sol ?? prediction?.latestWallet?.sol ?? 0;
   const sol =
-    solRaw > 0
-      ? solRaw
-      : hubSol?.balance != null && Number.isFinite(Number(hubSol.balance))
-        ? Number(hubSol.balance)
-        : 0;
+    solFromAlchemy > 0
+      ? solFromAlchemy
+      : solRaw > 0
+        ? solRaw
+        : hubSol?.balance != null && Number.isFinite(Number(hubSol.balance))
+          ? Number(hubSol.balance)
+          : 0;
   const posValue =
     wallet?.positionValueUsd ?? prediction?.latestWallet?.positionValueUsd ?? 0;
   const solValue =
@@ -171,47 +244,68 @@ export default function ArbitrageGraph({ prediction, hubBalances }: Props) {
     0;
   const tokensValue =
     wallet?.tokensValueUsd ?? prediction?.latestWallet?.tokensValueUsd ?? usdc;
+  // Alchemy portfolio first; Forecast equity only as fallback
+  const alchemyWorthApprox = usdc + ethFromAlchemy * 2000 + (solValue || sol * (wallet?.solPriceUsd ?? 0));
   const totalEquity =
-    wallet?.totalWorthUsd ??
-    prediction?.latestWallet?.totalWorthUsd ??
-    solValue + tokensValue + posValue;
+    alch.tokenCount > 0
+      ? Math.max(
+          alchemyWorthApprox,
+          wallet?.totalWorthUsd ?? prediction?.latestWallet?.totalWorthUsd ?? 0,
+        )
+      : (wallet?.totalWorthUsd ??
+        prediction?.latestWallet?.totalWorthUsd ??
+        solValue + tokensValue + posValue);
   const tradeableCapital =
-    wallet?.tradeableCapitalUsd ??
-    prediction?.latestWallet?.tradeableCapitalUsd ??
-    Math.max(0, totalEquity - posValue);
-  const topTokens = wallet?.topTokens ?? [];
+    alch.tokenCount > 0
+      ? usdc + ethFromAlchemy * 2000
+      : (wallet?.tradeableCapitalUsd ??
+        prediction?.latestWallet?.tradeableCapitalUsd ??
+        Math.max(0, totalEquity - posValue));
+  const topTokens = alch.tokens
+    .filter((t) => parseTokenBalance(t.balance) > 0)
+    .slice(0, 8)
+    .map((t) => ({
+      symbol: t.symbol,
+      amount: parseTokenBalance(t.balance),
+      valueUsd: 0,
+      mint: `${t.network}:${t.tokenAddress ?? t.symbol}`,
+      network: t.network,
+    }));
+  const forecastTokens = (wallet?.topTokens ?? []).map((t) => ({
+    symbol: t.symbol,
+    amount: t.amount,
+    valueUsd: t.valueUsd ?? 0,
+    mint: t.mint,
+    network: "solana",
+  }));
+  const displayTokens = topTokens.length > 0 ? topTokens : forecastTokens;
   const solPrice = wallet?.solPriceUsd ?? 0;
   const walletCapturedAt =
-    wallet && "capturedAt" in wallet
+    alchemy?.fetchedAt ??
+    (wallet && "capturedAt" in wallet
       ? (wallet as { capturedAt?: string }).capturedAt
-      : undefined;
+      : undefined);
 
   return (
     <section className="arb-graph panel panel-wide">
       <header className="arb-graph-header">
         <div>
-          <p className="arb-eyebrow">Jupiter Forecast · Solana wallet</p>
-          <h2 className="arb-title">Arbitrage Radar</h2>
+          <p className="arb-eyebrow">Alchemy Agent Wallet · portfolio & trades</p>
+          <h2 className="arb-title">Wallet Command</h2>
         </div>
         <div className="arb-stat-chips">
+          <span className="arb-chip arb-chip-hot">
+            {alch.tokenCount > 0 ? `${alch.tokenCount} tokens` : "Alchemy"}
+          </span>
+          <span className="arb-chip">
+            {alch.transferCount} transfers
+          </span>
           <span className={`arb-chip ${hasArb ? "arb-chip-hot" : ""}`}>
-            Edge {bestEdge > 0 ? `${(bestEdge / 100).toFixed(1)}%` : "—"}
+            Forecast edge{" "}
+            {bestEdge > 0 ? `${(bestEdge / 100).toFixed(1)}%` : "—"}
           </span>
           <span className="arb-chip">
-            {prediction?.dryRun ? "DRY RUN" : "LIVE"}
-          </span>
-          <span className="arb-chip">
-            {prediction?.limits?.scalpEnabled !== false ? "SCALP+ARB" : "ARB"}
-          </span>
-          <span className="arb-chip">
-            API{" "}
-            {prediction?.apiAccess.ok
-              ? "OK"
-              : prediction?.apiAccess &&
-                  "geoBlocked" in prediction.apiAccess &&
-                  prediction.apiAccess.geoBlocked
-                ? "GEO"
-                : "ERR"}
+            {prediction?.dryRun ? "DRY RUN" : prediction?.enabled ? "LIVE" : "OFF"}
           </span>
           <span className="arb-chip muted-chip">
             {timeAgo(
@@ -224,25 +318,22 @@ export default function ArbitrageGraph({ prediction, hubBalances }: Props) {
         </div>
       </header>
 
-      {/* Live wallet balances */}
+      {/* Alchemy wallet balances */}
       <div className="arb-wallet-grid">
         <div className="arb-wallet-card arb-wallet-primary">
-          <span className="arb-wallet-label">Wallet worth</span>
+          <span className="arb-wallet-label">Alchemy worth (approx)</span>
           <span className="arb-wallet-value">{formatUsd(totalEquity)}</span>
           <span className="arb-wallet-sub">
-            {formatUsd(solValue || sol * solPrice)} SOL
-            {" · "}
             {formatUsd(usdc)} USDC
-            {posValue > 0 ? ` · ${formatUsd(posValue)} pos` : ""}
+            {arbUsdc > 0 ? ` · ${formatUsd(arbUsdc)} on Arb` : ""}
+            {ethFromAlchemy > 0 ? ` · ${ethFromAlchemy.toFixed(4)} ETH` : ""}
           </span>
         </div>
         <div className="arb-wallet-card">
-          <span className="arb-wallet-label">Trading capital</span>
-          <span className="arb-wallet-value">
-            {formatUsd(tradeableCapital)}
-          </span>
+          <span className="arb-wallet-label">USDC</span>
+          <span className="arb-wallet-value">{formatUsd(usdc)}</span>
           <span className="arb-wallet-sub">
-            {formatUsd(usdc)} USDC · auto-swaps SOL/SPL
+            Across Arb / Base / Solana via Alchemy
           </span>
         </div>
         <div className="arb-wallet-card">
@@ -251,53 +342,65 @@ export default function ArbitrageGraph({ prediction, hubBalances }: Props) {
           <span className="arb-wallet-sub">
             {solPrice > 0
               ? `${formatUsd(solValue || sol * solPrice)} @ $${solPrice.toFixed(0)}`
-              : "gas reserve"}
+              : "Alchemy Solana session"}
           </span>
         </div>
         <div className="arb-wallet-card">
-          <span className="arb-wallet-label">Today</span>
+          <span className="arb-wallet-label">ETH</span>
+          <span className="arb-wallet-value">{ethFromAlchemy.toFixed(4)}</span>
+          <span className="arb-wallet-sub">Native on Arb/Base/Eth</span>
+        </div>
+        <div className="arb-wallet-card">
+          <span className="arb-wallet-label">Forecast today</span>
           <span className="arb-wallet-value">{prediction?.tradesToday ?? 0}</span>
           <span className="arb-wallet-sub">
             {formatUsd(prediction?.usdcDeployedToday ?? 0)} deployed
           </span>
         </div>
-        <div className="arb-wallet-card">
-          <span className="arb-wallet-label">Open</span>
-          <span className="arb-wallet-value">
-            {wallet?.openPositions ??
-              (positions.length > 0 ? positions.length : openLegs.length)}
-          </span>
-          <span className="arb-wallet-sub">
-            {openLegs.length} ledger legs
-          </span>
-        </div>
-        {address && (
+        {(displayEvm || displaySol) && (
           <div className="arb-wallet-card arb-wallet-addr">
-            <span className="arb-wallet-label">Wallet</span>
-            <a
-              href={`https://solscan.io/account/${address}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="arb-wallet-link"
-            >
-              {shortAddr(address)}
-            </a>
+            <span className="arb-wallet-label">Alchemy wallets</span>
+            {displayEvm && (
+              <a
+                href={`https://arbiscan.io/address/${displayEvm}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="arb-wallet-link"
+              >
+                EVM {shortAddr(displayEvm)}
+              </a>
+            )}
+            {displaySol && (
+              <a
+                href={`https://solscan.io/account/${displaySol}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="arb-wallet-link"
+              >
+                SOL {shortAddr(displaySol)}
+              </a>
+            )}
             <span className="arb-wallet-sub">
               {walletCapturedAt
-                ? `live · ${timeAgo(walletCapturedAt)} ago`
-                : "Solana · Jupiter"}
+                ? `Alchemy · ${timeAgo(walletCapturedAt)} ago`
+                : "Agent Wallet session"}
             </span>
           </div>
         )}
       </div>
 
-      {topTokens.length > 0 && (
+      {displayTokens.length > 0 && (
         <div className="arb-tokens-row">
-          <span className="arb-tokens-label">Top balances</span>
+          <span className="arb-tokens-label">Alchemy balances</span>
           <ul className="arb-tokens-list">
-            {topTokens.map((t) => (
+            {displayTokens.map((t) => (
               <li key={t.mint} className="arb-token-chip">
-                <span className="arb-token-sym">{t.symbol}</span>
+                <span className="arb-token-sym">
+                  {t.symbol}
+                  {"network" in t && t.network
+                    ? ` · ${String(t.network).replace("-mainnet", "")}`
+                    : ""}
+                </span>
                 <span className="arb-token-amt">
                   {t.amount >= 100
                     ? t.amount.toFixed(0)
@@ -314,15 +417,16 @@ export default function ArbitrageGraph({ prediction, hubBalances }: Props) {
         </div>
       )}
 
-      {!address && (
+      {!displayEvm && !displaySol && (
         <p className="muted arb-empty">
-          Set <code>TRADING_SOLANA_ADDRESS</code> to show live wallet balances.
+          Set <code>ALCHEMY_WALLET_EVM</code> / <code>ALCHEMY_WALLET_SOLANA</code>{" "}
+          to show Alchemy Agent Wallet balances.
         </p>
       )}
-      {address && usdc === 0 && sol === 0 && (
+      {(displayEvm || displaySol) && usdc === 0 && sol === 0 && ethFromAlchemy === 0 && (
         <p className="muted arb-empty">
-          Wallet {shortAddr(address)} shows 0 SOL / 0 USDC — fund it or check
-          Alchemy RPC / Vercel env matches this address.
+          Alchemy wallets show empty balances — refresh Alchemy panel or fund{" "}
+          {displayEvm ? shortAddr(displayEvm) : shortAddr(displaySol!)}.
         </p>
       )}
 
