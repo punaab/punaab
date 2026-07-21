@@ -62,45 +62,95 @@ function alchemyPortfolioSummary(
       if (!owner) return true;
       if (evm && owner.toLowerCase() === evm) return true;
       if (solAddr && owner === solAddr) return true;
-      // Drop any token rows belonging to the Forecast hot wallet
       return false;
     },
   );
+
+  const ETH_USD = 2000;
+  const SOL_USD = 150;
+
   let usdc = 0;
   let eth = 0;
   let sol = 0;
+  let worthFromPrices = 0;
+
+  const byNetwork: Record<
+    string,
+    { usdc: number; eth: number; sol: number; otherUsd: number }
+  > = {};
+
+  const ensureNet = (net: string) => {
+    const key = net || "unknown";
+    if (!byNetwork[key]) {
+      byNetwork[key] = { usdc: 0, eth: 0, sol: 0, otherUsd: 0 };
+    }
+    return byNetwork[key]!;
+  };
+
   for (const t of tokens) {
     const bal = parseTokenBalance(t.balance);
     const sym = (t.symbol || "").toUpperCase();
     const net = (t.network || "").toLowerCase();
-    if (sym === "USDC" || sym === "USDC.E" || sym === "USDBC" || sym.includes("USDC"))
+    const bucket = ensureNet(net);
+    const hasPx = typeof t.valueUsd === "number" && t.valueUsd > 0;
+
+    if (sym.includes("USDC") || sym === "USDT" || sym === "DAI" || sym === "USDBC") {
       usdc += bal;
-    else if (sym === "ETH" || (t.isNative && (net.includes("eth") || net.includes("arb") || net.includes("base")))) {
+      bucket.usdc += bal;
+      worthFromPrices += hasPx ? t.valueUsd! : bal;
+      continue;
+    }
+
+    if (
+      sym === "ETH" ||
+      sym === "WETH" ||
+      (t.isNative &&
+        !net.includes("solana") &&
+        (net.includes("eth") || net.includes("arb") || net.includes("base") || !net))
+    ) {
       eth += bal;
-    } else if (sym === "SOL" || (t.isNative && net.includes("solana"))) {
+      bucket.eth += bal;
+      worthFromPrices += hasPx ? t.valueUsd! : bal * ETH_USD;
+      continue;
+    }
+
+    if (sym === "SOL" || (t.isNative && net.includes("solana"))) {
       sol += bal;
+      bucket.sol += bal;
+      worthFromPrices += hasPx ? t.valueUsd! : bal * SOL_USD;
+      continue;
+    }
+
+    if (hasPx) {
+      worthFromPrices += t.valueUsd!;
+      bucket.otherUsd += t.valueUsd!;
     }
   }
-  const solRow = tokens.find(
-    (t) =>
-      (t.symbol || "").toUpperCase() === "SOL" ||
-      (t.isNative && (t.network || "").includes("solana")),
-  );
-  if (solRow) sol = parseTokenBalance(solRow.balance);
 
-  const arbUsdc = tokens
-    .filter(
-      (t) =>
-        (t.symbol || "").toUpperCase().includes("USDC") &&
-        (t.network || "").toLowerCase().includes("arb"),
-    )
-    .reduce((s, t) => s + parseTokenBalance(t.balance), 0);
+  const approxWorth = usdc + eth * ETH_USD + sol * SOL_USD;
+  const totalWorthFinal = Math.max(worthFromPrices, approxWorth, usdc);
+
+  const chainRows = Object.entries(byNetwork)
+    .map(([network, b]) => {
+      const worth =
+        b.usdc + b.eth * ETH_USD + b.sol * SOL_USD + b.otherUsd;
+      return { network, ...b, worth };
+    })
+    .filter((c) => c.worth > 0.01 || c.usdc > 0 || c.eth > 0 || c.sol > 0)
+    .sort((a, b) => b.worth - a.worth);
 
   return {
     usdc,
     eth,
     sol,
-    arbUsdc,
+    arbUsdc: byNetwork["arb-mainnet"]?.usdc ?? 0,
+    baseUsdc: byNetwork["base-mainnet"]?.usdc ?? 0,
+    ethUsdc: byNetwork["eth-mainnet"]?.usdc ?? 0,
+    solUsdc: Object.entries(byNetwork)
+      .filter(([n]) => n.includes("solana"))
+      .reduce((s, [, b]) => s + b.usdc, 0),
+    totalWorth: totalWorthFinal,
+    chainRows,
     tokenCount: tokens.length,
     transferCount: alchemy?.transfers?.items?.length ?? 0,
     tokens,
@@ -235,15 +285,20 @@ export default function ArbitrageGraph({
   const arbUsdc = alch.arbUsdc;
   const sol = alch.sol;
   const ethFromAlchemy = alch.eth;
-  const alchemyWorthApprox = usdc + ethFromAlchemy * 2000 + sol * 150;
+  const alchemyWorthApprox = alch.totalWorth;
   const totalEquity = alchemyWorthApprox;
+  const chainRows = alch.chainRows;
   const topTokens = alch.tokens
     .filter((t) => parseTokenBalance(t.balance) > 0)
-    .slice(0, 8)
+    .slice(0, 12)
     .map((t) => ({
       symbol: t.symbol,
       amount: parseTokenBalance(t.balance),
-      valueUsd: 0,
+      valueUsd:
+        t.valueUsd ??
+        ((t.symbol || "").toUpperCase().includes("USDC")
+          ? parseTokenBalance(t.balance)
+          : 0),
       mint: `${t.network}:${t.tokenAddress ?? t.symbol}`,
       network: t.network,
     }));
@@ -299,32 +354,45 @@ export default function ArbitrageGraph({
       {/* Alchemy wallet balances */}
       <div className="arb-wallet-grid">
         <div className="arb-wallet-card arb-wallet-primary">
-          <span className="arb-wallet-label">Alchemy worth (approx)</span>
+          <span className="arb-wallet-label">Alchemy worth (combined)</span>
           <span className="arb-wallet-value">{formatUsd(totalEquity)}</span>
           <span className="arb-wallet-sub">
-            {formatUsd(usdc)} USDC
-            {arbUsdc > 0 ? ` · ${formatUsd(arbUsdc)} on Arb` : ""}
-            {ethFromAlchemy > 0 ? ` · ${ethFromAlchemy.toFixed(4)} ETH` : ""}
+            All Alchemy session wallets · Arb + Base + ETH + Sol
           </span>
         </div>
         <div className="arb-wallet-card">
-          <span className="arb-wallet-label">USDC</span>
-          <span className="arb-wallet-value">{formatUsd(usdc)}</span>
+          <span className="arb-wallet-label">Arb USDC</span>
+          <span className="arb-wallet-value">{formatUsd(arbUsdc || alch.arbUsdc)}</span>
           <span className="arb-wallet-sub">
-            Across Arb / Base / Solana via Alchemy
+            {displayEvm ? shortAddr(displayEvm) : "Alchemy EVM"}
           </span>
         </div>
         <div className="arb-wallet-card">
-          <span className="arb-wallet-label">SOL</span>
-          <span className="arb-wallet-value">{sol.toFixed(4)}</span>
+          <span className="arb-wallet-label">Base / ETH USDC</span>
+          <span className="arb-wallet-value">
+            {formatUsd((alch.baseUsdc || 0) + (alch.ethUsdc || 0))}
+          </span>
           <span className="arb-wallet-sub">
-            Alchemy Solana · {displaySol ? shortAddr(displaySol) : "—"}
+            Base {formatUsd(alch.baseUsdc || 0)} · Eth{" "}
+            {formatUsd(alch.ethUsdc || 0)}
           </span>
         </div>
         <div className="arb-wallet-card">
-          <span className="arb-wallet-label">ETH</span>
+          <span className="arb-wallet-label">Solana session</span>
+          <span className="arb-wallet-value">
+            {formatUsd((alch.solUsdc || 0) + sol * 150)}
+          </span>
+          <span className="arb-wallet-sub">
+            {formatUsd(alch.solUsdc || 0)} USDC · {sol.toFixed(4)} SOL
+            {displaySol ? ` · ${shortAddr(displaySol)}` : ""}
+          </span>
+        </div>
+        <div className="arb-wallet-card">
+          <span className="arb-wallet-label">ETH (native)</span>
           <span className="arb-wallet-value">{ethFromAlchemy.toFixed(4)}</span>
-          <span className="arb-wallet-sub">Native on Arb/Base/Eth</span>
+          <span className="arb-wallet-sub">
+            ~{formatUsd(ethFromAlchemy * 2000)} across Arb/Base/Eth
+          </span>
         </div>
         <div className="arb-wallet-card">
           <span className="arb-wallet-label">Forecast today</span>
@@ -364,6 +432,27 @@ export default function ArbitrageGraph({
           </div>
         )}
       </div>
+
+      {chainRows.length > 0 && (
+        <div className="arb-tokens-row">
+          <span className="arb-tokens-label">By chain (Alchemy only)</span>
+          <ul className="arb-tokens-list">
+            {chainRows.map((c) => (
+              <li key={c.network} className="arb-token-chip">
+                <span className="arb-token-sym">
+                  {c.network.replace("-mainnet", "")}
+                </span>
+                <span className="arb-token-amt">{formatUsd(c.worth)}</span>
+                <span className="arb-token-val">
+                  {c.usdc > 0 ? `${formatUsd(c.usdc)} USDC` : ""}
+                  {c.eth > 0 ? ` · ${c.eth.toFixed(4)} ETH` : ""}
+                  {c.sol > 0 ? ` · ${c.sol.toFixed(4)} SOL` : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {displayTokens.length > 0 && (
         <div className="arb-tokens-row">

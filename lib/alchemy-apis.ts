@@ -136,6 +136,8 @@ export interface PortfolioTokenRow {
   balance: string;
   decimals: number;
   isNative: boolean;
+  /** USD estimate from Alchemy tokenPrices or stablecoin≈1 */
+  valueUsd?: number;
 }
 
 export interface NftRow {
@@ -280,7 +282,7 @@ function hexToDecimal(hex: string): string {
 }
 
 function formatTokenBalance(raw: string, decimals: number): string {
-  if (!raw || raw === "0") return "0";
+  if (!raw || raw === "0" || raw === "0x0" || raw === "0x") return "0";
   try {
     const n = BigInt(raw.startsWith("0x") ? hexToDecimal(raw) : raw);
     if (decimals <= 0) return n.toString();
@@ -291,8 +293,75 @@ function formatTokenBalance(raw: string, decimals: number): string {
     const fracStr = frac.toString().padStart(decimals, "0").replace(/0+$/, "");
     return `${whole}.${fracStr}`;
   } catch {
-    return raw;
+    // Already human-readable decimal from some Alchemy payloads
+    const asNum = Number(raw);
+    return Number.isFinite(asNum) ? String(asNum) : raw;
   }
+}
+
+function parseUiBalance(raw: string, decimals: number): number {
+  const formatted = formatTokenBalance(raw, decimals);
+  const n = Number(String(formatted).replace(/,/g, ""));
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Known stables — Portfolio balances endpoint often omits metadata. */
+const KNOWN_ERC20: Record<
+  string,
+  { symbol: string; decimals: number; networks?: string[] }
+> = {
+  "0xaf88d065e77c8cc2239327c5edb3a432268e5831": {
+    symbol: "USDC",
+    decimals: 6,
+    networks: ["arb-mainnet"],
+  },
+  "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913": {
+    symbol: "USDC",
+    decimals: 6,
+    networks: ["base-mainnet"],
+  },
+  "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": {
+    symbol: "USDC",
+    decimals: 6,
+    networks: ["eth-mainnet"],
+  },
+  "0xff970a61a04b1ca14834a43f5de4533ebddb5cc8": {
+    symbol: "USDC.E",
+    decimals: 6,
+    networks: ["arb-mainnet"],
+  },
+  "0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9": {
+    symbol: "USDT",
+    decimals: 6,
+    networks: ["arb-mainnet"],
+  },
+  "0x82af49447d8a07e3bd95bd0d56f35241523fbab1": {
+    symbol: "WETH",
+    decimals: 18,
+    networks: ["arb-mainnet"],
+  },
+};
+
+function resolveErc20Meta(
+  tokenAddress: string | null | undefined,
+  meta: { symbol?: string | null; name?: string | null; decimals?: number | null },
+  network: string,
+): { symbol: string; name: string; decimals: number } {
+  const known = tokenAddress
+    ? KNOWN_ERC20[tokenAddress.toLowerCase()]
+    : undefined;
+  const symbol =
+    (meta.symbol && meta.symbol.trim()) ||
+    known?.symbol ||
+    (tokenAddress ? tokenAddress.slice(0, 6) : "ETH");
+  const decimals =
+    typeof meta.decimals === "number" && Number.isFinite(meta.decimals)
+      ? meta.decimals
+      : (known?.decimals ?? (tokenAddress ? 18 : 18));
+  const name =
+    (meta.name && meta.name.trim()) || symbol || known?.symbol || "Token";
+  void network;
+  return { symbol, name, decimals };
 }
 
 async function portfolioPost<T>(apiKey: string, path: string, body: unknown): Promise<T> {
@@ -497,46 +566,130 @@ async function fetchPortfolioTokens(
   const rows: PortfolioTokenRow[] = [];
 
   if (base) {
-    for (const network of EVM_TOKEN_NETWORKS) {
-      try {
-        const data = await portfolioPost<{
-          data?: {
-            tokens?: Array<{
-              network?: string;
-              tokenAddress?: string | null;
-              tokenBalance?: string;
-              tokenMetadata?: { symbol?: string; name?: string; decimals?: number };
-            }>;
-          };
-        }>(apiKey, "/assets/tokens/balances/by-address", {
-          addresses: [{ address: base, networks: [network] }],
-          includeNativeTokens: true,
-          includeErc20Tokens: true,
-        });
-
-        for (const t of data.data?.tokens ?? []) {
-          const meta = t.tokenMetadata ?? {};
-          const decimals = meta.decimals ?? 18;
-          const raw = t.tokenBalance ?? "0";
-          const normalized = raw.startsWith("0x") ? hexToDecimal(raw) : raw;
-          rows.push({
-            network: t.network ?? network,
+    // Prefer tokens/by-address — returns metadata + prices. balances/by-address
+    // often omits symbol/decimals (USDC was parsed as 18-dec dust → ~$0).
+    try {
+      const data = await portfolioPost<{
+        data?: {
+          tokens?: Array<{
+            network?: string;
+            tokenAddress?: string | null;
+            tokenBalance?: string;
+            tokenMetadata?: {
+              symbol?: string | null;
+              name?: string | null;
+              decimals?: number | null;
+            };
+            tokenPrices?: Array<{ currency?: string; value?: string }>;
+          }>;
+        };
+      }>(apiKey, "/assets/tokens/by-address", {
+        addresses: [
+          {
             address: base,
-            tokenAddress: t.tokenAddress ?? null,
-            symbol: meta.symbol ?? (t.tokenAddress ? t.tokenAddress.slice(0, 6) : "NATIVE"),
-            name: meta.name ?? meta.symbol ?? "Token",
-            balance: formatTokenBalance(normalized, decimals),
-            decimals,
-            isNative: !t.tokenAddress,
+            networks: [...EVM_TOKEN_NETWORKS],
+          },
+        ],
+      });
+
+      for (const t of data.data?.tokens ?? []) {
+        const network = t.network ?? "arb-mainnet";
+        const tokenAddress = t.tokenAddress ?? null;
+        const isNative = !tokenAddress;
+        const meta = resolveErc20Meta(
+          tokenAddress,
+          t.tokenMetadata ?? {},
+          network,
+        );
+        const raw = t.tokenBalance ?? "0";
+        const ui = parseUiBalance(raw, isNative ? 18 : meta.decimals);
+        if (ui <= 0) continue;
+
+        // Skip obvious spam / airdrop dust labels
+        const spam =
+          /t\.me\/|airdrop|claim|\$[A-Z]{2,10}\b/i.test(
+            `${meta.symbol} ${meta.name}`,
+          ) && ui < 2;
+        if (spam && !/^(USDC|ETH|WETH|USDT|DAI)$/i.test(meta.symbol)) continue;
+
+        const price = Number(t.tokenPrices?.[0]?.value ?? 0);
+        const stable =
+          /^(USDC|USDC\.E|USDT|DAI|USDBC)$/i.test(meta.symbol) ||
+          meta.symbol.toUpperCase().includes("USDC");
+        const valueUsd = price > 0 ? ui * price : stable ? ui : undefined;
+
+        rows.push({
+          network,
+          address: base,
+          tokenAddress,
+          symbol: isNative ? "ETH" : meta.symbol,
+          name: isNative ? "Ether" : meta.name,
+          balance: formatTokenBalance(raw, isNative ? 18 : meta.decimals),
+          decimals: isNative ? 18 : meta.decimals,
+          isNative,
+          valueUsd,
+        });
+      }
+    } catch (error) {
+      console.warn("[alchemy-apis] portfolio tokens/by-address:", error);
+      // Fall back to per-network balances endpoint with known-token map
+      for (const network of EVM_TOKEN_NETWORKS) {
+        try {
+          const data = await portfolioPost<{
+            data?: {
+              tokens?: Array<{
+                network?: string;
+                tokenAddress?: string | null;
+                tokenBalance?: string;
+                tokenMetadata?: {
+                  symbol?: string | null;
+                  name?: string | null;
+                  decimals?: number | null;
+                };
+              }>;
+            };
+          }>(apiKey, "/assets/tokens/balances/by-address", {
+            addresses: [{ address: base, networks: [network] }],
+            includeNativeTokens: true,
+            includeErc20Tokens: true,
           });
-        }
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        if (!isAlchemyNetworkDisabledError(msg)) {
-          console.warn(`[alchemy-apis] portfolio tokens ${network}:`, error);
+
+          for (const t of data.data?.tokens ?? []) {
+            const tokenAddress = t.tokenAddress ?? null;
+            const isNative = !tokenAddress;
+            const meta = resolveErc20Meta(
+              tokenAddress,
+              t.tokenMetadata ?? {},
+              network,
+            );
+            const raw = t.tokenBalance ?? "0";
+            const ui = parseUiBalance(raw, isNative ? 18 : meta.decimals);
+            if (ui <= 0) continue;
+            const stable =
+              /^(USDC|USDC\.E|USDT|DAI|USDBC)$/i.test(meta.symbol) ||
+              meta.symbol.toUpperCase().includes("USDC");
+            rows.push({
+              network: t.network ?? network,
+              address: base,
+              tokenAddress,
+              symbol: isNative ? "ETH" : meta.symbol,
+              name: isNative ? "Ether" : meta.name,
+              balance: formatTokenBalance(raw, isNative ? 18 : meta.decimals),
+              decimals: isNative ? 18 : meta.decimals,
+              isNative,
+              valueUsd: stable ? ui : undefined,
+            });
+          }
+        } catch (inner) {
+          const msg = inner instanceof Error ? inner.message : String(inner);
+          if (!isAlchemyNetworkDisabledError(msg)) {
+            console.warn(`[alchemy-apis] portfolio tokens ${network}:`, inner);
+          }
         }
       }
     }
+
+    await enrichEvmUsdcViaRpc(apiKey, base, rows);
   }
 
   if (solana) {
@@ -547,29 +700,40 @@ async function fetchPortfolioTokens(
             network?: string;
             tokenAddress?: string | null;
             tokenBalance?: string;
-            tokenMetadata?: { symbol?: string; name?: string; decimals?: number };
+            tokenMetadata?: {
+              symbol?: string | null;
+              name?: string | null;
+              decimals?: number | null;
+            };
+            tokenPrices?: Array<{ currency?: string; value?: string }>;
           }>;
         };
-      }>(apiKey, "/assets/tokens/balances/by-address", {
+      }>(apiKey, "/assets/tokens/by-address", {
         addresses: [{ address: solana, networks: ["solana-mainnet"] }],
-        includeNativeTokens: true,
-        includeErc20Tokens: true,
       });
 
       for (const t of data.data?.tokens ?? []) {
         const meta = t.tokenMetadata ?? {};
-        const decimals = meta.decimals ?? 9;
+        const decimals =
+          typeof meta.decimals === "number" ? meta.decimals : 9;
         const raw = t.tokenBalance ?? "0";
-        const normalized = raw.startsWith("0x") ? hexToDecimal(raw) : raw;
+        const ui = parseUiBalance(raw, decimals);
+        if (ui <= 0) continue;
+        const symbol =
+          (meta.symbol && meta.symbol.trim()) ||
+          (t.tokenAddress ? t.tokenAddress.slice(0, 6) : "SOL");
+        const price = Number(t.tokenPrices?.[0]?.value ?? 0);
+        const stable = symbol.toUpperCase().includes("USDC");
         rows.push({
           network: t.network ?? "solana-mainnet",
           address: solana,
           tokenAddress: t.tokenAddress ?? null,
-          symbol: meta.symbol ?? (t.tokenAddress ? t.tokenAddress.slice(0, 6) : "SOL"),
-          name: meta.name ?? meta.symbol ?? "Token",
-          balance: formatTokenBalance(normalized, decimals),
+          symbol,
+          name: (meta.name && meta.name.trim()) || symbol,
+          balance: formatTokenBalance(raw, decimals),
           decimals,
           isNative: !t.tokenAddress,
+          valueUsd: price > 0 ? ui * price : stable ? ui : undefined,
         });
       }
     } catch (error) {
@@ -577,10 +741,89 @@ async function fetchPortfolioTokens(
     }
   }
 
-  return rows
-    .filter((r) => r.balance !== "0" && r.balance !== "0.0")
-    .sort((a, b) => Number(b.balance) - Number(a.balance))
-    .slice(0, 24);
+  // Dedupe by network+tokenAddress, keep higher balance
+  const byKey = new Map<string, PortfolioTokenRow>();
+  for (const r of rows) {
+    const key = `${r.network}:${(r.tokenAddress || "native").toLowerCase()}`;
+    const prev = byKey.get(key);
+    if (!prev || Number(r.balance) > Number(prev.balance)) byKey.set(key, r);
+  }
+
+  return [...byKey.values()]
+    .filter((r) => Number(r.balance) > 0)
+    .sort(
+      (a, b) =>
+        (b.valueUsd ?? Number(b.balance)) - (a.valueUsd ?? Number(a.balance)),
+    )
+    .slice(0, 40);
+}
+
+const USDC_BY_NETWORK: Record<string, string> = {
+  "arb-mainnet": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+  "base-mainnet": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+  "eth-mainnet": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+};
+
+const EVM_RPC_HOST: Record<string, string> = {
+  "arb-mainnet": "arb-mainnet.g.alchemy.com",
+  "base-mainnet": "base-mainnet.g.alchemy.com",
+  "eth-mainnet": "eth-mainnet.g.alchemy.com",
+};
+
+async function enrichEvmUsdcViaRpc(
+  apiKey: string,
+  owner: string,
+  rows: PortfolioTokenRow[],
+): Promise<void> {
+  const padBalanceOf =
+    "0x70a08231000000000000000000000000" + owner.slice(2).toLowerCase();
+
+  await Promise.all(
+    Object.entries(USDC_BY_NETWORK).map(async ([network, contract]) => {
+      const already = rows.some(
+        (r) =>
+          r.network === network &&
+          (r.symbol || "").toUpperCase().includes("USDC") &&
+          Number(r.balance) > 0.01,
+      );
+      if (already) return;
+
+      const host = EVM_RPC_HOST[network];
+      if (!host) return;
+      try {
+        const res = await fetch(`https://${host}/v2/${apiKey}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 1,
+            method: "eth_call",
+            params: [{ to: contract, data: padBalanceOf }, "latest"],
+          }),
+        });
+        const data = (await res.json()) as {
+          result?: string;
+          error?: { message: string };
+        };
+        if (data.error || !data.result) return;
+        const ui = parseUiBalance(data.result, 6);
+        if (ui < 0.01) return;
+        rows.push({
+          network,
+          address: owner,
+          tokenAddress: contract,
+          symbol: "USDC",
+          name: "USD Coin",
+          balance: ui.toFixed(6),
+          decimals: 6,
+          isNative: false,
+          valueUsd: ui,
+        });
+      } catch (error) {
+        console.warn(`[alchemy-apis] rpc USDC ${network}:`, error);
+      }
+    }),
+  );
 }
 
 async function fetchPortfolioNfts(
