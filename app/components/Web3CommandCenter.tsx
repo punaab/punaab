@@ -118,7 +118,7 @@ export default function Web3CommandCenter({ hub, onRefresh }: Props) {
           )}
           {!balances.length && (
             <p className="muted">
-              Set ALCHEMY_WALLET_EVM / ALCHEMY_WALLET_SOLANA (or WATCH_*)
+              Set ALCHEMY_WALLET_EVM / ALCHEMY_WALLET_SOLANA
             </p>
           )}
           <div className="web3-wallet-grid">

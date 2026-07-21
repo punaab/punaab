@@ -236,11 +236,20 @@ function emptySnapshot(configured: boolean, cacheSec: number): AlchemyApiSnapsho
 export function normalizeAlchemySnapshot(
   snapshot: AlchemyApiSnapshot,
 ): AlchemyApiSnapshot {
+  const evm = snapshot.primaryBase?.toLowerCase();
+  const sol = snapshot.primarySolana;
+  const tokens = (snapshot.portfolio?.tokens ?? []).filter((t) => {
+    const owner = (t.address || "").trim();
+    if (!owner) return true;
+    if (evm && owner.toLowerCase() === evm) return true;
+    if (sol && owner === sol) return true;
+    return false;
+  });
   return {
     ...snapshot,
     portfolio: {
       ...snapshot.portfolio,
-      tokens: snapshot.portfolio?.tokens ?? [],
+      tokens,
     },
     nfts: {
       ...snapshot.nfts,
@@ -982,13 +991,16 @@ export async function refreshAlchemyApiSnapshot(): Promise<AlchemyApiSnapshot> {
   try {
     const { createRedisClient } = await import("./redis");
     const ttl = getAlchemyHoldingsCacheSec();
-    await createRedisClient().set(
+    const redis = createRedisClient();
+    await redis.set(
       alchemyCacheKey(),
       { v: fresh, exp: Date.now() + ttl * 1000 },
       { ex: ttl },
     );
-    // Drop legacy key that mixed wallets
-    await createRedisClient().del("moltbook:alchemy:dashboard");
+    // Drop legacy / mixed-wallet caches
+    await redis.del("moltbook:alchemy:dashboard");
+    await redis.del("moltbook:web3:snapshot");
+    await redis.del("moltbook:web3:last_run");
   } catch {
     // optional
   }

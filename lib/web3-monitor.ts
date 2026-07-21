@@ -1,6 +1,8 @@
 import {
   getAlchemyApiKey,
-  getWatchTargets,
+  getAlchemyWatchTargets,
+  getAlchemyWalletEvmAddress,
+  getAlchemyWalletSolanaAddress,
   hasWatchAddresses,
 } from "./config";
 import { getSolBalanceViaAlchemy } from "./solana-alchemy";
@@ -130,8 +132,36 @@ async function queryChain(
   }
 }
 
+function isAlchemySessionAddress(address: string): boolean {
+  const evm = getAlchemyWalletEvmAddress()?.toLowerCase();
+  const sol = getAlchemyWalletSolanaAddress();
+  const a = address.trim();
+  if (evm && a.toLowerCase() === evm) return true;
+  if (sol && a === sol) return true;
+  return false;
+}
+
+/** Keep only Alchemy Agent Wallet rows — drop stale hot-wallet snapshot bleed. */
+export function filterAlchemySnapshotBalances(
+  snapshot: Web3Snapshot | null,
+): Web3Snapshot | null {
+  if (!snapshot) return null;
+  const balances = snapshot.balances.filter((b) =>
+    isAlchemySessionAddress(b.address),
+  );
+  if (balances.length === snapshot.balances.length) return snapshot;
+  const summary = balances
+    .map((b) => {
+      const short = `${b.address.slice(0, 6)}…${b.address.slice(-4)}`;
+      return `${CHAIN_LABELS[b.chain]} ${short}: ${b.balance} ${b.symbol}`;
+    })
+    .join("; ");
+  return { ...snapshot, balances, summary };
+}
+
 export async function captureWeb3Snapshot(): Promise<Web3Snapshot | null> {
-  const { base, solana, ethereum } = getWatchTargets();
+  // Admin / heartbeat snapshot is Alchemy Agent Wallet only
+  const { base, solana, ethereum } = getAlchemyWatchTargets();
   if (base.length === 0 && solana.length === 0 && ethereum.length === 0) {
     return null;
   }
@@ -204,7 +234,16 @@ export async function getWeb3Snapshot(): Promise<Web3Snapshot | null> {
     if (!raw) return null;
     const parsed = parseRedisValue<Web3Snapshot>(raw);
     if (!parsed) return null;
-    return normalizeSnapshot(parsed);
+    const normalized = normalizeSnapshot(parsed);
+    const filtered = filterAlchemySnapshotBalances(normalized);
+    // Stale Redis still has hot wallet — recapture Alchemy-only once
+    if (
+      normalized.balances.some((b) => !isAlchemySessionAddress(b.address))
+    ) {
+      const fresh = await captureWeb3Snapshot();
+      return filterAlchemySnapshotBalances(fresh) ?? filtered;
+    }
+    return filtered;
   } catch (error) {
     console.error("[web3] getWeb3Snapshot failed:", error);
     return null;

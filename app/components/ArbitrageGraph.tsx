@@ -49,8 +49,23 @@ function getFallbackAlchemySol(): string {
   return "6VoBMcEgfdWSCBYBJ46QkzyHiZ2S4WU6YWRdej5zUbhZ";
 }
 
-function alchemyPortfolioSummary(alchemy: AlchemyApiSnapshot | null | undefined) {
-  const tokens: PortfolioTokenRow[] = alchemy?.portfolio?.tokens ?? [];
+function alchemyPortfolioSummary(
+  alchemy: AlchemyApiSnapshot | null | undefined,
+  allowedEvm?: string,
+  allowedSol?: string,
+) {
+  const evm = (allowedEvm ?? alchemy?.primaryBase)?.toLowerCase();
+  const solAddr = allowedSol ?? alchemy?.primarySolana;
+  const tokens: PortfolioTokenRow[] = (alchemy?.portfolio?.tokens ?? []).filter(
+    (t) => {
+      const owner = (t.address || "").trim();
+      if (!owner) return true;
+      if (evm && owner.toLowerCase() === evm) return true;
+      if (solAddr && owner === solAddr) return true;
+      // Drop any token rows belonging to the Forecast hot wallet
+      return false;
+    },
+  );
   let usdc = 0;
   let eth = 0;
   let sol = 0;
@@ -58,7 +73,8 @@ function alchemyPortfolioSummary(alchemy: AlchemyApiSnapshot | null | undefined)
     const bal = parseTokenBalance(t.balance);
     const sym = (t.symbol || "").toUpperCase();
     const net = (t.network || "").toLowerCase();
-    if (sym === "USDC" || sym === "USDC.E") usdc += bal;
+    if (sym === "USDC" || sym === "USDC.E" || sym === "USDBC" || sym.includes("USDC"))
+      usdc += bal;
     else if (sym === "ETH" || (t.isNative && (net.includes("eth") || net.includes("arb") || net.includes("base")))) {
       eth += bal;
     } else if (sym === "SOL" || (t.isNative && net.includes("solana"))) {
@@ -209,9 +225,11 @@ export default function ArbitrageGraph({
   const openLegs = prediction?.openLegs ?? [];
   const positions = wallet?.positions ?? [];
 
-  const alch = alchemyPortfolioSummary(alchemy);
-  const displayEvm = alchemyEvm ?? alch.evm ?? getFallbackAlchemyEvm();
-  const displaySol = alchemySolana ?? alch.solana ?? getFallbackAlchemySol();
+  const displayEvm =
+    alchemyEvm ?? alchemy?.primaryBase ?? getFallbackAlchemyEvm();
+  const displaySol =
+    alchemySolana ?? alchemy?.primarySolana ?? getFallbackAlchemySol();
+  const alch = alchemyPortfolioSummary(alchemy, displayEvm, displaySol);
 
   const usdc = alch.usdc;
   const arbUsdc = alch.arbUsdc;
@@ -427,20 +445,14 @@ export default function ArbitrageGraph({
           </div>
           <div className="arb-spark-panel">
             <div className="arb-spark-label">
-              <span>Wallet worth</span>
+              <span>Alchemy worth</span>
               <span className="arb-edge-hot">{formatUsd(totalEquity)}</span>
             </div>
             <Sparkline
-              values={
-                usdcSeries.length
-                  ? usdcSeries
-                  : totalEquity > 0
-                    ? [totalEquity]
-                    : []
-              }
+              values={totalEquity > 0 ? [totalEquity * 0.98, totalEquity] : []}
               color="var(--cyan)"
               fillId="arbSparkWallet"
-              emptyLabel="Awaiting balance history"
+              emptyLabel="Refresh Alchemy APIs"
             />
           </div>
         </div>

@@ -3,11 +3,11 @@ import {
   getAlchemyHoldingsCacheSec,
   getAlchemyWalletEvmAddress,
   getAlchemyWalletSolanaAddress,
+  getAlchemyWatchTargets,
   getAlchemyWebhookSigningKey,
   getSiteUrl,
   getTradingBaseAddress,
   getTradingSolanaAddress,
-  getWatchTargets,
   isAlchemyDasEnabled,
   isDryRun,
   isTradingEnabled,
@@ -39,7 +39,7 @@ export interface Web3Hub {
     tradingSolana?: string;
     tradingBase?: string;
   };
-  watches: ReturnType<typeof getWatchTargets>;
+  watches: ReturnType<typeof getAlchemyWatchTargets>;
   snapshot: Web3Snapshot | null;
   onchainEvents: AlchemyWebhookEvent[];
   trading: {
@@ -82,8 +82,20 @@ export function buildWeb3Hub(params: {
       tradingSolana: getTradingSolanaAddress(),
       tradingBase: getTradingBaseAddress(),
     },
-    watches: getWatchTargets(),
-    snapshot: params.snapshot,
+    watches: getAlchemyWatchTargets(),
+    snapshot: params.snapshot
+      ? {
+          ...params.snapshot,
+          balances: params.snapshot.balances.filter((b) => {
+            const evm = getAlchemyWalletEvmAddress()?.toLowerCase();
+            const sol = getAlchemyWalletSolanaAddress();
+            const a = b.address.trim();
+            if (evm && a.toLowerCase() === evm) return true;
+            if (sol && a === sol) return true;
+            return false;
+          }),
+        }
+      : null,
     onchainEvents: params.onchainEvents,
     trading: params.trading,
     agentActivity: params.activity.filter((a) => web3Actions.has(a.action)),

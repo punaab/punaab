@@ -205,14 +205,27 @@ export function getAdminSessionSecret(): string | undefined {
   return process.env.ADMIN_SESSION_SECRET;
 }
 
+/** Strip whitespace / pasted CRLF / literal `\r\n` from address env values. */
+function sanitizeAddressEnv(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const cleaned = value
+    .replace(/\\r\\n/g, "")
+    .replace(/\\n/g, "")
+    .replace(/\\r/g, "")
+    .replace(/[\u0000-\u001F\u007F]+/g, "")
+    .replace(/["']/g, "")
+    .trim();
+  return cleaned || undefined;
+}
+
 export function getWatchBaseAddress(): string | undefined {
-  const addr = process.env.WATCH_BASE_ADDRESS?.trim();
+  const addr = sanitizeAddressEnv(process.env.WATCH_BASE_ADDRESS);
   if (addr && /^0x[0-9a-fA-F]{40}$/i.test(addr)) return addr;
   return undefined;
 }
 
 export function getWatchSolanaAddress(): string | undefined {
-  const addr = process.env.WATCH_SOLANA_ADDRESS?.trim();
+  const addr = sanitizeAddressEnv(process.env.WATCH_SOLANA_ADDRESS);
   if (!addr || addr.startsWith("0x")) return undefined;
   if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr)) return undefined;
   return addr;
@@ -224,8 +237,8 @@ export function getWatchSolanaAddress(): string | undefined {
  */
 export function getAlchemyWalletEvmAddress(): string | undefined {
   const explicit =
-    process.env.ALCHEMY_WALLET_EVM?.trim() ||
-    process.env.ALCHEMY_SESSION_EVM?.trim();
+    sanitizeAddressEnv(process.env.ALCHEMY_WALLET_EVM) ||
+    sanitizeAddressEnv(process.env.ALCHEMY_SESSION_EVM);
   if (explicit && /^0x[0-9a-fA-F]{40}$/i.test(explicit)) return explicit;
   // Funded Alchemy Agent Wallet (Arb USDC) used by CLI session
   return "0x310648bd5ad77b4a4dd8725d53902d52e475ec73";
@@ -234,8 +247,8 @@ export function getAlchemyWalletEvmAddress(): string | undefined {
 /** Alchemy Agent Wallet Solana side (CLI session). */
 export function getAlchemyWalletSolanaAddress(): string | undefined {
   const explicit =
-    process.env.ALCHEMY_WALLET_SOLANA?.trim() ||
-    process.env.ALCHEMY_SESSION_SOLANA?.trim();
+    sanitizeAddressEnv(process.env.ALCHEMY_WALLET_SOLANA) ||
+    sanitizeAddressEnv(process.env.ALCHEMY_SESSION_SOLANA);
   if (
     explicit &&
     !explicit.startsWith("0x") &&
@@ -264,7 +277,7 @@ export function getEvmAgentPrivateKey(): string | undefined {
 
 /** Base trading wallet (defaults to WATCH_BASE_ADDRESS). */
 export function getTradingBaseAddress(): string | undefined {
-  const trading = process.env.TRADING_BASE_ADDRESS?.trim();
+  const trading = sanitizeAddressEnv(process.env.TRADING_BASE_ADDRESS);
   if (trading && /^0x[0-9a-fA-F]{40}$/i.test(trading)) return trading;
   return getWatchBaseAddress();
 }
@@ -314,52 +327,80 @@ export interface WatchTargets {
   ethereum: string[];
 }
 
+/**
+ * Alchemy Agent Wallet only — used for /admin snapshot + portfolio display.
+ * Never includes TRADING_/hot signing wallets.
+ */
+export function getAlchemyWatchTargets(): WatchTargets {
+  const alchemyEvm = getAlchemyWalletEvmAddress();
+  const alchemySol = getAlchemyWalletSolanaAddress();
+  return {
+    base: alchemyEvm ? [alchemyEvm] : [],
+    solana: alchemySol ? [alchemySol] : [],
+    ethereum: alchemyEvm ? [alchemyEvm] : [],
+  };
+}
+
 /** Addresses to monitor, grouped by chain. Prefers Alchemy Agent Wallet. */
 export function getWatchTargets(): WatchTargets {
-  const base: string[] = [];
-  const solana: string[] = [];
-  const ethereum: string[] = [];
-
-  const alchemyEvm = getAlchemyWalletEvmAddress();
-  if (alchemyEvm) {
-    base.push(alchemyEvm);
-    ethereum.push(alchemyEvm);
-  }
-
-  const alchemySol = getAlchemyWalletSolanaAddress();
-  if (alchemySol) solana.push(alchemySol);
+  const { base, solana, ethereum } = getAlchemyWatchTargets();
+  const baseOut = [...base];
+  const solanaOut = [...solana];
+  const ethereumOut = [...ethereum];
 
   const ownerBase = getWatchBaseAddress();
-  if (ownerBase && !base.some((a) => a.toLowerCase() === ownerBase.toLowerCase())) {
-    base.push(ownerBase);
+  if (
+    ownerBase &&
+    !baseOut.some((a) => a.toLowerCase() === ownerBase.toLowerCase())
+  ) {
+    // Keep owner watch only when it is the Alchemy session (avoid hot-wallet bleed)
+    const alchemyEvm = getAlchemyWalletEvmAddress();
+    if (
+      alchemyEvm &&
+      ownerBase.toLowerCase() === alchemyEvm.toLowerCase()
+    ) {
+      // already present
+    } else if (!alchemyEvm) {
+      baseOut.push(ownerBase);
+    }
   }
 
   const ownerSolana = getWatchSolanaAddress();
-  if (ownerSolana && !solana.includes(ownerSolana)) {
-    solana.push(ownerSolana);
+  if (ownerSolana && !solanaOut.includes(ownerSolana)) {
+    const alchemySol = getAlchemyWalletSolanaAddress();
+    if (alchemySol && ownerSolana === alchemySol) {
+      // already present
+    } else if (!alchemySol) {
+      solanaOut.push(ownerSolana);
+    }
   }
 
-  const legacyEvm = (process.env.WATCH_WALLET_ADDRESSES ?? "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter((a) => /^0x[0-9a-fA-F]{40}$/i.test(a));
+  // Legacy multi-watch lists are ignored for admin when Alchemy session is configured
+  if (!getAlchemyWalletEvmAddress() && !getAlchemyWalletSolanaAddress()) {
+    const legacyEvm = (process.env.WATCH_WALLET_ADDRESSES ?? "")
+      .split(",")
+      .map((s) => sanitizeAddressEnv(s) ?? "")
+      .filter((a) => /^0x[0-9a-fA-F]{40}$/i.test(a));
 
-  const legacySolana = (process.env.WATCH_SOLANA_ADDRESSES ?? "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+    const legacySolana = (process.env.WATCH_SOLANA_ADDRESSES ?? "")
+      .split(",")
+      .map((s) => sanitizeAddressEnv(s) ?? "")
+      .filter(Boolean);
 
-  for (const addr of legacyEvm) {
-    if (!base.includes(addr)) ethereum.push(addr);
-  }
-  for (const addr of legacySolana) {
-    if (!solana.includes(addr)) solana.push(addr);
+    for (const addr of legacyEvm) {
+      if (!ethereumOut.some((a) => a.toLowerCase() === addr.toLowerCase())) {
+        ethereumOut.push(addr);
+      }
+    }
+    for (const addr of legacySolana) {
+      if (!solanaOut.includes(addr)) solanaOut.push(addr);
+    }
   }
 
   return {
-    base: [...new Set(base)],
-    solana: [...new Set(solana)],
-    ethereum: [...new Set(ethereum)],
+    base: [...new Set(baseOut)],
+    solana: [...new Set(solanaOut)],
+    ethereum: [...new Set(ethereumOut)],
   };
 }
 
@@ -394,7 +435,7 @@ export function getAlchemySolanaRpcUrl(): string {
 
 /** Agent trading wallet on Solana (defaults to WATCH_SOLANA_ADDRESS). */
 export function getTradingSolanaAddress(): string | undefined {
-  const trading = process.env.TRADING_SOLANA_ADDRESS?.trim();
+  const trading = sanitizeAddressEnv(process.env.TRADING_SOLANA_ADDRESS);
   if (trading && !trading.startsWith("0x") && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(trading)) {
     return trading;
   }
