@@ -246,22 +246,14 @@ export function getAlchemyWalletSolanaAddress(): string | undefined {
   return "6VoBMcEgfdWSCBYBJ46QkzyHiZ2S4WU6YWRdej5zUbhZ";
 }
 
-/** EVM address shown in admin / Alchemy Data APIs (Alchemy wallet first). */
+/** EVM address for /admin + Alchemy Data APIs — Alchemy Agent Wallet only. */
 export function getAdminDisplayEvmAddress(): string | undefined {
-  return (
-    getAlchemyWalletEvmAddress() ||
-    getTradingBaseAddress() ||
-    getWatchBaseAddress()
-  );
+  return getAlchemyWalletEvmAddress();
 }
 
-/** Solana address shown in admin / Alchemy Data APIs (Alchemy wallet first). */
+/** Solana address for /admin + Alchemy Data APIs — Alchemy Agent Wallet only. */
 export function getAdminDisplaySolanaAddress(): string | undefined {
-  return (
-    getAlchemyWalletSolanaAddress() ||
-    getTradingSolanaAddress() ||
-    getWatchSolanaAddress()
-  );
+  return getAlchemyWalletSolanaAddress();
 }
 
 /** EVM hot wallet private key (0x…) for Alchemy Wallet APIs on Base. */

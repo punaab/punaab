@@ -8,13 +8,10 @@ import {
   normalizeSolanaAddress,
 } from "./alchemy-address";
 import {
-  getAdminDisplayEvmAddress,
-  getAdminDisplaySolanaAddress,
   getAlchemyApiKey,
   getAlchemyHoldingsCacheSec,
   getAlchemyWalletEvmAddress,
   getAlchemyWalletSolanaAddress,
-  getWatchTargets,
 } from "./config";
 import { fetchSolanaWalletHoldings } from "./solana-alchemy";
 import {
@@ -37,7 +34,12 @@ const RPC_HOST: Record<EvmRpcNetwork, string> = {
   "eth-mainnet": "eth-mainnet.g.alchemy.com",
 };
 
-const CACHE_KEY = "moltbook:alchemy:dashboard";
+const CACHE_KEY_PREFIX = "moltbook:alchemy:dashboard:";
+
+function alchemyCacheKey(): string {
+  const { base, solana } = resolvePrimaryAddresses();
+  return `${CACHE_KEY_PREFIX}${base ?? "none"}:${solana ?? "none"}`;
+}
 
 const INACTIVE_ALCHEMY_HINT =
   "Alchemy app inactive — create a new app at https://dashboard.alchemy.com/apps and update ALCHEMY_API_KEY in Vercel.";
@@ -318,18 +320,9 @@ async function evmJsonRpc<T>(
 }
 
 function resolvePrimaryAddresses(): { base?: string; solana?: string } {
-  const watches = getWatchTargets();
-  const base = normalizeEvmAddress(
-    getAdminDisplayEvmAddress() ??
-      getAlchemyWalletEvmAddress() ??
-      watches.base[0] ??
-      watches.ethereum[0],
-  );
-  const solana = normalizeSolanaAddress(
-    getAdminDisplaySolanaAddress() ??
-      getAlchemyWalletSolanaAddress() ??
-      watches.solana[0],
-  );
+  // Admin portfolio is locked to Alchemy Agent Wallet — never TRADING_/WATCH_ hot wallets
+  const base = normalizeEvmAddress(getAlchemyWalletEvmAddress());
+  const solana = normalizeSolanaAddress(getAlchemyWalletSolanaAddress());
   return { base, solana };
 }
 
@@ -961,22 +954,41 @@ export async function getAlchemyApiSnapshot(options?: {
   forceRefresh?: boolean;
 }): Promise<AlchemyApiSnapshot> {
   const cacheSec = getAlchemyHoldingsCacheSec();
+  const { base, solana } = resolvePrimaryAddresses();
+  const key = alchemyCacheKey();
+
   if (options?.forceRefresh) {
     return fetchAlchemyApiSnapshotUncached();
   }
-  const cached = await getCached(CACHE_KEY, cacheSec, fetchAlchemyApiSnapshotUncached);
-  return normalizeAlchemySnapshot(cached);
+
+  const cached = await getCached(key, cacheSec, fetchAlchemyApiSnapshotUncached);
+  const snap = normalizeAlchemySnapshot(cached);
+
+  // Bust stale cache that still points at the Jupiter hot wallet
+  const wrongEvm =
+    base &&
+    snap.primaryBase &&
+    snap.primaryBase.toLowerCase() !== base.toLowerCase();
+  const wrongSol =
+    solana && snap.primarySolana && snap.primarySolana !== solana;
+  if (wrongEvm || wrongSol) {
+    return fetchAlchemyApiSnapshotUncached();
+  }
+  return snap;
 }
 
 export async function refreshAlchemyApiSnapshot(): Promise<AlchemyApiSnapshot> {
   const fresh = normalizeAlchemySnapshot(await fetchAlchemyApiSnapshotUncached());
   try {
     const { createRedisClient } = await import("./redis");
+    const ttl = getAlchemyHoldingsCacheSec();
     await createRedisClient().set(
-      CACHE_KEY,
-      { v: fresh, exp: Date.now() + getAlchemyHoldingsCacheSec() * 1000 },
-      { ex: getAlchemyHoldingsCacheSec() },
+      alchemyCacheKey(),
+      { v: fresh, exp: Date.now() + ttl * 1000 },
+      { ex: ttl },
     );
+    // Drop legacy key that mixed wallets
+    await createRedisClient().del("moltbook:alchemy:dashboard");
   } catch {
     // optional
   }

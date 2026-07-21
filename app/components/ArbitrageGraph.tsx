@@ -41,6 +41,14 @@ function parseTokenBalance(raw: string): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+function getFallbackAlchemyEvm(): string {
+  return "0x310648bd5ad77b4a4dd8725d53902d52e475ec73";
+}
+
+function getFallbackAlchemySol(): string {
+  return "6VoBMcEgfdWSCBYBJ46QkzyHiZ2S4WU6YWRdej5zUbhZ";
+}
+
 function alchemyPortfolioSummary(alchemy: AlchemyApiSnapshot | null | undefined) {
   const tokens: PortfolioTokenRow[] = alchemy?.portfolio?.tokens ?? [];
   let usdc = 0;
@@ -171,7 +179,6 @@ function Sparkline({
 export default function ArbitrageGraph({
   prediction,
   alchemy,
-  hubBalances,
   alchemyEvm,
   alchemySolana,
 }: Props) {
@@ -203,64 +210,15 @@ export default function ArbitrageGraph({
   const positions = wallet?.positions ?? [];
 
   const alch = alchemyPortfolioSummary(alchemy);
-  const displayEvm = alchemyEvm ?? alch.evm ?? null;
-  const displaySol = alchemySolana ?? alch.solana ?? null;
+  const displayEvm = alchemyEvm ?? alch.evm ?? getFallbackAlchemyEvm();
+  const displaySol = alchemySolana ?? alch.solana ?? getFallbackAlchemySol();
 
-  const forecastAddress =
-    wallet?.address ??
-    prediction?.walletAddress ??
-    prediction?.latestWallet?.address ??
-    null;
-
-  const hubSol = hubBalances?.find((b) => {
-    if (!b.chain.includes("solana") || b.symbol !== "SOL") return false;
-    if (displaySol) return b.address === displaySol;
-    if (!forecastAddress) return true;
-    return b.address === forecastAddress;
-  });
-
-  // Prefer Alchemy portfolio (Arb USDC etc.) over Jupiter Forecast hot wallet
-  const usdc =
-    alch.usdc > 0
-      ? alch.usdc
-      : (wallet?.usdc ?? prediction?.latestWallet?.usdc ?? 0);
+  const usdc = alch.usdc;
   const arbUsdc = alch.arbUsdc;
-  const solFromAlchemy = alch.sol;
+  const sol = alch.sol;
   const ethFromAlchemy = alch.eth;
-  const solRaw = wallet?.sol ?? prediction?.latestWallet?.sol ?? 0;
-  const sol =
-    solFromAlchemy > 0
-      ? solFromAlchemy
-      : solRaw > 0
-        ? solRaw
-        : hubSol?.balance != null && Number.isFinite(Number(hubSol.balance))
-          ? Number(hubSol.balance)
-          : 0;
-  const posValue =
-    wallet?.positionValueUsd ?? prediction?.latestWallet?.positionValueUsd ?? 0;
-  const solValue =
-    wallet?.solValueUsd ??
-    prediction?.latestWallet?.solValueUsd ??
-    0;
-  const tokensValue =
-    wallet?.tokensValueUsd ?? prediction?.latestWallet?.tokensValueUsd ?? usdc;
-  // Alchemy portfolio first; Forecast equity only as fallback
-  const alchemyWorthApprox = usdc + ethFromAlchemy * 2000 + (solValue || sol * (wallet?.solPriceUsd ?? 0));
-  const totalEquity =
-    alch.tokenCount > 0
-      ? Math.max(
-          alchemyWorthApprox,
-          wallet?.totalWorthUsd ?? prediction?.latestWallet?.totalWorthUsd ?? 0,
-        )
-      : (wallet?.totalWorthUsd ??
-        prediction?.latestWallet?.totalWorthUsd ??
-        solValue + tokensValue + posValue);
-  const tradeableCapital =
-    alch.tokenCount > 0
-      ? usdc + ethFromAlchemy * 2000
-      : (wallet?.tradeableCapitalUsd ??
-        prediction?.latestWallet?.tradeableCapitalUsd ??
-        Math.max(0, totalEquity - posValue));
+  const alchemyWorthApprox = usdc + ethFromAlchemy * 2000 + sol * 150;
+  const totalEquity = alchemyWorthApprox;
   const topTokens = alch.tokens
     .filter((t) => parseTokenBalance(t.balance) > 0)
     .slice(0, 8)
@@ -271,20 +229,22 @@ export default function ArbitrageGraph({
       mint: `${t.network}:${t.tokenAddress ?? t.symbol}`,
       network: t.network,
     }));
-  const forecastTokens = (wallet?.topTokens ?? []).map((t) => ({
-    symbol: t.symbol,
-    amount: t.amount,
-    valueUsd: t.valueUsd ?? 0,
-    mint: t.mint,
-    network: "solana",
-  }));
-  const displayTokens = topTokens.length > 0 ? topTokens : forecastTokens;
-  const solPrice = wallet?.solPriceUsd ?? 0;
-  const walletCapturedAt =
-    alchemy?.fetchedAt ??
-    (wallet && "capturedAt" in wallet
-      ? (wallet as { capturedAt?: string }).capturedAt
-      : undefined);
+  const displayTokens = topTokens;
+  const walletCapturedAt = alchemy?.fetchedAt;
+
+  const forecastUsdc = wallet?.usdc ?? prediction?.latestWallet?.usdc ?? 0;
+  const forecastSol = wallet?.sol ?? prediction?.latestWallet?.sol ?? 0;
+  const forecastWorth =
+    wallet?.totalWorthUsd ??
+    prediction?.latestWallet?.totalWorthUsd ??
+    forecastUsdc;
+  const forecastPosValue =
+    wallet?.positionValueUsd ?? prediction?.latestWallet?.positionValueUsd ?? 0;
+  const forecastAddress =
+    wallet?.address ??
+    prediction?.walletAddress ??
+    prediction?.latestWallet?.address ??
+    null;
 
   return (
     <section className="arb-graph panel panel-wide">
@@ -340,9 +300,7 @@ export default function ArbitrageGraph({
           <span className="arb-wallet-label">SOL</span>
           <span className="arb-wallet-value">{sol.toFixed(4)}</span>
           <span className="arb-wallet-sub">
-            {solPrice > 0
-              ? `${formatUsd(solValue || sol * solPrice)} @ $${solPrice.toFixed(0)}`
-              : "Alchemy Solana session"}
+            Alchemy Solana · {displaySol ? shortAddr(displaySol) : "—"}
           </span>
         </div>
         <div className="arb-wallet-card">
@@ -430,6 +388,27 @@ export default function ArbitrageGraph({
         </p>
       )}
 
+      {(forecastAddress || forecastWorth > 0) && (
+        <div className="arb-tokens-row">
+          <span className="arb-tokens-label">
+            Forecast hot wallet (signing) · not Alchemy
+          </span>
+          <ul className="arb-tokens-list">
+            <li className="arb-token-chip">
+              <span className="arb-token-sym">worth</span>
+              <span className="arb-token-amt">{formatUsd(forecastWorth)}</span>
+              <span className="arb-token-val">
+                {forecastAddress ? shortAddr(forecastAddress) : "—"}
+              </span>
+            </li>
+            <li className="arb-token-chip">
+              <span className="arb-token-sym">USDC</span>
+              <span className="arb-token-amt">{formatUsd(forecastUsdc)}</span>
+              <span className="arb-token-val">{forecastSol.toFixed(4)} SOL</span>
+            </li>
+          </ul>
+        </div>
+      )}
       <div className="arb-graph-body">
         <div className="arb-sparks-col">
           <div className="arb-spark-panel">
@@ -577,7 +556,7 @@ export default function ArbitrageGraph({
           <div className="arb-panel-head">
             <span>Positions</span>
             <span className="muted">
-              {formatUsd(posValue)} mark
+              {formatUsd(forecastPosValue)} mark
             </span>
           </div>
           {!positions.length && !openLegs.length && (
