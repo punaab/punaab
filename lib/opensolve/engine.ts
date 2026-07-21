@@ -1,10 +1,11 @@
 /**
  * OpenSolve RESEARCHER tick: claim task → search papers → submit findings.
- * Also gathers a research brief for the daily X tweet.
+ * Optionally posts a few X notes from that research — never naming OpenSolve.
  */
 import { completeText } from "../aii-llm";
 import {
   getOpenSolveAgentName,
+  getOpenSolveMaxTweetsPerDay,
   isOpenSolveDailyTweetEnabled,
   isOpenSolveEnabled,
 } from "../config";
@@ -16,12 +17,13 @@ import {
   listLabBoardPosts,
   searchPapers,
   submitWork,
-  syncWork,
   type OpenSolvePaper,
 } from "./client";
 
 const DAILY_TWEET_KEY = "opensolve:daily_tweet";
 const LAST_BRIEF_KEY = "opensolve:last_brief";
+/** Space OpenSolve-sourced tweets so 4/day does not fire in one burst. */
+const MIN_TWEET_GAP_MS = 3 * 60 * 60 * 1000;
 
 export interface OpenSolveTickSummary {
   ok: boolean;
@@ -36,6 +38,12 @@ export interface OpenSolveTickSummary {
   brief?: string;
 }
 
+interface DailyTweetState {
+  day: string;
+  count: number;
+  lastAt?: string;
+}
+
 function utcDay(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -44,29 +52,52 @@ function getRedis() {
   return createRedisClient();
 }
 
-async function alreadyTweetedToday(): Promise<boolean> {
+async function getDailyTweetState(): Promise<DailyTweetState> {
+  const day = utcDay();
   try {
     const v = await getRedis().get(DAILY_TWEET_KEY);
-    if (v == null) return false;
+    if (v == null) return { day, count: 0 };
     if (typeof v === "string") {
       try {
-        return (JSON.parse(v) as { day?: string }).day === utcDay();
+        const parsed = JSON.parse(v) as {
+          day?: string;
+          count?: number;
+          at?: string;
+          lastAt?: string;
+        };
+        if (parsed.day === day) {
+          // Legacy: { day } only meant "already tweeted once"
+          const count =
+            typeof parsed.count === "number"
+              ? parsed.count
+              : parsed.day
+                ? 1
+                : 0;
+          return {
+            day,
+            count: Math.max(0, count),
+            lastAt: parsed.lastAt ?? parsed.at,
+          };
+        }
       } catch {
-        return v === utcDay();
+        if (v === day) return { day, count: 1 };
       }
     }
-    return false;
   } catch {
-    return false;
+    /* ignore */
   }
+  return { day, count: 0 };
 }
 
-async function markTweeted(): Promise<void> {
-  await getRedis().set(
-    DAILY_TWEET_KEY,
-    JSON.stringify({ day: utcDay(), at: new Date().toISOString() }),
-    { ex: 3 * 86400 },
-  );
+async function markTweeted(prev: DailyTweetState): Promise<void> {
+  const next: DailyTweetState = {
+    day: utcDay(),
+    count: (prev.day === utcDay() ? prev.count : 0) + 1,
+    lastAt: new Date().toISOString(),
+  };
+  await getRedis().set(DAILY_TWEET_KEY, JSON.stringify(next), {
+    ex: 3 * 86400,
+  });
 }
 
 function pickFact(paper: OpenSolvePaper): string {
@@ -75,16 +106,28 @@ function pickFact(paper: OpenSolvePaper): string {
   return (paper.title ?? "untitled").slice(0, 200);
 }
 
+/** Never name OpenSolve / open-solve in public posts. */
+function scrubOpenSolveMentions(text: string): string {
+  return text
+    .replace(/\bopen[\s-]?solve\b/gi, "some papers")
+    .replace(/\bproof of meaning\b/gi, "research")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 async function craftResearchTweet(brief: string): Promise<string | null> {
   const system = [
-    "You are Punaab, a chill cat AI researcher on X.",
-    "Write ONE tweet about a real scientific finding from OpenSolve research.",
+    "You are Punaab, a chill cat AI on X who reads science out of curiosity.",
+    "Write ONE tweet about a real scientific finding as if you stumbled on it yourself",
+    "(a paper, abstract, lab note, or rabbit hole) — NOT from a product/platform.",
+    "Never mention OpenSolve, open-solve, or any research network brand.",
     "1–3 short sentences. Specific, curious, not hype. No hashtags. Under 260 chars.",
-    "Mention OpenSolve once casually if it fits. Output ONLY the tweet.",
+    "Output ONLY the tweet.",
   ].join("\n");
   try {
     const result = await completeText(system, `Research brief:\n${brief}`, 140);
-    const text = (result.text || "").replace(/^["'\s]+|["'\s]+$/g, "").trim();
+    let text = (result.text || "").replace(/^["'\s]+|["'\s]+$/g, "").trim();
+    text = scrubOpenSolveMentions(text);
     if (text.length < 24) return null;
     return text.length > 270 ? `${text.slice(0, 269).trimEnd()}…` : text;
   } catch {
@@ -92,7 +135,7 @@ async function craftResearchTweet(brief: string): Promise<string | null> {
   }
 }
 
-async function maybeDailyResearchTweet(brief: string): Promise<{
+async function maybeResearchTweet(brief: string): Promise<{
   attempted: boolean;
   posted: boolean;
   error?: string;
@@ -100,12 +143,26 @@ async function maybeDailyResearchTweet(brief: string): Promise<{
   if (!isOpenSolveDailyTweetEnabled()) {
     return { attempted: false, posted: false };
   }
-  if (await alreadyTweetedToday()) {
+
+  const max = getOpenSolveMaxTweetsPerDay();
+  if (max <= 0) return { attempted: false, posted: false };
+
+  const state = await getDailyTweetState();
+  if (state.count >= max) {
     return { attempted: false, posted: false };
   }
+
+  if (state.lastAt) {
+    const gap = Date.now() - Date.parse(state.lastAt);
+    if (Number.isFinite(gap) && gap < MIN_TWEET_GAP_MS) {
+      return { attempted: false, posted: false };
+    }
+  }
+
+  // Soft time window: prefer UTC afternoon/evening; still allow occasional early posts
   const hour = new Date().getUTCHours();
-  const inWindow = hour >= 16 && hour <= 23;
-  if (!inWindow && Math.random() > 0.2) {
+  const inWindow = hour >= 14 && hour <= 23;
+  if (!inWindow && Math.random() > 0.15) {
     return { attempted: false, posted: false };
   }
 
@@ -119,10 +176,10 @@ async function maybeDailyResearchTweet(brief: string): Promise<{
 
   const posted = await createXPost(text, { force: true });
   if (posted.ok) {
-    await markTweeted();
+    await markTweeted(state);
     await appendActivity({
-      action: "opensolve_tweet",
-      summary: `OpenSolve research tweet`,
+      action: "research_tweet",
+      summary: "Science curiosity tweet (from research feed)",
       content: text.slice(0, 280),
     });
     return { attempted: true, posted: true };
@@ -164,7 +221,7 @@ export async function runOpenSolveTick(): Promise<OpenSolveTickSummary> {
         ? "agent_unverified — open claim URL"
         : manifest.error ?? "manifest_failed";
     if (manifest.error) summary.errors.push(manifest.error);
-    // still allow daily tweet from public board below
+    // still allow research tweet from public board below
   } else {
     const agentId = manifest.manifest.agent_id;
     const sources = manifest.manifest.available_sources?.length
@@ -239,7 +296,7 @@ export async function runOpenSolveTick(): Promise<OpenSolveTickSummary> {
           }
           await appendActivity({
             action: "opensolve_research",
-            summary: `OpenSolve research on: ${String(question).slice(0, 120)}`,
+            summary: `Research task: ${String(question).slice(0, 120)}`,
             content: fact.slice(0, 400),
           });
         } else {
@@ -261,11 +318,11 @@ export async function runOpenSolveTick(): Promise<OpenSolveTickSummary> {
   const briefStr =
     typeof brief === "string" && brief.length > 20
       ? brief
-      : "OpenSolve agents are mining peer-reviewed science under zero-trust audit.";
+      : "Curious note from peer-reviewed literature on an open science question.";
 
   if (!summary.brief) summary.brief = briefStr;
 
-  const tweet = await maybeDailyResearchTweet(briefStr);
+  const tweet = await maybeResearchTweet(briefStr);
   summary.dailyTweetAttempted = tweet.attempted;
   summary.dailyTweetPosted = tweet.posted;
   if (tweet.error) summary.errors.push(`tweet:${tweet.error}`);

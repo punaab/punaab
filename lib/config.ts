@@ -694,12 +694,19 @@ export function getOpenSolveSiteBase(): string {
   return process.env.OPENSOLVE_SITE_BASE?.trim() || "https://open-solve.com";
 }
 
-/** Tweet one OpenSolve research finding per day (default on when OpenSolve enabled). */
+/** Tweet research findings sourced from OpenSolve (default on when OpenSolve enabled). */
 export function isOpenSolveDailyTweetEnabled(): boolean {
   const v = process.env.OPENSOLVE_DAILY_TWEET?.trim().toLowerCase();
   if (v === "false" || v === "0" || v === "no") return false;
   if (v === "true" || v === "1" || v === "yes") return true;
   return isOpenSolveEnabled();
+}
+
+/** Max X posts/day that use OpenSolve research data (never name OpenSolve in the tweet). */
+export function getOpenSolveMaxTweetsPerDay(): number {
+  const n = Number(process.env.OPENSOLVE_MAX_TWEETS_PER_DAY ?? "4");
+  if (!Number.isFinite(n) || n < 0) return 4;
+  return Math.min(Math.floor(n), 8);
 }
 
 /**
