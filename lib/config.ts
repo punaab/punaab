@@ -600,8 +600,12 @@ export function getSiteUrl(): string {
   if (process.env.NEXT_PUBLIC_SITE_URL) {
     return process.env.NEXT_PUBLIC_SITE_URL.replace(/\/$/, "");
   }
+  // Stable production hostname (avoid ephemeral *.vercel.app deploy URLs)
+  if (process.env.VERCEL_ENV === "production") {
+    return "https://punaab.vercel.app";
+  }
   if (process.env.VERCEL_URL) {
-    return `https://${process.env.VERCEL_URL}`;
+    return `https://${process.env.VERCEL_URL.replace(/\/$/, "")}`;
   }
   return "http://localhost:3000";
 }

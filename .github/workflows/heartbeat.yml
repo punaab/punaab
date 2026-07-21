@@ -3,7 +3,7 @@ name: Moltbook Heartbeat
 # Backup cron every 30 minutes (required on Vercel Hobby — built-in cron is once/day).
 # Set repository secrets:
 #   CRON_SECRET — same value as Vercel env CRON_SECRET
-#   PROD_URL    — https://www.punaab.com  (use www; bare domain 308-redirects and skips the tick)
+#   PROD_URL    — https://punaab.vercel.app
 
 on:
   schedule:
@@ -20,7 +20,7 @@ jobs:
           PROD_URL: ${{ secrets.PROD_URL }}
         run: |
           if [ -z "$CRON_SECRET" ] || [ -z "$PROD_URL" ]; then
-            echo "::error title=Heartbeat not configured::Add GitHub repository secrets CRON_SECRET and PROD_URL (https://www.punaab.com)."
+            echo "::error title=Heartbeat not configured::Add GitHub repository secrets CRON_SECRET and PROD_URL (https://punaab.vercel.app)."
             exit 1
           fi
           echo "Calling ${PROD_URL%/}/api/cron/heartbeat"
@@ -30,6 +30,6 @@ jobs:
           echo "$body"
           echo "$body" | grep -q '"ok":true' || { echo "::error::Heartbeat returned non-ok response"; exit 1; }
           if echo "$body" | grep -q 'brain_error'; then
-            echo "::warning::Brain returned an error — check LLM providers on Vercel (Anthropic credits or AII_CLOUD_API_KEY)"
+            echo "::warning::Brain returned an error — check LLM providers on Vercel (Anthropic credits or OpenRouter)"
           fi
           echo "Heartbeat succeeded."
