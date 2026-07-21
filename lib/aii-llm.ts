@@ -35,7 +35,7 @@ export interface LlmStatus {
 }
 
 function isCreditError(message: string): boolean {
-  return /credit balance is too low|insufficient.*quota|billing|payment required/i.test(
+  return /credit balance is too low|insufficient.*quota|billing|payment required|credits?\s+exhausted|out of credits/i.test(
     message,
   );
 }
@@ -43,9 +43,20 @@ function isCreditError(message: string): boolean {
 function isRetryableError(message: string): boolean {
   return (
     isCreditError(message) ||
-    /rate limit|429|overloaded|503|502|timeout/i.test(message)
+    /rate limit|429|overloaded|503|502|504|timeout|ECONNRESET|fetch failed|network/i.test(
+      message,
+    )
   );
 }
+
+/** Prefer cheap/working providers when Anthropic is often out of credits. */
+const PROVIDER_ORDER: Record<string, LlmProviderId[]> = {
+  anthropic: ["anthropic", "openrouter", "aii"],
+  aii: ["aii", "openrouter", "anthropic"],
+  openrouter: ["openrouter", "aii", "anthropic"],
+  // OpenRouter before Anthropic so empty Anthropic credits don't block the brain
+  auto: ["openrouter", "aii", "anthropic"],
+};
 
 async function completeAnthropic(
   system: string,
@@ -95,6 +106,12 @@ async function completeOpenAiCompatible(
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
+      ...(provider === "openrouter"
+        ? {
+            "HTTP-Referer": process.env.NEXT_PUBLIC_SITE_URL?.trim() || "https://punaab.vercel.app",
+            "X-Title": "Punaab",
+          }
+        : {}),
     },
     body: JSON.stringify(body),
   });
@@ -166,13 +183,6 @@ async function completeOpenRouter(
   );
 }
 
-const PROVIDER_ORDER: Record<string, LlmProviderId[]> = {
-  anthropic: ["anthropic", "aii", "openrouter"],
-  aii: ["aii", "anthropic", "openrouter"],
-  openrouter: ["openrouter", "aii", "anthropic"],
-  auto: ["anthropic", "aii", "openrouter"],
-};
-
 function providersForMode(): LlmProviderId[] {
   return PROVIDER_ORDER[getLlmProvider()] ?? PROVIDER_ORDER.auto;
 }
@@ -222,14 +232,24 @@ export async function completeChat(
   const errors: string[] = [];
   for (const provider of chain) {
     try {
-      return await completeWithProvider(provider, system, messages, maxTokens);
+      const result = await completeWithProvider(
+        provider,
+        system,
+        messages,
+        maxTokens,
+      );
+      if (errors.length > 0) {
+        console.info(
+          `[aii-llm] recovered via ${provider} after: ${errors.join(" | ")}`,
+        );
+      }
+      return result;
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       errors.push(`${provider}:${msg}`);
       console.warn(`[aii-llm] ${provider} failed:`, msg);
-      if (!isRetryableError(msg) && provider === chain[0]) {
-        break;
-      }
+      // Always try the next configured provider — never stop the brain on one dead key
+      continue;
     }
   }
 

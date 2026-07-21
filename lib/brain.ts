@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { completeText } from "./aii-llm";
+import { completeText, getLlmStatus } from "./aii-llm";
 import { getAnthropicApiKey, isTradingEnabled } from "./config";
 import type { MoltbookNotification, MoltbookPost } from "./moltbook";
 import { formatNotificationDisplay } from "./moltbook";
@@ -459,13 +459,27 @@ Rules:
   } catch (error) {
     const detail = formatBrainError(error);
     console.error("[brain] decide failed:", error);
-    if (/credit balance is too low/i.test(detail)) {
+    const status = getLlmStatus();
+    const hasFallback = status.configured.some(
+      (p) => p === "openrouter" || p === "aii",
+    );
+    // Only blame Anthropic credits when no other provider is configured
+    if (
+      /credit balance is too low|anthropic.*credit|credits_exhausted/i.test(detail) &&
+      !hasFallback
+    ) {
       return { action: "noop", reason: "brain_error:anthropic_credits_exhausted" };
     }
-    if (/no_llm_provider|all_llm_providers_failed/i.test(detail)) {
+    if (/no_llm_provider|all_llm_providers_failed|no_llm_provider_configured/i.test(detail)) {
+      if (hasFallback && /credit balance is too low/i.test(detail)) {
+        return {
+          action: "noop",
+          reason: "brain_error:openrouter_or_fallback_failed",
+        };
+      }
       return { action: "noop", reason: "brain_error:no_llm_provider" };
     }
-    return { action: "noop", reason: `brain_error:${detail}` };
+    return { action: "noop", reason: `brain_error:${detail.slice(0, 120)}` };
   }
 }
 

@@ -50,6 +50,8 @@ interface AdminState {
     inQuietHours: boolean;
     heartbeatStale?: boolean;
     brainBlocked?: boolean;
+    llmProvider?: string;
+    llmConfigured?: string[];
   };
   thought: string | null;
   plans: { id: string; text: string; createdAt: string; status: string }[];
@@ -431,7 +433,19 @@ export default function Dashboard() {
                 ? "LLM credits exhausted."
                 : state.status.lastPlanReason?.includes("no_llm_provider")
                   ? "No LLM configured."
-                  : state.status.lastPlanReason ?? "brain_error"}
+                  : state.status.lastPlanReason?.includes("openrouter")
+                    ? "OpenRouter/fallback failed — check OPENROUTER_API_KEY on Vercel."
+                    : state.status.lastPlanReason ?? "brain_error"}
+              {state.status.llmProvider && state.status.llmProvider !== "none" && (
+                <span className="muted"> (LLM: {state.status.llmProvider})</span>
+              )}
+            </p>
+          )}
+          {!state?.status.brainBlocked &&
+            state?.status.lastPlanReason?.startsWith("recovered_via_") && (
+            <p className="muted admin-alert">
+              Brain OK — using {state.status.lastPlanReason.replace("recovered_via_", "")}{" "}
+              (Anthropic credits empty). Run Heartbeat to refresh.
             </p>
           )}
           {state?.status.heartbeatStale && !state?.status.brainBlocked && (

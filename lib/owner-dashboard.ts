@@ -1,5 +1,6 @@
 import { allowedActions, isTradingEnabled } from "./config";
 import { listApps } from "./apps";
+import { getLlmStatus } from "./aii-llm";
 import { SHORT_TERM_GOALS } from "./goals";
 import { getUsageCounts } from "./memory";
 import { fetchMoltbookDashboard } from "./moltbook-dashboard";
@@ -19,7 +20,6 @@ import { getRecentAlchemyEvents } from "./alchemy-events";
 import { buildWeb3Hub, type Web3Hub } from "./web3-dashboard";
 import { loadCampaignForDashboard, type Campaign } from "./campaign";
 import { getAlchemyApiSnapshot } from "./alchemy-apis";
-import { getLlmStatus } from "./aii-llm";
 import { getCatNftCatalog, getCatNftShopStats, catNftApiUrl, catNftGalleryUrl } from "./punaab-cat-nfts";
 import { fetchMusicShopForDashboard } from "./music-dashboard";
 import { fetchPredictionDashboard } from "./prediction-dashboard";
@@ -37,6 +37,8 @@ export interface OwnerDashboard {
     inQuietHours: boolean;
     heartbeatStale: boolean;
     brainBlocked: boolean;
+    llmProvider?: string;
+    llmConfigured?: string[];
   };
   shortTermGoals: readonly string[];
   thought: string | null;
@@ -128,8 +130,18 @@ export async function getOwnerDashboard(): Promise<OwnerDashboard> {
   const heartbeatStale =
     !lastTickAt ||
     Date.now() - new Date(lastTickAt).getTime() > 45 * 60 * 1000;
+  const llm = getLlmStatus();
+  const hasAltLlm = llm.configured.some(
+    (p) => p === "openrouter" || p === "aii",
+  );
+  // Stale Anthropic-credit failures should not keep the banner up once OpenRouter is configured
+  const staleAnthropicCredits =
+    typeof lastPlanReason === "string" &&
+    lastPlanReason.includes("anthropic_credits") &&
+    hasAltLlm;
   const brainBlocked =
     typeof lastPlanReason === "string" &&
+    !staleAnthropicCredits &&
     (lastPlanReason.startsWith("brain_error") ||
       lastPlanReason === "missing_anthropic_api_key");
 
@@ -138,7 +150,9 @@ export async function getOwnerDashboard(): Promise<OwnerDashboard> {
     status: {
       lastTickAt,
       lastAction: lastTick?.plan?.action ?? null,
-      lastPlanReason,
+      lastPlanReason: staleAnthropicCredits
+        ? `recovered_via_${llm.primary}`
+        : lastPlanReason,
       ok: lastTick?.ok ?? null,
       canPost: allowance.canPost,
       canComment: allowance.canComment,
@@ -146,6 +160,8 @@ export async function getOwnerDashboard(): Promise<OwnerDashboard> {
       inQuietHours: allowance.inQuietHours,
       heartbeatStale,
       brainBlocked,
+      llmProvider: llm.primary,
+      llmConfigured: llm.configured,
     },
     shortTermGoals: SHORT_TERM_GOALS,
     thought,
