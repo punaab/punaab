@@ -1290,7 +1290,16 @@ export async function runHeartbeatTick(
         if (xEngage.dailyPosted) {
           summary.executed.push("x_daily_original");
         }
-        if (xEngage.repliesAttempted === 0 && !xEngage.dailyAttempted) {
+        if (xEngage.scripturePosted) {
+          summary.executed.push(
+            `x_scripture:${xEngage.scriptureReference ?? "ok"}`,
+          );
+        }
+        if (
+          xEngage.repliesAttempted === 0 &&
+          !xEngage.dailyAttempted &&
+          !xEngage.scriptureAttempted
+        ) {
           summary.executed.push("x_engage_idle");
         }
         for (const err of xEngage.errors.slice(0, 3)) {

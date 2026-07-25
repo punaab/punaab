@@ -702,11 +702,22 @@ export function isOpenSolveDailyTweetEnabled(): boolean {
   return isOpenSolveEnabled();
 }
 
-/** Max X posts/day that use OpenSolve research data (never name OpenSolve in the tweet). */
+/**
+ * Max X posts/day that use OpenSolve research data (never name OpenSolve).
+ * Default 1 — keep research tweets rare.
+ */
 export function getOpenSolveMaxTweetsPerDay(): number {
-  const n = Number(process.env.OPENSOLVE_MAX_TWEETS_PER_DAY ?? "4");
-  if (!Number.isFinite(n) || n < 0) return 4;
-  return Math.min(Math.floor(n), 8);
+  const n = Number(process.env.OPENSOLVE_MAX_TWEETS_PER_DAY ?? "1");
+  if (!Number.isFinite(n) || n < 0) return 1;
+  return Math.min(Math.floor(n), 1);
+}
+
+/** Once-per-day LDS scripture tweet (default on when X engage is on). */
+export function isXDailyScriptureEnabled(): boolean {
+  const v = process.env.X_DAILY_SCRIPTURE?.trim().toLowerCase();
+  if (v === "false" || v === "0" || v === "no") return false;
+  if (v === "true" || v === "1" || v === "yes") return true;
+  return isXEngageEnabled() || isXDailyOriginalEnabled();
 }
 
 /**

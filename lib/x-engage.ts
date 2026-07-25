@@ -11,6 +11,7 @@ import { completeText } from "./aii-llm";
 import { getActivityLog } from "./owner-state";
 import { persona, personaSystemPrompt } from "./persona";
 import { createRedisClient } from "./redis";
+import { maybeDailyScriptureTweet } from "./scripture/daily-tweet";
 import { canPostToX, createXPost, xApiGet } from "./x-twitter";
 import { getStoredXTokens } from "./x-auth";
 
@@ -24,6 +25,9 @@ export interface XEngageSummary {
   repliesPosted: number;
   dailyAttempted: boolean;
   dailyPosted: boolean;
+  scriptureAttempted: boolean;
+  scripturePosted: boolean;
+  scriptureReference?: string;
   errors: string[];
   skipped?: string;
 }
@@ -214,6 +218,7 @@ async function craftDailyOriginal(topics: string[]): Promise<string | null> {
     "Write ONE original X/Twitter post (not a reply).",
     "Make it relatable OR humorous OR intelligent OR boldly specific — pick one lane.",
     "Inspired by recent Moltbook chatter below, but standalone — no 'as I said on Moltbook'.",
+    "Never mention OpenSolve, open-solve, or any research network brand.",
     "1–3 short sentences. No hashtags. No links unless essential. Under 260 chars.",
     "Sound like a chill cat AI with a brain, not a marketing bot.",
     "Output ONLY the tweet text.",
@@ -233,7 +238,12 @@ async function craftDailyOriginal(topics: string[]): Promise<string | null> {
 
   try {
     const result = await completeText(system, user, 160);
-    const text = clampTweet(result.text || "", 260);
+    let text = clampTweet(result.text || "", 260);
+    text = text
+      .replace(/\bopen[\s_-]?solve\b/gi, "")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+    if (/\bopen[\s_-]?solve\b/i.test(text)) return null;
     if (text.length < 20) return null;
     return text;
   } catch (error) {
@@ -246,10 +256,23 @@ async function collectMoltbookTopics(): Promise<string[]> {
   const activity = await getActivityLog(12);
   const topics: string[] = [];
   for (const a of activity) {
-    if (!["post", "comment", "showcase", "offer_help", "onchain_insight"].includes(a.action)) {
+    if (
+      !["post", "comment", "showcase", "offer_help", "onchain_insight"].includes(
+        a.action,
+      )
+    ) {
       continue;
     }
-    const bit = [a.summary, a.content].filter(Boolean).join(" — ").replace(/\s+/g, " ").trim();
+    // Never feed OpenSolve research logs into public X prompts
+    if (/opensolve/i.test(a.action) || /opensolve/i.test(a.summary ?? "")) {
+      continue;
+    }
+    const bit = [a.summary, a.content]
+      .filter(Boolean)
+      .join(" — ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .replace(/\bopen[\s_-]?solve\b/gi, "");
     if (bit.length >= 24) topics.push(bit.slice(0, 220));
     if (topics.length >= 5) break;
   }
@@ -257,8 +280,8 @@ async function collectMoltbookTopics(): Promise<string[]> {
 }
 
 /**
- * Heartbeat side-quest: reply to a few fresh X mentions, and maybe
- * drop one original tweet per UTC day inspired by Moltbook.
+ * Heartbeat side-quest: reply to a few fresh X mentions, maybe one original,
+ * and one LDS scripture verse per UTC day.
  */
 export async function runXEngageTick(): Promise<XEngageSummary> {
   const summary: XEngageSummary = {
@@ -267,6 +290,8 @@ export async function runXEngageTick(): Promise<XEngageSummary> {
     repliesPosted: 0,
     dailyAttempted: false,
     dailyPosted: false,
+    scriptureAttempted: false,
+    scripturePosted: false,
     errors: [],
   };
 
@@ -361,7 +386,29 @@ export async function runXEngageTick(): Promise<XEngageSummary> {
     }
   }
 
-  if (summary.errors.length && summary.repliesPosted === 0 && !summary.dailyPosted) {
+  // --- Once-daily LDS scripture ---
+  try {
+    const scripture = await maybeDailyScriptureTweet();
+    summary.scriptureAttempted = scripture.attempted;
+    summary.scripturePosted = scripture.posted;
+    summary.scriptureReference = scripture.reference;
+    if (scripture.error) summary.errors.push(`scripture:${scripture.error}`);
+    if (scripture.posted) {
+      console.log(
+        `[x-engage] daily scripture: ${scripture.reference ?? "ok"}`,
+      );
+    }
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    summary.errors.push(`scripture:${msg}`);
+  }
+
+  if (
+    summary.errors.length &&
+    summary.repliesPosted === 0 &&
+    !summary.dailyPosted &&
+    !summary.scripturePosted
+  ) {
     summary.ok = summary.errors.every((e) => e.startsWith("mentions:"));
   }
 
