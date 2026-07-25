@@ -1295,10 +1295,14 @@ export async function runHeartbeatTick(
             `x_scripture:${xEngage.scriptureReference ?? "ok"}`,
           );
         }
+        if (xEngage.limbothyPosted) {
+          summary.executed.push("x_limbothy");
+        }
         if (
           xEngage.repliesAttempted === 0 &&
           !xEngage.dailyAttempted &&
-          !xEngage.scriptureAttempted
+          !xEngage.scriptureAttempted &&
+          !xEngage.limbothyAttempted
         ) {
           summary.executed.push("x_engage_idle");
         }

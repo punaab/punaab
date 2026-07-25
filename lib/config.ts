@@ -720,6 +720,28 @@ export function isXDailyScriptureEnabled(): boolean {
   return isXEngageEnabled() || isXDailyOriginalEnabled();
 }
 
+/** Occasional Jimothy/Limbothy lore posts on X (default on when X engage is on). */
+export function isLimbothyTweetsEnabled(): boolean {
+  const v = process.env.LIMBOTHY_TWEETS_ENABLED?.trim().toLowerCase();
+  if (v === "false" || v === "0" || v === "no") return false;
+  if (v === "true" || v === "1" || v === "yes") return true;
+  return isXEngageEnabled() || isXDailyOriginalEnabled();
+}
+
+/** Hard cap for Limbothy lore tweets per UTC day (default 2). */
+export function getLimbothyMaxTweetsPerDay(): number {
+  const n = Number(process.env.LIMBOTHY_MAX_TWEETS_PER_DAY ?? "2");
+  if (!Number.isFinite(n) || n < 0) return 2;
+  return Math.min(Math.floor(n), 2);
+}
+
+export function getLimbothyMint(): string {
+  return (
+    process.env.LIMBOTHY_MINT?.trim() ||
+    "9CtQhxDcNd3nzHE2h6v2zc2STZKXT9MYwY2e3AWapump"
+  );
+}
+
 /**
  * Mirror buys/sells of curated Solana wallets (paste from Axiom Vision).
  * Default off until COPY_TRADE_WALLETS is set and explicitly enabled.

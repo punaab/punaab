@@ -12,6 +12,7 @@ import { getActivityLog } from "./owner-state";
 import { persona, personaSystemPrompt } from "./persona";
 import { createRedisClient } from "./redis";
 import { maybeDailyScriptureTweet } from "./scripture/daily-tweet";
+import { maybeLimbothyTweet } from "./limbothy/daily-tweet";
 import { canPostToX, createXPost, xApiGet } from "./x-twitter";
 import { getStoredXTokens } from "./x-auth";
 
@@ -28,6 +29,8 @@ export interface XEngageSummary {
   scriptureAttempted: boolean;
   scripturePosted: boolean;
   scriptureReference?: string;
+  limbothyAttempted: boolean;
+  limbothyPosted: boolean;
   errors: string[];
   skipped?: string;
 }
@@ -292,6 +295,8 @@ export async function runXEngageTick(): Promise<XEngageSummary> {
     dailyPosted: false,
     scriptureAttempted: false,
     scripturePosted: false,
+    limbothyAttempted: false,
+    limbothyPosted: false,
     errors: [],
   };
 
@@ -403,11 +408,26 @@ export async function runXEngageTick(): Promise<XEngageSummary> {
     summary.errors.push(`scripture:${msg}`);
   }
 
+  // --- Limbothy lore (max 2/day) ---
+  try {
+    const limbothy = await maybeLimbothyTweet();
+    summary.limbothyAttempted = limbothy.attempted;
+    summary.limbothyPosted = limbothy.posted;
+    if (limbothy.error) summary.errors.push(`limbothy:${limbothy.error}`);
+    if (limbothy.posted) {
+      console.log("[x-engage] limbothy lore tweet posted");
+    }
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    summary.errors.push(`limbothy:${msg}`);
+  }
+
   if (
     summary.errors.length &&
     summary.repliesPosted === 0 &&
     !summary.dailyPosted &&
-    !summary.scripturePosted
+    !summary.scripturePosted &&
+    !summary.limbothyPosted
   ) {
     summary.ok = summary.errors.every((e) => e.startsWith("mentions:"));
   }
