@@ -1,9 +1,11 @@
 name: Moltbook Heartbeat
 
-# Backup cron every 30 minutes (required on Vercel Hobby — built-in cron is once/day).
-# Set repository secrets:
+# Backup cron every 30 minutes (Vercel Hobby native cron is ~once/day).
+# Required secret:
 #   CRON_SECRET — same value as Vercel env CRON_SECRET
-#   PROD_URL    — https://punaab.vercel.app
+# Optional secret (override only if you must):
+#   PROD_URL — defaults to https://punaab.vercel.app
+#     Do NOT include /api/cron/heartbeat in PROD_URL (that causes 404).
 
 on:
   schedule:
@@ -19,17 +21,59 @@ jobs:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           PROD_URL: ${{ secrets.PROD_URL }}
         run: |
-          if [ -z "$CRON_SECRET" ] || [ -z "$PROD_URL" ]; then
-            echo "::error title=Heartbeat not configured::Add GitHub repository secrets CRON_SECRET and PROD_URL (https://punaab.vercel.app)."
+          set -euo pipefail
+          if [ -z "${CRON_SECRET:-}" ]; then
+            echo "::error title=Heartbeat not configured::Add GitHub repository secret CRON_SECRET (same as Vercel)."
             exit 1
           fi
-          echo "Calling ${PROD_URL%/}/api/cron/heartbeat"
-          body=$(curl -sS -f -L \
-            -H "Authorization: Bearer $CRON_SECRET" \
-            "${PROD_URL%/}/api/cron/heartbeat")
-          echo "$body"
-          echo "$body" | grep -q '"ok":true' || { echo "::error::Heartbeat returned non-ok response"; exit 1; }
-          if echo "$body" | grep -q 'brain_error'; then
+
+          # Canonical production host — ignore broken/empty PROD_URL secrets.
+          BASE="${PROD_URL:-https://punaab.vercel.app}"
+          BASE="${BASE%"${BASE##*[![:space:]]}"}"
+          BASE="${BASE#"${BASE%%[![:space:]]*}"}"
+          BASE="${BASE%/}"
+          # Common misconfig: secret already includes the cron path → double path → 404
+          BASE="${BASE%/api/cron/heartbeat}"
+          BASE="${BASE%/api/cron}"
+          case "$BASE" in
+            http://*|https://*) ;;
+            *)
+              echo "::warning::PROD_URL was invalid ($BASE); using https://punaab.vercel.app"
+              BASE="https://punaab.vercel.app"
+              ;;
+          esac
+          # Prefer the stable production alias over ephemeral *.vercel.app deployment URLs
+          if echo "$BASE" | grep -Eq 'vercel\.app$' && ! echo "$BASE" | grep -Eq '^https://punaab\.vercel\.app$'; then
+            echo "::warning::PROD_URL looks like a deployment URL ($BASE); using https://punaab.vercel.app"
+            BASE="https://punaab.vercel.app"
+          fi
+
+          URL="${BASE}/api/cron/heartbeat"
+          echo "Calling $URL"
+          code=$(curl -sS -o body.txt -w "%{http_code}" \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "$URL" || true)
+          echo "HTTP $code"
+          cat body.txt
+          echo
+
+          if [ "$code" = "404" ]; then
+            echo "::error title=Heartbeat 404::URL not found. Set PROD_URL repo secret to exactly https://punaab.vercel.app (no path)."
+            exit 1
+          fi
+          if [ "$code" = "401" ] || [ "$code" = "403" ]; then
+            echo "::error title=Heartbeat unauthorized::CRON_SECRET does not match Vercel CRON_SECRET."
+            exit 1
+          fi
+          if [ "$code" != "200" ]; then
+            echo "::error title=Heartbeat failed::Unexpected HTTP $code from $URL"
+            exit 1
+          fi
+          grep -q '"ok":true' body.txt || {
+            echo "::error::Heartbeat returned non-ok JSON"
+            exit 1
+          }
+          if grep -q 'brain_error' body.txt; then
             echo "::warning::Brain returned an error — check LLM providers on Vercel (Anthropic credits or OpenRouter)"
           fi
           echo "Heartbeat succeeded."
