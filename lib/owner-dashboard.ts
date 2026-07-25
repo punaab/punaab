@@ -36,6 +36,7 @@ export interface OwnerDashboard {
     upvotesRemaining: number;
     inQuietHours: boolean;
     heartbeatStale: boolean;
+    heartbeatAgeMs: number | null;
     brainBlocked: boolean;
     llmProvider?: string;
     llmConfigured?: string[];
@@ -127,9 +128,13 @@ export async function getOwnerDashboard(): Promise<OwnerDashboard> {
   const lastTick = tickLog[0] ?? null;
   const lastTickAt = lastHeartbeat ?? lastTick?.timestamp ?? null;
   const lastPlanReason = lastTick?.plan?.reason ?? null;
+  const lastTickMs = lastTickAt ? new Date(lastTickAt).getTime() : NaN;
+  const heartbeatAgeMs = Number.isFinite(lastTickMs)
+    ? Date.now() - lastTickMs
+    : null;
+  // 75m buffer: Vercel Hobby native cron is ~daily; keepalive runs ~every 28m via prediction
   const heartbeatStale =
-    !lastTickAt ||
-    Date.now() - new Date(lastTickAt).getTime() > 45 * 60 * 1000;
+    heartbeatAgeMs == null || heartbeatAgeMs > 75 * 60 * 1000;
   const llm = getLlmStatus();
   const hasAltLlm = llm.configured.some(
     (p) => p === "openrouter" || p === "aii",
@@ -159,6 +164,7 @@ export async function getOwnerDashboard(): Promise<OwnerDashboard> {
       upvotesRemaining: allowance.upvotesRemaining,
       inQuietHours: allowance.inQuietHours,
       heartbeatStale,
+      heartbeatAgeMs,
       brainBlocked,
       llmProvider: llm.primary,
       llmConfigured: llm.configured,

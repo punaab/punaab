@@ -323,41 +323,81 @@ export default function ArbitrageGraph({
     <section className="arb-graph panel panel-wide">
       <header className="arb-graph-header">
         <div>
-          <p className="arb-eyebrow">Alchemy Agent Wallet · portfolio & trades</p>
+          <p className="arb-eyebrow">Forecast trading capital · Alchemy residual</p>
           <h2 className="arb-title">Wallet Command</h2>
         </div>
         <div className="arb-stat-chips">
-          <span className="arb-chip arb-chip-hot">
-            {alch.tokenCount > 0 ? `${alch.tokenCount} tokens` : "Alchemy"}
-          </span>
-          <span className="arb-chip">
-            {alch.transferCount} transfers
+          <span className={`arb-chip ${prediction?.enabled && !prediction?.dryRun ? "arb-chip-hot" : ""}`}>
+            {prediction?.dryRun ? "DRY RUN" : prediction?.enabled ? "LIVE" : "OFF"}
           </span>
           <span className={`arb-chip ${hasArb ? "arb-chip-hot" : ""}`}>
             Forecast edge{" "}
             {bestEdge > 0 ? `${(bestEdge / 100).toFixed(1)}%` : "—"}
           </span>
           <span className="arb-chip">
-            {prediction?.dryRun ? "DRY RUN" : prediction?.enabled ? "LIVE" : "OFF"}
+            {prediction?.tradesToday ?? 0} trades today
           </span>
           <span className="arb-chip muted-chip">
             {timeAgo(
-              walletCapturedAt ??
+              prediction?.lastTick?.timestamp ??
                 latest?.timestamp ??
-                prediction?.lastTick?.timestamp,
+                walletCapturedAt,
             )}{" "}
             ago
           </span>
         </div>
       </header>
 
-      {/* Alchemy wallet balances */}
+      {/* Forecast hot wallet = working capital (signing) */}
       <div className="arb-wallet-grid">
         <div className="arb-wallet-card arb-wallet-primary">
-          <span className="arb-wallet-label">Alchemy worth (combined)</span>
+          <span className="arb-wallet-label">
+            Forecast hot wallet ·{" "}
+            {prediction?.dryRun
+              ? "DRY RUN"
+              : prediction?.enabled
+                ? "LIVE"
+                : "OFF"}
+          </span>
+          <span className="arb-wallet-value">{formatUsd(forecastWorth)}</span>
+          <span className="arb-wallet-sub">
+            {formatUsd(forecastUsdc)} USDC · {forecastSol.toFixed(4)} SOL
+            {forecastPosValue > 0
+              ? ` · pos ${formatUsd(forecastPosValue)}`
+              : ""}
+            {forecastAddress ? ` · ${shortAddr(forecastAddress)}` : ""}
+          </span>
+        </div>
+        <div className="arb-wallet-card">
+          <span className="arb-wallet-label">live USDC</span>
+          <span className="arb-wallet-value">{formatUsd(forecastUsdc)}</span>
+          <span className="arb-wallet-sub">
+            {forecastAddress ? (
+              <a
+                href={`https://solscan.io/account/${forecastAddress}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="arb-wallet-link"
+              >
+                {shortAddr(forecastAddress)}
+              </a>
+            ) : (
+              "signing wallet"
+            )}
+          </span>
+        </div>
+        <div className="arb-wallet-card">
+          <span className="arb-wallet-label">Forecast today</span>
+          <span className="arb-wallet-value">{prediction?.tradesToday ?? 0}</span>
+          <span className="arb-wallet-sub">
+            {formatUsd(prediction?.usdcDeployedToday ?? 0)} deployed
+          </span>
+        </div>
+        <div className="arb-wallet-card">
+          <span className="arb-wallet-label">Alchemy residual</span>
           <span className="arb-wallet-value">{formatUsd(totalEquity)}</span>
           <span className="arb-wallet-sub">
-            All Alchemy session wallets · Arb + Base + ETH + Sol
+            Arb {formatUsd(arbUsdc || alch.arbUsdc)} · not signing Forecast
           </span>
         </div>
         <div className="arb-wallet-card">
@@ -368,37 +408,13 @@ export default function ArbitrageGraph({
           </span>
         </div>
         <div className="arb-wallet-card">
-          <span className="arb-wallet-label">Base / ETH USDC</span>
-          <span className="arb-wallet-value">
-            {formatUsd((alch.baseUsdc || 0) + (alch.ethUsdc || 0))}
-          </span>
-          <span className="arb-wallet-sub">
-            Base {formatUsd(alch.baseUsdc || 0)} · Eth{" "}
-            {formatUsd(alch.ethUsdc || 0)}
-          </span>
-        </div>
-        <div className="arb-wallet-card">
-          <span className="arb-wallet-label">Solana session</span>
+          <span className="arb-wallet-label">Alchemy Sol session</span>
           <span className="arb-wallet-value">
             {formatUsd((alch.solUsdc || 0) + sol * 150)}
           </span>
           <span className="arb-wallet-sub">
             {formatUsd(alch.solUsdc || 0)} USDC · {sol.toFixed(4)} SOL
             {displaySol ? ` · ${shortAddr(displaySol)}` : ""}
-          </span>
-        </div>
-        <div className="arb-wallet-card">
-          <span className="arb-wallet-label">ETH (native)</span>
-          <span className="arb-wallet-value">{ethFromAlchemy.toFixed(4)}</span>
-          <span className="arb-wallet-sub">
-            ~{formatUsd(ethFromAlchemy * 2000)} across Arb/Base/Eth
-          </span>
-        </div>
-        <div className="arb-wallet-card">
-          <span className="arb-wallet-label">Forecast today</span>
-          <span className="arb-wallet-value">{prediction?.tradesToday ?? 0}</span>
-          <span className="arb-wallet-sub">
-            {formatUsd(prediction?.usdcDeployedToday ?? 0)} deployed
           </span>
         </div>
         {(displayEvm || displaySol) && (
@@ -482,51 +498,13 @@ export default function ArbitrageGraph({
         </div>
       )}
 
-      {!displayEvm && !displaySol && (
+      {!displayEvm && !displaySol && forecastWorth <= 0 && (
         <p className="muted arb-empty">
-          Set <code>ALCHEMY_WALLET_EVM</code> / <code>ALCHEMY_WALLET_SOLANA</code>{" "}
-          to show Alchemy Agent Wallet balances.
-        </p>
-      )}
-      {(displayEvm || displaySol) && usdc === 0 && sol === 0 && ethFromAlchemy === 0 && (
-        <p className="muted arb-empty">
-          Alchemy wallets show empty balances — refresh Alchemy panel or fund{" "}
-          {displayEvm ? shortAddr(displayEvm) : shortAddr(displaySol!)}.
+          Waiting on Forecast wallet snapshot — click Pred tick, or set Alchemy
+          wallet envs for residual display.
         </p>
       )}
 
-      {(forecastAddress || forecastWorth > 0) && (
-        <div className="arb-tokens-row">
-          <span className="arb-tokens-label">
-            Forecast hot wallet (signing) · not Alchemy
-            {" · "}
-            {prediction?.dryRun
-              ? "DRY RUN"
-              : prediction?.enabled
-                ? "LIVE"
-                : "OFF"}
-          </span>
-          <ul className="arb-tokens-list">
-            <li className="arb-token-chip">
-              <span className="arb-token-sym">live USDC</span>
-              <span className="arb-token-amt">{formatUsd(forecastUsdc)}</span>
-              <span className="arb-token-val">
-                {forecastAddress ? shortAddr(forecastAddress) : "—"}
-              </span>
-            </li>
-            <li className="arb-token-chip">
-              <span className="arb-token-sym">worth</span>
-              <span className="arb-token-amt">{formatUsd(forecastWorth)}</span>
-              <span className="arb-token-val">
-                {forecastSol.toFixed(4)} SOL
-                {forecastPosValue > 0
-                  ? ` · pos ${formatUsd(forecastPosValue)}`
-                  : ""}
-              </span>
-            </li>
-          </ul>
-        </div>
-      )}
       <div className="arb-graph-body">
         <div className="arb-sparks-col">
           <div className="arb-spark-panel">
@@ -545,14 +523,20 @@ export default function ArbitrageGraph({
           </div>
           <div className="arb-spark-panel">
             <div className="arb-spark-label">
-              <span>Alchemy worth</span>
-              <span className="arb-edge-hot">{formatUsd(totalEquity)}</span>
+              <span>Forecast worth</span>
+              <span className="arb-edge-hot">{formatUsd(forecastWorth)}</span>
             </div>
             <Sparkline
-              values={totalEquity > 0 ? [totalEquity * 0.98, totalEquity] : []}
+              values={
+                usdcSeries.length
+                  ? usdcSeries
+                  : forecastWorth > 0
+                    ? [forecastWorth * 0.98, forecastWorth]
+                    : []
+              }
               color="var(--cyan)"
               fillId="arbSparkWallet"
-              emptyLabel="Refresh Alchemy APIs"
+              emptyLabel="Awaiting Pred tick"
             />
           </div>
         </div>

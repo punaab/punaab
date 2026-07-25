@@ -49,6 +49,7 @@ interface AdminState {
     upvotesRemaining: number;
     inQuietHours: boolean;
     heartbeatStale?: boolean;
+    heartbeatAgeMs?: number | null;
     brainBlocked?: boolean;
     llmProvider?: string;
     llmConfigured?: string[];
@@ -354,7 +355,7 @@ export default function Dashboard() {
   const online =
     state?.status.lastTickAt &&
     !state?.status.heartbeatStale &&
-    Date.now() - new Date(state.status.lastTickAt).getTime() < 45 * 60 * 1000;
+    Date.now() - new Date(state.status.lastTickAt).getTime() < 75 * 60 * 1000;
 
   const mb = state?.moltbook;
   const profile = mb?.profile;
@@ -450,7 +451,11 @@ export default function Dashboard() {
           )}
           {state?.status.heartbeatStale && !state?.status.brainBlocked && (
             <p className="login-error admin-alert">
-              Heartbeat stale — use Heartbeat or fix cron secrets.
+              Heartbeat stale
+              {state.status.lastTickAt
+                ? ` (last ${Math.round((state.status.heartbeatAgeMs ?? 0) / 60000)}m ago)`
+                : " (no tick yet)"}
+              — click Heartbeat, or wait for prediction cron keepalive.
             </p>
           )}
           {error && <p className="login-error admin-alert">{error}</p>}

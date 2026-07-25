@@ -133,8 +133,8 @@ export async function handleTelegramMessage(msg: TelegramMessage): Promise<void>
 async function cmdStatus(chatId: number): Promise<void> {
   const d = await getOwnerDashboard();
   const stale =
-    d.status.lastTickAt &&
-    Date.now() - new Date(d.status.lastTickAt).getTime() > 45 * 60 * 1000;
+    !d.status.lastTickAt ||
+    Date.now() - new Date(d.status.lastTickAt).getTime() > 75 * 60 * 1000;
 
   const lines = [
     `<b>⚡ Punaab Status</b>`,

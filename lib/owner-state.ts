@@ -259,7 +259,15 @@ export async function setLastHeartbeat(iso: string): Promise<void> {
 
 export async function getLastHeartbeat(): Promise<string | null> {
   try {
-    return (await getRedis().get<string>(LAST_HEARTBEAT_KEY)) ?? null;
+    const v = await getRedis().get(LAST_HEARTBEAT_KEY);
+    if (v == null) return null;
+    if (typeof v === "string") {
+      const t = v.trim();
+      return t || null;
+    }
+    // Upstash occasionally returns a non-string; coerce ISO timestamps
+    if (typeof v === "number") return new Date(v).toISOString();
+    return String(v);
   } catch {
     return null;
   }

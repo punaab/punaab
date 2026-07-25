@@ -1,10 +1,11 @@
 import { getCronSecret } from "@/lib/config";
+import { maybeRunHeartbeatIfStale } from "@/lib/heartbeat-keepalive";
 import { runPredictionTick } from "@/lib/prediction-trading/engine";
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-/** Forecast pricing is paced (~1 RPS); allow a full scan + orders. */
+/** Forecast pricing is paced (~1 RPS); allow a full scan + orders + occasional heartbeat. */
 export const maxDuration = 120;
 /**
  * Jupiter Prediction blocks US + South Korea IPs.
@@ -51,7 +52,16 @@ export async function GET(request: NextRequest) {
 
   try {
     const summary = await runPredictionTick();
-    return NextResponse.json(summary, { status: 200 });
+    // Keep Moltbook heartbeat fresh when Vercel Hobby / missing GH Actions secrets
+    // would otherwise leave /admin showing "Heartbeat stale".
+    const keepalive = await maybeRunHeartbeatIfStale();
+    return NextResponse.json(
+      {
+        ...summary,
+        heartbeatKeepalive: keepalive,
+      },
+      { status: 200 },
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("[prediction-cron]", message);
