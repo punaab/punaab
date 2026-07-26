@@ -13,11 +13,11 @@ import { persona, personaSystemPrompt } from "./persona";
 import { createRedisClient } from "./redis";
 import { maybeDailyScriptureTweet } from "./scripture/daily-tweet";
 import { maybeLimbothyTweet } from "./limbothy/daily-tweet";
+import { claimDailySlot, releaseDailySlot } from "./x-daily-slot";
 import { canPostToX, createXPost, xApiGet } from "./x-twitter";
 import { getStoredXTokens } from "./x-auth";
 
 const SEEN_MENTIONS_KEY = "x:engage:seen_mentions";
-const DAILY_ORIGINAL_KEY = "x:engage:daily_original";
 const SEEN_MENTIONS_MAX = 200;
 
 export interface XEngageSummary {
@@ -47,10 +47,6 @@ function getRedis() {
   return createRedisClient();
 }
 
-function utcDay(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 async function getSeenMentionIds(): Promise<Set<string>> {
   try {
     const raw = await getRedis().lrange(SEEN_MENTIONS_KEY, 0, SEEN_MENTIONS_MAX - 1);
@@ -77,36 +73,15 @@ async function markMentionSeen(id: string): Promise<void> {
 
 async function alreadyPostedDailyOriginal(): Promise<boolean> {
   try {
-    const v = await getRedis().get(DAILY_ORIGINAL_KEY);
-    if (v == null) return false;
-    if (typeof v === "string") {
-      if (v === utcDay()) return true;
-      try {
-        const parsed = JSON.parse(v) as { day?: string };
-        return parsed.day === utcDay();
-      } catch {
-        return false;
-      }
-    }
-    if (typeof v === "object" && v && "day" in v) {
-      return (v as { day?: string }).day === utcDay();
-    }
-    return false;
+    const { hasDailySlot } = await import("./x-daily-slot");
+    return hasDailySlot("original");
   } catch {
-    return false;
+    return true; // fail closed
   }
 }
 
 async function markDailyOriginalPosted(): Promise<void> {
-  try {
-    await getRedis().set(
-      DAILY_ORIGINAL_KEY,
-      JSON.stringify({ day: utcDay(), at: new Date().toISOString() }),
-      { ex: 3 * 86400 },
-    );
-  } catch (error) {
-    console.warn("[x-engage] markDailyOriginal:", error);
-  }
+  // Slot is claimed atomically before post; kept for compatibility no-op.
 }
 
 function stripTweetJunk(text: string): string {
@@ -221,7 +196,7 @@ async function craftDailyOriginal(topics: string[]): Promise<string | null> {
     "Write ONE original X/Twitter post (not a reply).",
     "Make it relatable OR humorous OR intelligent OR boldly specific — pick one lane.",
     "Inspired by recent Moltbook chatter below, but standalone — no 'as I said on Moltbook'.",
-    "Never mention OpenSolve, open-solve, or any research network brand.",
+    "Never mention OpenSolve, open-solve, Limbothy, Jimothy, or any research network brand.",
     "1–3 short sentences. No hashtags. No links unless essential. Under 260 chars.",
     "Sound like a chill cat AI with a brain, not a marketing bot.",
     "Output ONLY the tweet text.",
@@ -364,29 +339,38 @@ export async function runXEngageTick(): Promise<XEngageSummary> {
 
   // --- Once-daily original ---
   if (isXDailyOriginalEnabled() && !(await alreadyPostedDailyOriginal())) {
-    // Light random gate so it doesn't always fire on the first cron after midnight UTC
     const hour = new Date().getUTCHours();
-    const inWindow = hour >= 15 && hour <= 23; // afternoon/evening UTC-ish for US west mornings
+    const inWindow = hour >= 15 && hour <= 23;
     if (inWindow || Math.random() < 0.15) {
       summary.dailyAttempted = true;
-      try {
-        const topics = await collectMoltbookTopics();
-        const text = await craftDailyOriginal(topics);
-        if (!text) {
-          summary.errors.push("daily_craft_empty");
-        } else {
-          const posted = await createXPost(text, { force: true });
-          if (posted.ok) {
-            summary.dailyPosted = true;
-            await markDailyOriginalPosted();
-            console.log(`[x-engage] daily original ${posted.id}: ${text.slice(0, 80)}`);
+      const slot = await claimDailySlot("original");
+      if (!slot.claimed) {
+        // another tick already claimed today
+      } else {
+        try {
+          const topics = await collectMoltbookTopics();
+          const text = await craftDailyOriginal(topics);
+          if (!text) {
+            await releaseDailySlot("original", slot.day);
+            summary.errors.push("daily_craft_empty");
           } else {
-            summary.errors.push(`daily:${posted.error ?? "failed"}`);
+            const posted = await createXPost(text, { force: true });
+            if (posted.ok) {
+              summary.dailyPosted = true;
+              await markDailyOriginalPosted();
+              console.log(
+                `[x-engage] daily original ${posted.id}: ${text.slice(0, 80)}`,
+              );
+            } else {
+              await releaseDailySlot("original", slot.day);
+              summary.errors.push(`daily:${posted.error ?? "failed"}`);
+            }
           }
+        } catch (error) {
+          await releaseDailySlot("original", slot.day);
+          const msg = error instanceof Error ? error.message : String(error);
+          summary.errors.push(`daily:${msg}`);
         }
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        summary.errors.push(`daily:${msg}`);
       }
     }
   }

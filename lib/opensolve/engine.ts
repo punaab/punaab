@@ -45,7 +45,7 @@ function getRedis() {
   return createRedisClient();
 }
 
-/** Atomic once-per-day claim so the 15-min cron cannot double-post. */
+/** Atomic once-per-day claim so the 15-min cron cannot double-post. Fail closed. */
 async function claimResearchTweetSlot(): Promise<boolean> {
   try {
     const key = `${DAILY_TWEET_DAY_KEY}:${utcDay()}`;
@@ -56,6 +56,7 @@ async function claimResearchTweetSlot(): Promise<boolean> {
     return res === "OK";
   } catch (error) {
     console.warn("[opensolve] claim tweet slot:", error);
+    // Fail closed — never tweet if Redis is down
     return false;
   }
 }

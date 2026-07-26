@@ -1,15 +1,15 @@
 /**
- * Limbothy lore tweets — max 1 per UTC day, freshly written (not list copy-paste).
+ * Limbothy lore — hard max ONE tweet per UTC day (atomic Redis NX claim).
  */
 import { completeText } from "../aii-llm";
 import {
-  getLimbothyMaxTweetsPerDay,
   getLimbothyMint,
   isLimbothyTweetsEnabled,
 } from "../config";
 import { appendActivity } from "../owner-state";
 import { personaSystemPrompt } from "../persona";
 import { createRedisClient } from "../redis";
+import { claimDailySlot, releaseDailySlot } from "../x-daily-slot";
 import { canPostToX, createXPost } from "../x-twitter";
 import {
   LIMBOTHY_LORE_BIBLE,
@@ -17,9 +17,9 @@ import {
   pickLimbothyAngle,
 } from "./lore";
 
-const DAY_KEY = "x:engage:limbothy_day";
 const RECENT_KEY = "x:engage:limbothy_recent";
 const RECENT_MAX = 24;
+const SLOT = "limbothy";
 
 export interface LimbothyTweetSummary {
   attempted: boolean;
@@ -27,54 +27,9 @@ export interface LimbothyTweetSummary {
   error?: string;
 }
 
-interface DayState {
-  day: string;
-  count: number;
-  lastAt?: string;
-}
-
-function utcDay(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function getRedis() {
-  return createRedisClient();
-}
-
-async function getDayState(): Promise<DayState> {
-  const day = utcDay();
-  try {
-    const raw = await getRedis().get(`${DAY_KEY}:${day}`);
-    if (raw == null) return { day, count: 0 };
-    if (typeof raw === "string") {
-      try {
-        const parsed = JSON.parse(raw) as DayState;
-        if (parsed.day === day) {
-          return {
-            day,
-            count: Math.max(0, Number(parsed.count) || 0),
-            lastAt: parsed.lastAt,
-          };
-        }
-      } catch {
-        /* ignore */
-      }
-    }
-  } catch {
-    /* ignore */
-  }
-  return { day, count: 0 };
-}
-
-async function saveDayState(state: DayState): Promise<void> {
-  await getRedis().set(`${DAY_KEY}:${state.day}`, JSON.stringify(state), {
-    ex: 3 * 86400,
-  });
-}
-
 async function getRecentTweets(): Promise<string[]> {
   try {
-    const raw = await getRedis().lrange(RECENT_KEY, 0, RECENT_MAX - 1);
+    const raw = await createRedisClient().lrange(RECENT_KEY, 0, RECENT_MAX - 1);
     return (raw ?? []).map((v) => (typeof v === "string" ? v : String(v)));
   } catch {
     return [];
@@ -83,7 +38,7 @@ async function getRecentTweets(): Promise<string[]> {
 
 async function rememberTweet(text: string): Promise<void> {
   try {
-    const r = getRedis();
+    const r = createRedisClient();
     await r.lpush(RECENT_KEY, text.slice(0, 280));
     await r.ltrim(RECENT_KEY, 0, RECENT_MAX - 1);
   } catch {
@@ -108,7 +63,6 @@ function tooSimilar(candidate: string, recent: string[]): boolean {
     const b = normalizeForCompare(prev);
     if (!b) continue;
     if (a === b) return true;
-    // crude overlap: if either contains a long shared chunk
     const words = a.split(" ").filter((w) => w.length > 3);
     let hits = 0;
     for (const w of words) {
@@ -171,7 +125,6 @@ async function craftUniqueLimbothyTweet(recent: string[]): Promise<string | null
       .replace(/^["'\s]+|["'\s]+$/g, "")
       .replace(/\s+/g, " ")
       .trim();
-    // Strip accidental CA the model may have added — we attach deliberately
     text = text
       .replace(/\$LIMBOTHY/gi, "")
       .replace(/9CtQhxDcNd3nzHE2h6v2zc2STZKXT9MYwY2e3AWapump/gi, "")
@@ -186,23 +139,16 @@ async function craftUniqueLimbothyTweet(recent: string[]): Promise<string | null
   }
 }
 
+/** Soft gate so we don't always fire on the first heartbeat after midnight UTC. */
 function inSoftWindow(): boolean {
   const hour = new Date().getUTCHours();
-  if (hour >= 15 && hour <= 23) return Math.random() < 0.35;
-  if (hour >= 0 && hour <= 6) return Math.random() < 0.08;
-  return Math.random() < 0.12;
+  if (hour >= 16 && hour <= 23) return true;
+  // Outside preferred window: rarely try (still at most once/day via NX)
+  return Math.random() < 0.05;
 }
 
 export async function maybeLimbothyTweet(): Promise<LimbothyTweetSummary> {
   if (!isLimbothyTweetsEnabled()) {
-    return { attempted: false, posted: false };
-  }
-
-  const max = getLimbothyMaxTweetsPerDay();
-  if (max <= 0) return { attempted: false, posted: false };
-
-  const state = await getDayState();
-  if (state.count >= max) {
     return { attempted: false, posted: false };
   }
 
@@ -215,6 +161,12 @@ export async function maybeLimbothyTweet(): Promise<LimbothyTweetSummary> {
     return { attempted: true, posted: false, error: can.reason ?? "x_not_ready" };
   }
 
+  // ATOMIC claim FIRST — concurrent heartbeats cannot all pass a read-then-write counter
+  const slot = await claimDailySlot(SLOT);
+  if (!slot.claimed) {
+    return { attempted: false, posted: false };
+  }
+
   const recent = await getRecentTweets();
   let body: string | null = null;
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -222,14 +174,16 @@ export async function maybeLimbothyTweet(): Promise<LimbothyTweetSummary> {
     if (body) break;
   }
   if (!body) {
+    await releaseDailySlot(SLOT, slot.day);
     return { attempted: true, posted: false, error: "craft_empty_or_duplicate" };
   }
 
-  const includeCa = Math.random() < 0.55;
+  const includeCa = Math.random() < 0.5;
   const text = appendCa(body, includeCa);
 
   const posted = await createXPost(text, { force: true });
   if (!posted.ok) {
+    await releaseDailySlot(SLOT, slot.day);
     return {
       attempted: true,
       posted: false,
@@ -237,16 +191,10 @@ export async function maybeLimbothyTweet(): Promise<LimbothyTweetSummary> {
     };
   }
 
-  await saveDayState({
-    day: utcDay(),
-    count: state.count + 1,
-    lastAt: new Date().toISOString(),
-  });
   await rememberTweet(body);
-
   await appendActivity({
     action: "limbothy_tweet",
-    summary: `Limbothy lore tweet (${state.count + 1}/${max})`,
+    summary: "Limbothy lore tweet (1/day)",
     content: text.slice(0, 280),
   });
 
