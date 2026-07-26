@@ -1,35 +1,45 @@
 /**
- * Jimothy & Limbothy meme lore snippets for occasional X posts.
+ * Jimothy & Limbothy universe — lore for LLM-crafted tweets (not copy-paste).
  * CA: 9CtQhxDcNd3nzHE2h6v2zc2STZKXT9MYwY2e3AWapump
  */
 
 export const LIMBOTHY_MINT =
   "9CtQhxDcNd3nzHE2h6v2zc2STZKXT9MYwY2e3AWapump";
 
-/** Short standalone bits — pick one (or stitch lightly) into a tweet. */
-export const LIMBOTHY_BITS: string[] = [
-  "There are only two primal meme beings. Jimothy the raccoon. Limbothy the borzoi. Perfect opposites.",
-  "Jimothy has short little legs. Limbothy has legs so long that nobody has ever confirmed where they actually end.",
-  "Jimothy spends all day running around trying to get somewhere. Limbothy takes one step and arrives next week.",
-  "Jimothy climbs into garbage cans. Limbothy simply steps over the garbage can.",
-  "Jimothy needs ladders. Limbothy accidentally reaches the second floor.",
-  "Jimothy buys the top because he couldn't see over the candle. Limbothy's legs are so long he saw the next bull run before it happened.",
-  'The old prophecy reads: "When the short legs panic... the long legs prosper."',
-  "Jimothy is powered by caffeine. Limbothy is powered by stretching once every six hours.",
-  "Jimothy's portfolio is measured in percentages. Limbothy's portfolio is measured in leg length.",
-  "Scientists attempted to calculate Limbothy's inseam. The equation became recursive.",
-  "Jimothy represents FOMO. Limbothy represents LONGO.",
-  "When the market dips... Jimothy runs in tiny circles. Limbothy simply extends one majestic leg and casually steps over the bear market.",
-  'Jimothy: "How are you always ahead of me?"\nLimbothy: "Long-term thinking."\n"No... long-leg thinking."',
-  "Short legs panic. Long legs prosper. Limbothy lore.",
-  "Limbothy didn't moonwalk. He just walked — and the moon was closer than expected.",
-  "Update from the field: Jimothy still in the can. Limbothy still over it.",
+/** Canon for generating fresh posts — never tweet these lines verbatim. */
+export const LIMBOTHY_LORE_BIBLE = `
+The Tale of Jimothy & Limbothy — two primal meme beings, perfect opposites.
+Jimothy: raccoon, short little legs, FOMO energy, caffeine-powered, climbs garbage cans,
+needs ladders, runs in tiny circles when the market dips, buys tops because he can't
+see over the candle, portfolio measured in percentages.
+Limbothy: borzoi, legs so long nobody confirmed where they end, LONGO energy, stretches
+once every six hours, steps over garbage cans / bear markets / second floors by accident,
+sees the next bull run from altitude, portfolio measured in leg length, scientists who
+tried to calculate his inseam got a recursive equation.
+Prophecy: "When the short legs panic… the long legs prosper."
+Bit: Jimothy asks how Limbothy is always ahead → "Long-term thinking." / "No… long-leg thinking."
+Tone: absurdist meme lore, dry humor, crypto-adjacent without hard sell.
+`.trim();
+
+/** Angle seeds so each craft request explores a different joke. */
+export const LIMBOTHY_ANGLES: string[] = [
+  "field report comparing their legs in a ridiculous scenario",
+  "mini prophecy tablet / ancient meme scripture vibe",
+  "science lab fails to measure Limbothy",
+  "market dip: FOMO vs LONGO reaction",
+  "Jimothy stuck in a garbage can, Limbothy walking past",
+  "candle chart sightlines / bull run altitude joke",
+  "portfolio units: percent vs inseam",
+  "dialogue snip between Jimothy and Limbothy",
+  "Limbothy accidentally reaches a new floor / dimension",
+  "one majestic step over the bear market",
+  "caffeine vs stretch schedule as power sources",
+  "recursive inseam equation going feral",
 ];
 
-export function pickLimbothyBit(seed?: string): string {
-  const day = seed ?? new Date().toISOString().slice(0, 10);
-  const noise = `${day}:${Date.now()}:${Math.random()}`;
+export function pickLimbothyAngle(): string {
+  const noise = `${Date.now()}:${Math.random()}`;
   let h = 0;
   for (let i = 0; i < noise.length; i++) h = (h * 31 + noise.charCodeAt(i)) >>> 0;
-  return LIMBOTHY_BITS[h % LIMBOTHY_BITS.length]!;
+  return LIMBOTHY_ANGLES[h % LIMBOTHY_ANGLES.length]!;
 }
