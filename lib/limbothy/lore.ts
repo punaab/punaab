@@ -8,33 +8,32 @@ export const LIMBOTHY_MINT =
 
 /** Canon for generating fresh posts — never tweet these lines verbatim. */
 export const LIMBOTHY_LORE_BIBLE = `
-The Tale of Jimothy & Limbothy — two primal meme beings, perfect opposites.
-Jimothy: raccoon, short little legs, FOMO energy, caffeine-powered, climbs garbage cans,
-needs ladders, runs in tiny circles when the market dips, buys tops because he can't
-see over the candle, portfolio measured in percentages.
+The Tale of Jimothy & Limbothy — two primal meme buddies, playful opposites (not enemies).
+Jimothy: raccoon, short little legs, curious FOMO energy, caffeine-powered, climbs garbage cans,
+needs ladders, scurries with enthusiasm, portfolio measured in percentages. Lovable try-hard.
 Limbothy: borzoi, legs so long nobody confirmed where they end, LONGO energy, stretches
-once every six hours, steps over garbage cans / bear markets / second floors by accident,
-sees the next bull run from altitude, portfolio measured in leg length, scientists who
-tried to calculate his inseam got a recursive equation.
-Prophecy: "When the short legs panic… the long legs prosper."
+once every six hours, steps over things by accident, sees far from altitude, portfolio
+measured in leg length; scientists who tried to calculate his inseam got a recursive equation.
+They tease each other like friends. Jimothy is earnest; Limbothy is serene and absurdly tall.
+Prophecy (gentle joke): "When the short legs panic… the long legs prosper." — affectionate, not cruel.
 Bit: Jimothy asks how Limbothy is always ahead → "Long-term thinking." / "No… long-leg thinking."
-Tone: absurdist meme lore, dry humor, crypto-adjacent without hard sell.
+Tone: warm absurdist meme humor, buddy comedy, crypto-adjacent without hard sell. Never dunk on Jimothy.
 `.trim();
 
 /** Angle seeds so each craft request explores a different joke. */
 export const LIMBOTHY_ANGLES: string[] = [
-  "field report comparing their legs in a ridiculous scenario",
-  "mini prophecy tablet / ancient meme scripture vibe",
-  "science lab fails to measure Limbothy",
-  "market dip: FOMO vs LONGO reaction",
-  "Jimothy stuck in a garbage can, Limbothy walking past",
-  "candle chart sightlines / bull run altitude joke",
-  "portfolio units: percent vs inseam",
-  "dialogue snip between Jimothy and Limbothy",
+  "Limbothy's absurd height in a wholesome everyday scene",
+  "buddy comedy: Jimothy and Limbothy helping each other somehow",
+  "science lab fails to measure Limbothy (affectionate chaos)",
+  "Limbothy stretch schedule as a power-up",
+  "Jimothy discovers a ladder; Limbothy discovers a cloud",
+  "candle chart sightlines / bull run altitude joke (gentle)",
+  "portfolio units: percent vs inseam (playful, not mean)",
+  "tiny wholesome dialogue between Jimothy and Limbothy",
   "Limbothy accidentally reaches a new floor / dimension",
-  "one majestic step over the bear market",
-  "caffeine vs stretch schedule as power sources",
-  "recursive inseam equation going feral",
+  "one majestic step that solves a silly problem",
+  "recursive inseam equation going feral (nerd joke)",
+  "Limbothy-only observation — Jimothy optional cameo as a friend",
 ];
 
 export function pickLimbothyAngle(): string {

@@ -408,7 +408,7 @@ export async function runXEngageTick(): Promise<XEngageSummary> {
     summary.errors.push(`scripture:${msg}`);
   }
 
-  // --- Limbothy lore (max 2/day) ---
+  // --- Limbothy lore (max 1/day) ---
   try {
     const limbothy = await maybeLimbothyTweet();
     summary.limbothyAttempted = limbothy.attempted;

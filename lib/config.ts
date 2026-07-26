@@ -728,11 +728,11 @@ export function isLimbothyTweetsEnabled(): boolean {
   return isXEngageEnabled() || isXDailyOriginalEnabled();
 }
 
-/** Hard cap for Limbothy lore tweets per UTC day (default 2). */
+/** Hard cap for Limbothy lore tweets per UTC day (default 1). */
 export function getLimbothyMaxTweetsPerDay(): number {
-  const n = Number(process.env.LIMBOTHY_MAX_TWEETS_PER_DAY ?? "2");
-  if (!Number.isFinite(n) || n < 0) return 2;
-  return Math.min(Math.floor(n), 2);
+  const n = Number(process.env.LIMBOTHY_MAX_TWEETS_PER_DAY ?? "1");
+  if (!Number.isFinite(n) || n < 0) return 1;
+  return Math.min(Math.floor(n), 1);
 }
 
 export function getLimbothyMint(): string {

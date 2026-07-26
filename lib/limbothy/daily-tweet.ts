@@ -1,5 +1,5 @@
 /**
- * Limbothy lore tweets — max 2 per UTC day, each freshly written (not list copy-paste).
+ * Limbothy lore tweets — max 1 per UTC day, freshly written (not list copy-paste).
  */
 import { completeText } from "../aii-llm";
 import {
@@ -19,7 +19,6 @@ import {
 
 const DAY_KEY = "x:engage:limbothy_day";
 const RECENT_KEY = "x:engage:limbothy_recent";
-const MIN_GAP_MS = 5 * 60 * 60 * 1000;
 const RECENT_MAX = 24;
 
 export interface LimbothyTweetSummary {
@@ -144,10 +143,12 @@ async function craftUniqueLimbothyTweet(recent: string[]): Promise<string | null
   const system = [
     personaSystemPrompt(),
     "",
-    "Write ONE original X/Twitter post about Limbothy (borzoi) vs Jimothy (raccoon).",
+    "Write ONE original X/Twitter post starring Limbothy (the absurdly long-legged borzoi).",
+    "Jimothy (raccoon) may appear as a friendly foil — never dunk, roast, or 'hate' on him.",
+    "Keep it funny, warm, absurdist buddy-comedy energy. Limbothy-forward is fine.",
     "Use the lore bible as inspiration ONLY — invent a fresh joke/scene. Do NOT copy lines verbatim.",
-    "Voice: Punaab — chill cat AI, absurdist meme humor, specific, not spammy.",
-    "1–3 short sentences OR a tiny dialogue. No hashtags spam. Under 220 chars before any CA.",
+    "Voice: Punaab — chill cat AI, specific, not spammy.",
+    "1–3 short sentences OR a tiny dialogue. No hashtag spam. Under 220 chars before any CA.",
     "Do not invent fake prices or 'guaranteed gains'. Lore > shill.",
     "Output ONLY the tweet text.",
   ].join("\n");
@@ -161,7 +162,7 @@ async function craftUniqueLimbothyTweet(recent: string[]): Promise<string | null
     "Recently posted (do not repeat or paraphrase closely):",
     recentBlock,
     "",
-    "Write a brand-new Limbothy bit.",
+    "Write a brand-new funny Limbothy bit (be kind to Jimothy if he shows up).",
   ].join("\n");
 
   try {
@@ -203,13 +204,6 @@ export async function maybeLimbothyTweet(): Promise<LimbothyTweetSummary> {
   const state = await getDayState();
   if (state.count >= max) {
     return { attempted: false, posted: false };
-  }
-
-  if (state.lastAt) {
-    const gap = Date.now() - Date.parse(state.lastAt);
-    if (Number.isFinite(gap) && gap < MIN_GAP_MS) {
-      return { attempted: false, posted: false };
-    }
   }
 
   if (!inSoftWindow()) {
