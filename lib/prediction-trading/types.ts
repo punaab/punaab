@@ -139,4 +139,6 @@ export interface PredictionTickSummary {
   claims: string[];
   errors: string[];
   geoBlocked?: boolean;
+  /** Human-readable why this tick did not fill (shown in /admin). */
+  idleReason?: string;
 }

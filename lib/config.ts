@@ -517,7 +517,8 @@ export const PREDICTION_TRADING_LIMITS = {
    */
   scalpEnabled:
     process.env.PREDICTION_SCALP_ENABLED?.trim().toLowerCase() !== "false",
-  scalpMaxEntryPrice: Number(process.env.PREDICTION_SCALP_MAX_ENTRY ?? "0.30"),
+  /** Buy underdogs up to this price (default 45¢ — 30¢ missed most live books) */
+  scalpMaxEntryPrice: Number(process.env.PREDICTION_SCALP_MAX_ENTRY ?? "0.45"),
   scalpMinEntryPrice: Number(process.env.PREDICTION_SCALP_MIN_ENTRY ?? "0.01"),
   /** Min fair−price edge in dollars (e.g. 0.08 = 8¢) */
   scalpMinEdge: Number(process.env.PREDICTION_SCALP_MIN_EDGE ?? "0.06"),

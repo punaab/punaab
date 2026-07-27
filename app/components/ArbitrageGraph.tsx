@@ -612,7 +612,12 @@ export default function ArbitrageGraph({
             <span className="muted">{trades.length} logged</span>
           </div>
           {!trades.length && (
-            <p className="muted arb-empty">No prediction trades yet.</p>
+            <p className="muted arb-empty">
+              No prediction trades yet.
+              {prediction?.lastTick?.idleReason
+                ? ` Last tick: ${prediction.lastTick.idleReason}`
+                : ""}
+            </p>
           )}
           <ul className="arb-trade-list">
             {trades.slice(0, 8).map((t) => (
@@ -717,6 +722,11 @@ export default function ArbitrageGraph({
               {s.depositUsdc}
             </span>
           ))}
+        </footer>
+      ) : prediction?.lastTick?.idleReason ? (
+        <footer className="arb-signals">
+          <span className="arb-signals-label">Idle</span>
+          <span className="muted">{prediction.lastTick.idleReason}</span>
         </footer>
       ) : null}
     </section>

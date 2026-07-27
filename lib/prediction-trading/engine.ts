@@ -275,6 +275,7 @@ export async function runPredictionTick(): Promise<PredictionTickSummary> {
 
   const seen = new Set<string>();
   const toExecute: TradeSignal[] = [];
+  const rejectNotes: string[] = [];
   const maxPerTick = PREDICTION_TRADING_LIMITS.maxSignalsPerTick;
   for (const raw of allSignals) {
     const fused = fusedByMarket.get(raw.marketId);
@@ -307,12 +308,20 @@ export async function runPredictionTick(): Promise<PredictionTickSummary> {
     if (!snap) continue;
 
     const check = validateSignal(s, snap, ctx);
-    if (!check.ok) continue;
+    if (!check.ok) {
+      if (rejectNotes.length < 6) {
+        rejectNotes.push(`${s.strategy}:${check.reason ?? "rejected"}`);
+      }
+      continue;
+    }
 
     if (PREDICTION_TRADING_LIMITS.fusionEnabled && fused) {
       const edge = passesEdgeGate(fused, s);
       if (!edge.ok) {
         summary.errors.push(`edge_gate:${s.marketId}:${edge.reason}`);
+        if (rejectNotes.length < 6) {
+          rejectNotes.push(`edge_gate:${edge.reason}`);
+        }
         continue;
       }
     }
@@ -442,6 +451,29 @@ export async function runPredictionTick(): Promise<PredictionTickSummary> {
         );
         break;
       }
+    }
+  }
+
+  if (!summary.executed.length && !summary.geoBlocked) {
+    const bestEdge = snapshots.reduce(
+      (max, s) => Math.max(max, s.orderbook.edgeBps),
+      0,
+    );
+    const cheapest = snapshots.reduce((min, s) => {
+      const y = s.orderbook.yesDollars;
+      const n = s.orderbook.noDollars;
+      const c = Math.min(y > 0 ? y : 1, n > 0 ? n : 1);
+      return Math.min(min, c);
+    }, 1);
+    if (summary.marketsScanned === 0) {
+      summary.idleReason =
+        "No live Forecast rounds (between 15m windows or exchange inactive)";
+    } else if (allSignals.length === 0) {
+      summary.idleReason = `No strategy signals — best arb ${bestEdge}bps, cheapest side ${(cheapest * 100).toFixed(0)}¢ (need combined edge ≥${PREDICTION_TRADING_LIMITS.minCombinedEdgeBps}bps or underdog ≤${(PREDICTION_TRADING_LIMITS.scalpMaxEntryPrice * 100).toFixed(0)}¢ with edge)`;
+    } else if (!toExecute.length) {
+      summary.idleReason = `Signals gated out: ${rejectNotes.slice(0, 3).join("; ") || "risk/fusion"}`;
+    } else {
+      summary.idleReason = `Orders attempted but none filled: ${summary.errors.slice(0, 2).join("; ") || "unknown"}`;
     }
   }
 
