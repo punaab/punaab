@@ -1,12 +1,6 @@
 import Link from "next/link";
-import {
-  SignedIn,
-  SignedOut,
-  SignInButton,
-  SignUpButton,
-  UserButton,
-} from "@clerk/nextjs";
 import Image from "next/image";
+import { AuthNav } from "@/components/AuthControls";
 
 export function PlaceShell({
   children,
@@ -33,23 +27,7 @@ export function PlaceShell({
           <Link href="/archive">Archive</Link>
           <Link href="/chronicle">Chronicle</Link>
           <Link href="/realms">Realms</Link>
-          <SignedIn>
-            <Link href="/play">Play</Link>
-            <Link href="/profile">Profile</Link>
-            <UserButton afterSignOutUrl="/" />
-          </SignedIn>
-          <SignedOut>
-            <SignInButton mode="modal">
-              <button type="button" className="btn ghost">
-                Sign in
-              </button>
-            </SignInButton>
-            <SignUpButton mode="modal">
-              <button type="button" className="btn primary">
-                Create account
-              </button>
-            </SignUpButton>
-          </SignedOut>
+          <AuthNav />
         </nav>
       </header>
       {title ? (

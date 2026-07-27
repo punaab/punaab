@@ -1,12 +1,6 @@
 import Image from "next/image";
-import Link from "next/link";
-import {
-  SignedIn,
-  SignedOut,
-  SignInButton,
-  SignUpButton,
-} from "@clerk/nextjs";
 import { PlaceShell } from "@/components/PlaceShell";
+import { GateActions } from "@/components/AuthControls";
 
 export default function GatePage() {
   return (
@@ -20,31 +14,7 @@ export default function GatePage() {
             in the Bazaar, craft in the Forge, and help write history in the
             Chronicle. One identity. Many realms.
           </p>
-          <div className="gate-actions">
-            <SignedOut>
-              <SignUpButton mode="modal">
-                <button type="button" className="btn primary">
-                  Create account
-                </button>
-              </SignUpButton>
-              <SignInButton mode="modal">
-                <button type="button" className="btn ghost">
-                  Sign in
-                </button>
-              </SignInButton>
-              <Link href="/world" className="btn ghost">
-                Browse the Hub
-              </Link>
-            </SignedOut>
-            <SignedIn>
-              <Link href="/world" className="btn primary">
-                Enter the World
-              </Link>
-              <Link href="/play" className="btn ghost">
-                Play
-              </Link>
-            </SignedIn>
-          </div>
+          <GateActions />
           <p style={{ marginTop: "1.25rem", color: "var(--muted)" }}>
             Guests may browse open locations. Play requires an account.
           </p>
