@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>Punaab — Developer Portfolio</title>
+    <meta name="description" content="Punaab — Full Stack Developer portfolio. Building modern web experiences with React, Node.js, and more.">
+    <link rel="icon" type="image/png" href="assets/punaab-logo.png">
+    <link rel="apple-touch-icon" href="assets/punaab-logo.png">
+    
+    <!-- Tailwind CSS (CDN for development only) -->
+    <script>
+        // Suppress Tailwind CDN warning
+        if (typeof console !== 'undefined' && console.warn) {
+            const originalWarn = console.warn;
+            console.warn = function(...args) {
+                if (args[0] && typeof args[0] === 'string' && args[0].includes('tailwindcss.com')) {
+                    return; // Suppress Tailwind CDN warning
+                }
+                originalWarn.apply(console, args);
+            };
+        }
+    </script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&family=Fira+Code:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="body-main" data-theme="dark" data-lang="en" data-dir="ltr">
+    
+    <!-- Loading Screen -->
+    <div class="loader-screen" id="loader">
+        <div class="loader-content">
+            <img src="assets/punaab-wink.png?v=2" alt="Punaab" class="loader-mascot">
+            <div class="loader-code-text">
+                <div class="code-line" data-line="1">const portfolio = {</div>
+                <div class="code-line" data-line="2">  loading: true,</div>
+                <div class="code-line" data-line="3">  status: 'initializing...'</div>
+                <div class="code-line" data-line="4">};</div>
+            </div>
+            <div class="loader-spinner-wrapper">
+                <div class="loader-spinner"></div>
+            </div>
+            <div class="loader-progress-wrapper">
+                <div class="loader-progress-bar"></div>
+            </div>
+            <div class="loader-percentage" id="loaderPercent">0%</div>
+        </div>
+    </div>
+
+    <!-- Navigation Header -->
+    <header class="main-header" id="header">
+        <nav class="nav-container">
+            <div class="nav-brand">
+                <a href="#home" class="brand-logo" aria-label="Punaab home">
+                    <img src="assets/punaab-logo.png" alt="Punaab" class="brand-mark">
+                    <span class="logo-bracket">&lt;</span>
+                    <span class="logo-text">Punaab</span>
+                    <span class="logo-bracket">/&gt;</span>
+                </a>
+            </div>
+            
+            <div class="nav-menu" id="navMenu">
+                <a href="#home" class="nav-link active" data-section="home">
+                    <i class="fas fa-home"></i>
+                    <span class="nav-text" data-text-en="Home" data-text-es="Inicio" data-text-zh="首页" data-text-ja="ホーム">Home</span>
+                </a>
+                <a href="#about" class="nav-link" data-section="about">
+                    <i class="fas fa-user"></i>
+                    <span class="nav-text" data-text-en="About" data-text-es="Sobre mí" data-text-zh="关于" data-text-ja="について">About</span>
+                </a>
+                <a href="#skills" class="nav-link" data-section="skills">
+                    <i class="fas fa-code"></i>
+                    <span class="nav-text" data-text-en="Skills" data-text-es="Habilidades" data-text-zh="技能" data-text-ja="スキル">Skills</span>
+                </a>
+                <a href="#experience" class="nav-link" data-section="experience">
+                    <i class="fas fa-briefcase"></i>
+                    <span class="nav-text" data-text-en="Experience" data-text-es="Experiencia" data-text-zh="经历" data-text-ja="経歴">Experience</span>
+                </a>
+                <a href="#projects" class="nav-link" data-section="projects">
+                    <i class="fas fa-rocket"></i>
+                    <span class="nav-text" data-text-en="Projects" data-text-es="Proyectos" data-text-zh="项目" data-text-ja="プロジェクト">Projects</span>
+                </a>
+                <a href="#contact" class="nav-link" data-section="contact">
+                    <i class="fas fa-envelope"></i>
+                    <span class="nav-text" data-text-en="Contact" data-text-es="Contacto" data-text-zh="联系" data-text-ja="お問い合わせ">Contact</span>
+                </a>
+                <a href="meet.html" class="nav-link" data-section="meet">
+                    <i class="fas fa-paw"></i>
+                    <span class="nav-text" data-text-en="Meet" data-text-es="Conoce" data-text-zh="见面" data-text-ja="ミート">Meet</span>
+                </a>
+            </div>
+            
+            <div class="nav-controls">
+                <button class="lang-toggle" id="langToggle" title="Change language" type="button">
+                    <i class="fas fa-language"></i>
+                    <span class="lang-text">EN</span>
+                </button>
+                <button class="menu-toggle" id="menuToggle" title="Toggle Menu">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </button>
+            </div>
+        </nav>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        
+        <!-- Hero Section -->
+        <section id="home" class="hero-section">
+            <div class="hero-background">
+                <div class="code-grid-bg"></div>
+                <div class="floating-particles" id="particles"></div>
+            </div>
+            
+            <div class="hero-container">
+                <div class="hero-content">
+                    <div class="hero-greeting">
+                        <span class="greeting-text" data-text-en="Hello, I'm" data-text-es="Hola, soy" data-text-zh="你好，我是" data-text-ja="こんにちは、私は">Hello, I'm</span>
+                        <span class="greeting-cursor">|</span>
+                    </div>
+                    
+                    <h1 class="hero-name" id="heroName">
+                        <span class="name-value">Punaab</span>
+                    </h1>
+                    
+                    <div class="hero-title">
+                        <span class="title-prefix">//</span>
+                        <span class="title-text" data-text-en="Developer of Worlds and Ideas" data-text-es="Desarrollador de Mundos e Ideas" data-text-zh="世界与创意的开发者" data-text-ja="世界とアイデアの開発者">Developer of Worlds and Ideas</span>
+                    </div>
+                    
+                    <p class="hero-description" data-text-en="I'm Punaab — a developer crafting exceptional digital experiences with modern technologies." data-text-es="Soy Punaab — un desarrollador que crea experiencias digitales excepcionales con tecnologías modernas." data-text-zh="我是 Punaab — 用现代技术打造卓越数字体验的开发者。" data-text-ja="私は Punaab — 現代の技術で卓越したデジタル体験をつくる開発者です。">
+                        I'm Punaab — a developer crafting exceptional digital experiences with modern technologies.
+                    </p>
+                    
+                    <div class="hero-buttons">
+                        <a href="#contact" class="btn btn-primary">
+                            <span data-text-en="Get In Touch" data-text-es="Contactar" data-text-zh="联系我" data-text-ja="連絡する">Get In Touch</span>
+                            <i class="fas fa-arrow-right"></i>
+                        </a>
+                        <a href="#projects" class="btn btn-secondary">
+                            <span data-text-en="View Projects" data-text-es="Ver Proyectos" data-text-zh="查看项目" data-text-ja="プロジェクトを見る">View Projects</span>
+                            <i class="fas fa-code"></i>
+                        </a>
+                    </div>
+                    
+                    <div class="hero-social">
+                        <a href="https://github.com/punaab" class="social-icon" title="GitHub" target="_blank" rel="noopener noreferrer">
+                            <i class="fab fa-github"></i>
+                        </a>
+                        <a href="https://x.com/notbitcoinceo" class="social-icon social-x" title="X" target="_blank" rel="noopener noreferrer" aria-label="X">
+                            <i class="fab fa-x-twitter" aria-hidden="true"></i>
+                        </a>
+                        <a href="https://punaab.com" class="social-icon" title="Website">
+                            <i class="fas fa-globe"></i>
+                        </a>
+                        <a href="mailto:hello@punaab.com" class="social-icon" title="Email">
+                            <i class="fas fa-envelope"></i>
+                        </a>
+                    </div>
+                </div>
+                
+                <div class="hero-image-wrapper">
+                    <div class="hero-image-container">
+                        <div class="profile-image-glow"></div>
+                        <div class="profile-image-frame">
+                            <div class="profile-image" id="profileImage">
+                                <img src="assets/punaab-logo.png" alt="Punaab logo" class="profile-photo">
+                            </div>
+                        </div>
+                        <div class="floating-badge badge-1">
+                            <i class="fas fa-robot"></i>
+                            <div class="badge-content">
+                                <span class="badge-title">AI</span>
+                                <span class="badge-libs">Agents, LLMs, Automation</span>
+                            </div>
+                        </div>
+                        <div class="floating-badge badge-2">
+                            <i class="fab fa-ethereum"></i>
+                            <div class="badge-content">
+                                <span class="badge-title">Web3</span>
+                                <span class="badge-libs">Smart Contracts, DeFi, Onchain</span>
+                            </div>
+                        </div>
+                        <div class="floating-badge badge-3">
+                            <i class="fas fa-book-open"></i>
+                            <div class="badge-content">
+                                <span class="badge-title">Lore</span>
+                                <span class="badge-libs">Worlds, Games, New Stories</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="scroll-indicator">
+                <div class="scroll-mouse">
+                    <div class="scroll-wheel"></div>
+                </div>
+                <span class="scroll-text" data-text-en="Scroll Down" data-text-es="Desplazar" data-text-zh="向下滚动" data-text-ja="スクロール">Scroll Down</span>
+            </div>
+        </section>
+
+        <!-- About Section -->
+        <section id="about" class="section about-section">
+            <div class="section-container">
+                <div class="section-header">
+                    <span class="section-number">01</span>
+                    <h2 class="section-title">
+                        <span class="title-bracket">&lt;</span>
+                        <span class="title-text" data-text-en="About Me" data-text-es="Sobre Mí" data-text-zh="关于我" data-text-ja="私について">About Me</span>
+                        <span class="title-bracket">/&gt;</span>
+                    </h2>
+                    <div class="section-line"></div>
+                </div>
+                
+                <div class="about-content">
+                    <div class="about-text-wrapper">
+                        <div class="about-intro">
+                            <p class="about-text" data-text-en="I'm Punaab — a developer of worlds, websites, and new stories. I build with AI agents, ship onchain systems, and craft lore that makes products feel alive." data-text-es="Soy Punaab — desarrollador de mundos, sitios web e historias nuevas. Construyo con agentes de IA, lanzo sistemas onchain y creo lore que da vida a los productos." data-text-zh="我是 Punaab — 世界、网站与新故事的开发者。我用 AI 代理构建，交付链上系统，并创作让产品鲜活的世界观。" data-text-ja="私は Punaab — 世界・ウェブサイト・新しい物語の開発者。AIエージェントで構築し、オンチェーンを届け、製品に命を吹き込むロアを紡ぎます。">
+                                I'm Punaab — a developer of worlds, websites, and new stories. I build with AI agents, ship onchain systems, and craft lore that makes products feel alive.
+                            </p>
+                        </div>
+                        
+                        <div class="about-stats">
+                            <div class="stat-item">
+                                <div class="stat-number" data-count="63">0</div>
+                                <div class="stat-label" data-text-en="Projects" data-text-es="Proyectos" data-text-zh="项目" data-text-ja="プロジェクト">Projects</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-number" data-count="5">0</div>
+                                <div class="stat-label" data-text-en="Years Experience" data-text-es="Años de Experiencia" data-text-zh="年经验" data-text-ja="年の経験">Years Experience</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-number" data-count="30">0</div>
+                                <div class="stat-label" data-text-en="Happy Clients" data-text-es="Clientes Felices" data-text-zh="满意客户" data-text-ja="満足したクライアント">Happy Clients</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="about-image-wrapper">
+                        <div class="about-image-container">
+                            <div class="code-block">
+                                <div class="code-line">
+                                    <span class="code-keyword">const</span>
+                                    <span class="code-variable">punaab</span>
+                                    <span class="code-operator">=</span>
+                                    <span class="code-brace">{</span>
+                                </div>
+                                <div class="code-line indent">
+                                    <span class="code-property">name</span>
+                                    <span class="code-operator">:</span>
+                                    <span class="code-string">'Punaab'</span>
+                                    <span class="code-comma">,</span>
+                                </div>
+                                <div class="code-line indent">
+                                    <span class="code-property">skills</span>
+                                    <span class="code-operator">:</span>
+                                    <span class="code-bracket">[</span>
+                                    <span class="code-string">'AI'</span>
+                                    <span class="code-comma">,</span>
+                                    <span class="code-string">'Web3'</span>
+                                    <span class="code-comma">,</span>
+                                    <span class="code-string">'Lore'</span>
+                                    <span class="code-bracket">]</span>
+                                    <span class="code-comma">,</span>
+                                </div>
+                                <div class="code-line indent">
+                                    <span class="code-property">passion</span>
+                                    <span class="code-operator">:</span>
+                                    <span class="code-string">'Building Worlds'</span>
+                                </div>
+                                <div class="code-line">
+                                    <span class="code-brace">}</span>
+                                    <span class="code-semicolon">;</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Skills Section -->
+        <section id="skills" class="section skills-section">
+            <div class="section-container">
+                <div class="section-header">
+                    <span class="section-number">02</span>
+                    <h2 class="section-title">
+                        <span class="title-bracket">&lt;</span>
+                        <span class="title-text" data-text-en="Skills" data-text-es="Habilidades" data-text-zh="技能" data-text-ja="スキル">Skills</span>
+                        <span class="title-bracket">/&gt;</span>
+                    </h2>
+                    <div class="section-line"></div>
+                </div>
+                
+                <div class="skills-grid">
+                    <div class="skill-category">
+                        <h3 class="category-title" data-text-en="AI" data-text-es="IA" data-text-zh="人工智能" data-text-ja="AI">AI</h3>
+                        <div class="skill-items">
+                            <div class="skill-item" data-skill="AI Agents" data-percent="94">
+                                <div class="skill-header">
+                                    <span class="skill-name">AI Agents</span>
+                                    <span class="skill-percent">0%</span>
+                                </div>
+                                <div class="skill-bar">
+                                    <div class="skill-progress"></div>
+                                </div>
+                            </div>
+                            <div class="skill-item" data-skill="LLMs" data-percent="91">
+                                <div class="skill-header">
+                                    <span class="skill-name">LLMs & Prompting</span>
+                                    <span class="skill-percent">0%</span>
+                                </div>
+                                <div class="skill-bar">
+                                    <div class="skill-progress"></div>
+                                </div>
+                            </div>
+                            <div class="skill-item" data-skill="Automation" data-percent="88">
+                                <div class="skill-header">
+                                    <span class="skill-name">Automation</span>
+                                    <span class="skill-percent">0%</span>
+                                </div>
+                                <div class="skill-bar">
+                                    <div class="skill-progress"></div>
+                                </div>
+                            </div>
+                            <div class="skill-item" data-skill="RAG" data-percent="85">
+                                <div class="skill-header">
+                                    <span class="skill-name">RAG & Tooling</span>
+                                    <span class="skill-percent">0%</span>
+                                </div>
+                                <div class="skill-bar">
+                                    <div class="skill-progress"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="skill-category">
+                        <h3 class="category-title" data-text-en="Web3" data-text-es="Web3" data-text-zh="Web3" data-text-ja="Web3">Web3</h3>
+                        <div class="skill-items">
+                            <div class="skill-item" data-skill="Smart Contracts" data-percent="90">
+                                <div class="skill-header">
+                                    <span class="skill-name">Smart Contracts</span>
+                                    <span class="skill-percent">0%</span>
+                                </div>
+                                <div class="skill-bar">
+                                    <div class="skill-progress"></div>
+                                </div>
+                            </div>
+                            <div class="skill-item" data-skill="DeFi" data-percent="87">
+                                <div class="skill-header">
+                                    <span class="skill-name">DeFi</span>
+                                    <span class="skill-percent">0%</span>
+                                </div>
+                                <div class="skill-bar">
+                                    <div class="skill-progress"></div>
+                                </div>
+                            </div>
+                            <div class="skill-item" data-skill="Onchain" data-percent="86">
+                                <div class="skill-header">
+                                    <span class="skill-name">Onchain Apps</span>
+                                    <span class="skill-percent">0%</span>
+                                </div>
+                                <div class="skill-bar">
+                                    <div class="skill-progress"></div>
+                                </div>
+                            </div>
+                            <div class="skill-item" data-skill="Solana" data-percent="84">
+                                <div class="skill-header">
+                                    <span class="skill-name">Solana & Ethereum</span>
+                                    <span class="skill-percent">0%</span>
+                                </div>
+                                <div class="skill-bar">
+                                    <div class="skill-progress"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="skill-category">
+                        <h3 class="category-title" data-text-en="Lore" data-text-es="Lore" data-text-zh="世界观" data-text-ja="ロア">Lore</h3>
+                        <div class="skill-items">
+                            <div class="skill-item" data-skill="Worldbuilding" data-percent="96">
+                                <div class="skill-header">
+                                    <span class="skill-name">Worldbuilding</span>
+                                    <span class="skill-percent">0%</span>
+                                </div>
+                                <div class="skill-bar">
+                                    <div class="skill-progress"></div>
+                                </div>
+                            </div>
+                            <div class="skill-item" data-skill="Game Design" data-percent="90">
+                                <div class="skill-header">
+                                    <span class="skill-name">Game Design</span>
+                                    <span class="skill-percent">0%</span>
+                                </div>
+                                <div class="skill-bar">
+                                    <div class="skill-progress"></div>
+                                </div>
+                            </div>
+                            <div class="skill-item" data-skill="Narrative" data-percent="92">
+                                <div class="skill-header">
+                                    <span class="skill-name">Narrative Design</span>
+                                    <span class="skill-percent">0%</span>
+                                </div>
+                                <div class="skill-bar">
+                                    <div class="skill-progress"></div>
+                                </div>
+                            </div>
+                            <div class="skill-item" data-skill="Interactive Stories" data-percent="88">
+                                <div class="skill-header">
+                                    <span class="skill-name">Interactive Stories</span>
+                                    <span class="skill-percent">0%</span>
+                                </div>
+                                <div class="skill-bar">
+                                    <div class="skill-progress"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Experience Section -->
+        <section id="experience" class="section experience-section">
+            <div class="section-container">
+                <div class="section-header">
+                    <span class="section-number">03</span>
+                    <h2 class="section-title">
+                        <span class="title-bracket">&lt;</span>
+                        <span class="title-text" data-text-en="Experience" data-text-es="Experiencia" data-text-zh="经历" data-text-ja="経歴">Experience</span>
+                        <span class="title-bracket">/&gt;</span>
+                    </h2>
+                    <div class="section-line"></div>
+                </div>
+                
+                <div class="timeline">
+                    <div class="timeline-item">
+                        <div class="timeline-marker"></div>
+                        <div class="timeline-content">
+                            <div class="timeline-header">
+                                <div class="timeline-year">2022 - Present</div>
+                                <div class="timeline-badge">Current</div>
+                            </div>
+                            <h3 class="timeline-title" data-text-en="Senior Full Stack Developer" data-text-es="Desarrollador Full Stack Senior" data-text-zh="高级全栈开发者" data-text-ja="シニアフルスタック開発者">Senior Full Stack Developer</h3>
+                            <div class="timeline-company">
+                                <i class="fas fa-building"></i>
+                                Tech Company Inc.
+                            </div>
+                            <p class="timeline-description" data-text-en="Leading a team of developers in building complex web applications using React and Node.js. Developing advanced user interfaces and optimizing performance. Implementing microservices architecture and CI/CD pipelines." data-text-es="Liderando un equipo de desarrolladores en aplicaciones web complejas con React y Node.js. Desarrollando interfaces avanzadas y optimizando el rendimiento. Implementando microservicios y pipelines CI/CD." data-text-zh="带领开发团队用 React 与 Node.js 构建复杂 Web 应用。开发高级界面并优化性能。实施微服务架构与 CI/CD 流水线。" data-text-ja="React と Node.js で複雑な Web アプリを構築する開発チームを率いる。高度な UI を開発し、パフォーマンスを最適化。マイクロサービスと CI/CD を実装。">
+                                Leading a team of developers in building complex web applications using React and Node.js. Developing advanced user interfaces and optimizing performance. Implementing microservices architecture and CI/CD pipelines.
+                            </p>
+                            <div class="timeline-achievements">
+                                <div class="achievement-item">
+                                    <i class="fas fa-check-circle"></i>
+                                    <span data-text-en="Led team of 5 developers" data-text-es="Lideré un equipo de 5 desarrolladores" data-text-zh="带领 5 人开发团队" data-text-ja="5人の開発チームを率いた">Led team of 5 developers</span>
+                                </div>
+                                <div class="achievement-item">
+                                    <i class="fas fa-check-circle"></i>
+                                    <span data-text-en="Improved performance by 40%" data-text-es="Mejoré el rendimiento un 40%" data-text-zh="性能提升 40%" data-text-ja="パフォーマンスを40%向上">Improved performance by 40%</span>
+                                </div>
+                                <div class="achievement-item">
+                                    <i class="fas fa-check-circle"></i>
+                                    <span data-text-en="Deployed 20+ production apps" data-text-es="Desplegué más de 20 apps en producción" data-text-zh="部署 20+ 生产应用" data-text-ja="20以上の本番アプリをデプロイ">Deployed 20+ production apps</span>
+                                </div>
+                            </div>
+                            <div class="timeline-tags">
+                                <span class="tag">React</span>
+                                <span class="tag">Node.js</span>
+                                <span class="tag">TypeScript</span>
+                                <span class="tag">MongoDB</span>
+                                <span class="tag">Docker</span>
+                                <span class="tag">AWS</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="timeline-item">
+                        <div class="timeline-marker"></div>
+                        <div class="timeline-content">
+                            <div class="timeline-header">
+                                <div class="timeline-year">2020 - 2022</div>
+                            </div>
+                            <h3 class="timeline-title" data-text-en="Frontend Developer" data-text-es="Desarrollador Frontend" data-text-zh="前端开发者" data-text-ja="フロントエンド開発者">Frontend Developer</h3>
+                            <div class="timeline-company">
+                                <i class="fas fa-building"></i>
+                                Digital Solutions
+                            </div>
+                            <p class="timeline-description" data-text-en="Developed interactive user interfaces using React and Vue.js. Worked on improving user experience and performance optimization. Collaborated with designers to implement pixel-perfect designs." data-text-es="Desarrollé interfaces interactivas con React y Vue.js. Mejoré la experiencia de usuario y el rendimiento. Colaboré con diseñadores en diseños pixel-perfect." data-text-zh="用 React 与 Vue.js 开发交互界面。提升用户体验与性能。与设计师协作实现像素级设计。" data-text-ja="React と Vue.js でインタラクティブな UI を開発。UX とパフォーマンスを改善。デザイナーと協業しピクセルパーフェクトを実現。">
+                                Developed interactive user interfaces using React and Vue.js. Worked on improving user experience and performance optimization. Collaborated with designers to implement pixel-perfect designs.
+                            </p>
+                            <div class="timeline-achievements">
+                                <div class="achievement-item">
+                                    <i class="fas fa-check-circle"></i>
+                                    <span data-text-en="Built 15+ responsive websites" data-text-es="Construí más de 15 sitios responsivos" data-text-zh="构建 15+ 响应式网站" data-text-ja="15以上のレスポンシブサイトを構築">Built 15+ responsive websites</span>
+                                </div>
+                                <div class="achievement-item">
+                                    <i class="fas fa-check-circle"></i>
+                                    <span data-text-en="Reduced load time by 50%" data-text-es="Reduje el tiempo de carga un 50%" data-text-zh="加载时间减少 50%" data-text-ja="読み込み時間を50%短縮">Reduced load time by 50%</span>
+                                </div>
+                            </div>
+                            <div class="timeline-tags">
+                                <span class="tag">React</span>
+                                <span class="tag">Vue.js</span>
+                                <span class="tag">JavaScript</span>
+                                <span class="tag">SASS</span>
+                                <span class="tag">Webpack</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="timeline-item">
+                        <div class="timeline-marker"></div>
+                        <div class="timeline-content">
+                            <div class="timeline-header">
+                                <div class="timeline-year">2018 - 2020</div>
+                            </div>
+                            <h3 class="timeline-title" data-text-en="Junior Developer" data-text-es="Desarrollador Junior" data-text-zh="初级开发者" data-text-ja="ジュニア開発者">Junior Developer</h3>
+                            <div class="timeline-company">
+                                <i class="fas fa-building"></i>
+                                Creative Studio
+                            </div>
+                            <p class="timeline-description" data-text-en="Developed websites using HTML, CSS, and JavaScript. Learned best practices in web development. Worked on various client projects and gained experience in modern web technologies." data-text-es="Desarrollé sitios con HTML, CSS y JavaScript. Aprendí buenas prácticas. Trabajé en proyectos de clientes y gané experiencia en tecnologías web modernas." data-text-zh="用 HTML、CSS 和 JavaScript 开发网站。学习最佳实践。参与客户项目并积累现代 Web 技术经验。" data-text-ja="HTML・CSS・JavaScript でサイトを開発。ベストプラクティスを学び、クライアント案件で現代的な Web 技術の経験を積んだ。">
+                                Developed websites using HTML, CSS, and JavaScript. Learned best practices in web development. Worked on various client projects and gained experience in modern web technologies.
+                            </p>
+                            <div class="timeline-achievements">
+                                <div class="achievement-item">
+                                    <i class="fas fa-check-circle"></i>
+                                    <span data-text-en="Completed 30+ projects" data-text-es="Completé más de 30 proyectos" data-text-zh="完成 30+ 项目" data-text-ja="30以上のプロジェクトを完了">Completed 30+ projects</span>
+                                </div>
+                                <div class="achievement-item">
+                                    <i class="fas fa-check-circle"></i>
+                                    <span data-text-en="Learned modern frameworks" data-text-es="Aprendí frameworks modernos" data-text-zh="学习现代框架" data-text-ja="モダンなフレームワークを習得">Learned modern frameworks</span>
+                                </div>
+                            </div>
+                            <div class="timeline-tags">
+                                <span class="tag">HTML</span>
+                                <span class="tag">CSS</span>
+                                <span class="tag">JavaScript</span>
+                                <span class="tag">jQuery</span>
+                                <span class="tag">Bootstrap</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Projects Section -->
+        <section id="projects" class="section projects-section">
+            <div class="section-container">
+                <div class="section-header">
+                    <span class="section-number">04</span>
+                    <h2 class="section-title">
+                        <span class="title-bracket">&lt;</span>
+                        <span class="title-text" data-text-en="Projects" data-text-es="Proyectos" data-text-zh="项目" data-text-ja="プロジェクト">Projects</span>
+                        <span class="title-bracket">/&gt;</span>
+                    </h2>
+                    <div class="section-line"></div>
+                </div>
+                
+                <div class="projects-grid">
+                    <div class="project-card">
+                        <div class="project-image">
+                            <div class="project-overlay">
+                                <div class="project-links">
+                                    <a href="https://pixelgrew.com" class="project-link" title="View Project" target="_blank" rel="noopener noreferrer">
+                                        <i class="fas fa-external-link-alt"></i>
+                                    </a>
+                                </div>
+                            </div>
+                            <div class="project-placeholder">
+                                <i class="fas fa-cube"></i>
+                            </div>
+                        </div>
+                        <div class="project-content">
+                            <h3 class="project-title" data-text-en="PixelGrew" data-text-es="PixelGrew" data-text-zh="PixelGrew" data-text-ja="PixelGrew">PixelGrew</h3>
+                            <p class="project-description" data-text-en="Worlds, games, and new stories — PixelGrew builds creative systems where AI, lore, and play collide." data-text-es="Mundos, juegos e historias nuevas — PixelGrew crea sistemas creativos donde chocan la IA, el lore y el juego." data-text-zh="世界、游戏与新故事 — PixelGrew 构建 AI、世界观与玩法交汇的创意系统。" data-text-ja="世界・ゲーム・新しい物語 — PixelGrew は AI・ロア・遊びが交わるクリエイティブなシステムを構築します。">
+                                Worlds, games, and new stories — PixelGrew builds creative systems where AI, lore, and play collide.
+                            </p>
+                            <div class="project-tags">
+                                <span class="tag">AI</span>
+                                <span class="tag">Games</span>
+                                <span class="tag">Lore</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="project-card">
+                        <div class="project-image">
+                            <div class="project-overlay">
+                                <div class="project-links">
+                                    <a href="#" class="project-link" title="View Project">
+                                        <i class="fas fa-external-link-alt"></i>
+                                    </a>
+                                    <a href="#" class="project-link" title="View Code">
+                                        <i class="fab fa-github"></i>
+                                    </a>
+                                </div>
+                            </div>
+                            <div class="project-placeholder">
+                                <i class="fas fa-tasks"></i>
+                            </div>
+                        </div>
+                        <div class="project-content">
+                            <h3 class="project-title" data-text-en="Task Management App" data-text-es="App de Tareas" data-text-zh="任务管理应用" data-text-ja="タスク管理アプリ">Task Management App</h3>
+                            <p class="project-description" data-text-en="A web application for task management with real-time synchronization and modern design." data-text-es="Una app web de tareas con sincronización en tiempo real y diseño moderno." data-text-zh="具有实时同步与现代设计的任务管理 Web 应用。" data-text-ja="リアルタイム同期とモダンなデザインのタスク管理 Web アプリ。">
+                                A web application for task management with real-time synchronization and modern design.
+                            </p>
+                            <div class="project-tags">
+                                <span class="tag">React</span>
+                                <span class="tag">Firebase</span>
+                                <span class="tag">TypeScript</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="project-card">
+                        <div class="project-image">
+                            <div class="project-overlay">
+                                <div class="project-links">
+                                    <a href="#" class="project-link" title="View Project">
+                                        <i class="fas fa-external-link-alt"></i>
+                                    </a>
+                                    <a href="#" class="project-link" title="View Code">
+                                        <i class="fab fa-github"></i>
+                                    </a>
+                                </div>
+                            </div>
+                            <div class="project-placeholder">
+                                <i class="fas fa-blog"></i>
+                            </div>
+                        </div>
+                        <div class="project-content">
+                            <h3 class="project-title" data-text-en="Blog Platform" data-text-es="Plataforma de Blog" data-text-zh="博客平台" data-text-ja="ブログプラットフォーム">Blog Platform</h3>
+                            <p class="project-description" data-text-en="A modern blog platform with CMS features and beautiful UI design." data-text-es="Una plataforma de blog moderna con CMS y una UI hermosa." data-text-zh="具有 CMS 功能与精美界面的现代博客平台。" data-text-ja="CMS 機能と美しい UI を備えたモダンなブログ。">
+                                A modern blog platform with CMS features and beautiful UI design.
+                            </p>
+                            <div class="project-tags">
+                                <span class="tag">Next.js</span>
+                                <span class="tag">Prisma</span>
+                                <span class="tag">PostgreSQL</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Contact Section -->
+        <section id="contact" class="section contact-section">
+            <div class="section-container">
+                <div class="section-header">
+                    <span class="section-number">05</span>
+                    <h2 class="section-title">
+                        <span class="title-bracket">&lt;</span>
+                        <span class="title-text" data-text-en="Contact" data-text-es="Contacto" data-text-zh="联系" data-text-ja="お問い合わせ">Contact</span>
+                        <span class="title-bracket">/&gt;</span>
+                    </h2>
+                    <div class="section-line"></div>
+                </div>
+                
+                <div class="contact-content">
+                    <div class="contact-info">
+                        <div class="contact-item">
+                            <div class="contact-icon">
+                                <i class="fas fa-envelope"></i>
+                            </div>
+                            <div class="contact-details">
+                                <h4 class="contact-label" data-text-en="Email" data-text-es="Correo" data-text-zh="邮箱" data-text-ja="メール">Email</h4>
+                                <a href="mailto:hello@punaab.com" class="contact-value">hello@punaab.com</a>
+                            </div>
+                        </div>
+                        
+                        <div class="contact-item">
+                            <div class="contact-icon">
+                                <i class="fas fa-globe"></i>
+                            </div>
+                            <div class="contact-details">
+                                <h4 class="contact-label" data-text-en="Website" data-text-es="Sitio web" data-text-zh="网站" data-text-ja="ウェブサイト">Website</h4>
+                                <a href="https://punaab.com" class="contact-value">punaab.com</a>
+                            </div>
+                        </div>
+                        
+                        <div class="contact-item">
+                            <div class="contact-icon">
+                                <i class="fas fa-map-marker-alt"></i>
+                            </div>
+                            <div class="contact-details">
+                                <h4 class="contact-label" data-text-en="Location" data-text-es="Ubicación" data-text-zh="位置" data-text-ja="所在地">Location</h4>
+                                <span class="contact-value" data-text-en="Remote · Worldwide" data-text-es="Remoto · Mundial" data-text-zh="远程 · 全球" data-text-ja="リモート · 世界中">Remote · Worldwide</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <form class="contact-form" id="contactForm">
+                        <div class="form-group">
+                            <input type="text" class="form-input" placeholder="Name" data-placeholder-en="Name" data-placeholder-es="Nombre" data-placeholder-zh="姓名" data-placeholder-ja="名前" required>
+                        </div>
+                        <div class="form-group">
+                            <input type="email" class="form-input" placeholder="Email" data-placeholder-en="Email" data-placeholder-es="Correo" data-placeholder-zh="邮箱" data-placeholder-ja="メール" required>
+                        </div>
+                        <div class="form-group">
+                            <input type="text" class="form-input" placeholder="Subject" data-placeholder-en="Subject" data-placeholder-es="Asunto" data-placeholder-zh="主题" data-placeholder-ja="件名" required>
+                        </div>
+                        <div class="form-group">
+                            <textarea class="form-input form-textarea" rows="5" placeholder="Message" data-placeholder-en="Message" data-placeholder-es="Mensaje" data-placeholder-zh="留言" data-placeholder-ja="メッセージ" required></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-submit">
+                            <span data-text-en="Send Message" data-text-es="Enviar Mensaje" data-text-zh="发送消息" data-text-ja="送信">Send Message</span>
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="main-footer">
+        <div class="footer-container">
+            <div class="footer-content">
+                <div class="footer-text-wrapper">
+                    <p class="footer-text">
+                        <span class="footer-copyright">© 2026 Punaab</span>
+                        <span class="footer-divider">•</span>
+                        <span class="footer-built">Powered by PixelGrew</span>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <button type="button" class="wink-buddy" id="winkBuddy" aria-label="Punaab says hi" title="Punaab">
+        <img src="assets/punaab-wink.png?v=2" alt="Punaab wink">
+    </button>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
+    <!-- Motion One loaded dynamically -->
+    <script src="js/animations.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>
+

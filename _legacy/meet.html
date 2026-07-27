@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>Meet Punaab</title>
+    <meta name="description" content="Meet Punaab — the cat behind the code.">
+    <link rel="icon" type="image/png" href="assets/punaab-logo.png">
+    <link rel="apple-touch-icon" href="assets/punaab-logo.png">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&family=Fira+Code:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="body-main meet-page" data-theme="dark" data-lang="en" data-dir="ltr">
+
+    <header class="main-header scrolled" id="header">
+        <nav class="nav-container">
+            <div class="nav-brand">
+                <a href="index.html" class="brand-logo" aria-label="Punaab home">
+                    <img src="assets/punaab-hoodie.png?v=2" alt="Punaab" class="brand-mark brand-mark-hoodie">
+                    <span class="logo-bracket">&lt;</span>
+                    <span class="logo-text">Punaab</span>
+                    <span class="logo-bracket">/&gt;</span>
+                </a>
+            </div>
+
+            <div class="nav-menu" id="navMenu">
+                <a href="index.html" class="nav-link">
+                    <i class="fas fa-home"></i>
+                    <span class="nav-text">Home</span>
+                </a>
+                <a href="meet.html" class="nav-link active">
+                    <i class="fas fa-paw"></i>
+                    <span class="nav-text">Meet</span>
+                </a>
+                <a href="index.html#projects" class="nav-link">
+                    <i class="fas fa-rocket"></i>
+                    <span class="nav-text">Projects</span>
+                </a>
+                <a href="index.html#contact" class="nav-link">
+                    <i class="fas fa-envelope"></i>
+                    <span class="nav-text">Contact</span>
+                </a>
+            </div>
+
+            <div class="nav-controls">
+                <button class="menu-toggle" id="menuToggle" title="Toggle Menu">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </button>
+            </div>
+        </nav>
+    </header>
+
+    <main class="meet-main">
+        <section class="meet-hero">
+            <div class="meet-hero-bg" aria-hidden="true"></div>
+            <div class="meet-hero-inner">
+                <div class="meet-copy">
+                    <p class="meet-kicker">// character file</p>
+                    <h1 class="meet-brand">PUNAAB</h1>
+                    <p class="meet-line">
+                        <span class="code-keyword">const</span>
+                        <span class="code-variable">mood</span>
+                        <span class="code-operator">=</span>
+                        <span class="code-string">'locked in'</span><span class="code-semicolon">;</span>
+                    </p>
+                    <p class="meet-desc">
+                        Hoodie on. Eyes gold. Shipping code, chasing pixels, and occasionally winking at production.
+                    </p>
+                    <div class="meet-actions">
+                        <a href="index.html#contact" class="btn btn-primary">
+                            <span>Work with Punaab</span>
+                            <i class="fas fa-arrow-right"></i>
+                        </a>
+                        <a href="index.html" class="btn btn-secondary">
+                            <span>Back to portfolio</span>
+                            <i class="fas fa-code"></i>
+                        </a>
+                    </div>
+                </div>
+
+                <div class="meet-portrait-wrap">
+                    <div class="meet-portrait-glow"></div>
+                    <img
+                        src="assets/punaab-hoodie.png?v=2"
+                        alt="Punaab in a hoodie"
+                        class="meet-portrait"
+                        id="meetPortrait"
+                    >
+                </div>
+            </div>
+        </section>
+
+        <section class="meet-forms section">
+            <div class="section-container">
+                <div class="section-header">
+                    <span class="section-number">01</span>
+                    <h2 class="section-title">
+                        <span class="title-bracket">&lt;</span>
+                        <span class="title-text">Forms</span>
+                        <span class="title-bracket">/&gt;</span>
+                    </h2>
+                    <div class="section-line"></div>
+                </div>
+                <p class="meet-forms-intro">Same cat. Different builds.</p>
+                <div class="meet-forms-grid">
+                    <article class="meet-form-card is-active" data-form="hoodie">
+                        <img src="assets/punaab-hoodie.png?v=2" alt="Hoodie Punaab">
+                        <h3>Focus</h3>
+                        <p>Yellow-eyed deep-work mode.</p>
+                    </article>
+                    <article class="meet-form-card" data-form="classic">
+                        <img src="assets/punaab-logo.png" alt="Classic Punaab">
+                        <h3>Classic</h3>
+                        <p>The original brand look.</p>
+                    </article>
+                    <article class="meet-form-card" data-form="wink">
+                        <img src="assets/punaab-wink.png?v=2" alt="Wink Punaab">
+                        <h3>Chaos</h3>
+                        <p>Deployed with a wink.</p>
+                    </article>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="main-footer">
+        <div class="footer-container">
+            <div class="footer-content">
+                <div class="footer-text-wrapper">
+                    <p class="footer-text">
+                        <span class="footer-copyright">© 2026 Punaab</span>
+                        <span class="footer-divider">•</span>
+                        <span class="footer-built">Meet the cat. Keep the code.</span>
+                    </p>
+                </div>
+                <div class="footer-social">
+                    <a href="index.html" class="footer-social-link" title="Home">
+                        <i class="fas fa-home"></i>
+                    </a>
+                    <a href="mailto:hello@punaab.com" class="footer-social-link" title="Email">
+                        <i class="fas fa-envelope"></i>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script src="js/meet.js"></script>
+</body>
+</html>
