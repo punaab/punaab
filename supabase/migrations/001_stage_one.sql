@@ -157,17 +157,22 @@ alter table chronicles enable row level security;
 alter table factions enable row level security;
 
 -- Public read policies for canon content (anon key)
+drop policy if exists "public read books community+" on books;
 create policy "public read books community+" on books
   for select using (status in ('community', 'realm_canon', 'universal_canon', 'historical_record'));
 
+drop policy if exists "public read item definitions" on item_definitions;
 create policy "public read item definitions" on item_definitions
   for select using (true);
 
+drop policy if exists "public read realms" on realms;
 create policy "public read realms" on realms
   for select using (true);
 
+drop policy if exists "public read chronicles" on chronicles;
 create policy "public read chronicles" on chronicles
   for select using (true);
 
+drop policy if exists "public read factions" on factions;
 create policy "public read factions" on factions
   for select using (true);
