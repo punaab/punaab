@@ -543,8 +543,26 @@ export const PREDICTION_TRADING_LIMITS = {
     process.env.PREDICTION_SCALP_LONGSHOT_FAIR_MULT ?? "2",
   ),
   scalpTakeProfitEnabled:
-    process.env.PREDICTION_SCALP_TAKE_PROFIT?.trim().toLowerCase() === "true",
+    process.env.PREDICTION_SCALP_TAKE_PROFIT?.trim().toLowerCase() !== "false",
   scalpTakeProfitPrice: Number(process.env.PREDICTION_SCALP_TP_PRICE ?? "0.90"),
+  /** VALIX-style: take this fraction of remaining upside as TP mark */
+  takeProfitPct: Number(process.env.PREDICTION_TAKE_PROFIT_PCT ?? "0.40"),
+  /** Min fused model edge vs market (e.g. 0.10 = 10¢ / 10pp) */
+  minMlEdge: Number(process.env.PREDICTION_MIN_ML_EDGE ?? "0.08"),
+  minFusionConfidence: Number(process.env.PREDICTION_MIN_FUSION_CONF ?? "0.25"),
+  kellyFraction: Number(process.env.PREDICTION_KELLY_FRACTION ?? "0.25"),
+  minEntryPrice: Number(process.env.PREDICTION_MIN_ENTRY_PRICE ?? "0.05"),
+  maxEntryPrice: Number(process.env.PREDICTION_MAX_ENTRY_PRICE ?? "0.75"),
+  maxSpreadPct: Number(process.env.PREDICTION_MAX_SPREAD_PCT ?? "0.08"),
+  maxTradesPerMarket: Number(process.env.PREDICTION_MAX_TRADES_PER_MARKET ?? "1"),
+  lockMarketDirection:
+    process.env.PREDICTION_LOCK_DIRECTION?.trim().toLowerCase() !== "false",
+  maxChaseDelta: Number(process.env.PREDICTION_MAX_CHASE_DELTA ?? "0.12"),
+  lateEntryCutoffSec: Number(process.env.PREDICTION_LATE_ENTRY_CUTOFF_SEC ?? "120"),
+  maxDailyDeployUsdc: Number(process.env.PREDICTION_MAX_DAILY_DEPLOY_USDC ?? "200"),
+  /** Prefer fused ML-gated directional path (default on) */
+  fusionEnabled:
+    process.env.PREDICTION_FUSION_ENABLED?.trim().toLowerCase() !== "false",
   maxTradesPerDay: Number(process.env.PREDICTION_MAX_TRADES_PER_DAY ?? "500"),
   pollIntervalMs: Number(process.env.PREDICTION_POLL_INTERVAL_MS ?? "15000"),
   minSecondsToClose: Number(process.env.PREDICTION_MIN_SECONDS_TO_CLOSE ?? "45"),

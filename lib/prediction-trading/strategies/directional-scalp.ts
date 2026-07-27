@@ -50,30 +50,50 @@ export function signalsDirectionalScalp(
 
   // Already holding this market — don't pyramid unless rotation strategy
   if (leg && (leg.yesCostUsd > 0 || leg.noCostUsd > 0)) {
-    // Optional take-profit: sell favorite if mark ≥ 90¢ (lock gains before resolve)
-    if (limits.scalpTakeProfitEnabled && secondsToClose < 180) {
+    // Take-profit: VALIX-style mark (entry + takeProfitPct * remaining upside)
+    if (limits.scalpTakeProfitEnabled) {
       const signals: TradeSignal[] = [];
-      if (leg.yesCostUsd > 0 && yes >= limits.scalpTakeProfitPrice) {
-        signals.push({
-          strategy: "directional_scalp_exit",
-          marketId: market.marketId,
-          side: "yes",
-          isBuy: false,
-          depositUsdc: 0,
-          reason: `scalp_tp_yes@${yes.toFixed(2)}`,
-        });
+      if (leg.yesCostUsd > 0) {
+        const entry =
+          leg.stagedSide === "yes" && leg.stagedPrice
+            ? leg.stagedPrice
+            : Math.min(yes, 0.4);
+        const tpMark = Math.max(
+          limits.scalpTakeProfitPrice,
+          entry + limits.takeProfitPct * (1 - entry),
+        );
+        if (yes >= tpMark) {
+          signals.push({
+            strategy: "directional_scalp_exit",
+            marketId: market.marketId,
+            side: "yes",
+            isBuy: false,
+            depositUsdc: 0,
+            reason: `scalp_tp_yes@mark=${yes.toFixed(2)}_tp=${tpMark.toFixed(2)}`,
+          });
+        }
       }
-      if (leg.noCostUsd > 0 && no >= limits.scalpTakeProfitPrice) {
-        signals.push({
-          strategy: "directional_scalp_exit",
-          marketId: market.marketId,
-          side: "no",
-          isBuy: false,
-          depositUsdc: 0,
-          reason: `scalp_tp_no@${no.toFixed(2)}`,
-        });
+      if (leg.noCostUsd > 0) {
+        const entry =
+          leg.stagedSide === "no" && leg.stagedPrice
+            ? leg.stagedPrice
+            : Math.min(no, 0.4);
+        const tpMark = Math.max(
+          limits.scalpTakeProfitPrice,
+          entry + limits.takeProfitPct * (1 - entry),
+        );
+        if (no >= tpMark) {
+          signals.push({
+            strategy: "directional_scalp_exit",
+            marketId: market.marketId,
+            side: "no",
+            isBuy: false,
+            depositUsdc: 0,
+            reason: `scalp_tp_no@mark=${no.toFixed(2)}_tp=${tpMark.toFixed(2)}`,
+          });
+        }
       }
-      return signals;
+      if (signals.length) return signals;
     }
     return [];
   }

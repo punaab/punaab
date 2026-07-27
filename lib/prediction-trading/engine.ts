@@ -37,7 +37,51 @@ import {
   recordStagedLeg,
   signalsTemporalArb,
 } from "./strategies/temporal-arb";
+import { fuseMarketSignal, type FusedSignal } from "./pipeline/signals";
+import { fractionalKellySize, passesEdgeGate } from "./pipeline/edge-gate";
+import { loadFusionWeights } from "./pipeline/learning";
 import type { PredictionTickSummary, TradeSignal } from "./types";
+
+function sizeWithKelly(
+  signal: TradeSignal,
+  fused: FusedSignal | undefined,
+  capitalUsd: number,
+): TradeSignal {
+  if (
+    signal.strategy !== "directional_scalp" ||
+    !signal.isBuy ||
+    !fused ||
+    fused.marketPrice <= 0
+  ) {
+    return signal;
+  }
+  const modelProb =
+    signal.side === "yes" ? fused.modelProbYes : 1 - fused.modelProbYes;
+  const kellyFrac = fractionalKellySize({
+    modelProb,
+    entryPrice: fused.marketPrice,
+  });
+  if (kellyFrac <= 0) return signal;
+  const limits = PREDICTION_TRADING_LIMITS;
+  const usable = Math.max(0, capitalUsd - limits.scalpUsdcReserve);
+  let size = usable * Math.min(kellyFrac, limits.scalpPctOfWallet);
+  size = Math.max(limits.minOrderUsdc, size);
+  size = Math.min(
+    limits.maxUsdcPerLeg,
+    limits.scalpMaxUsdcPerTrade,
+    limits.maxForecastOrderUsdc,
+    usable,
+    size,
+  );
+  size = Math.floor(size * 100) / 100;
+  if (size < limits.minOrderUsdc) return signal;
+  return {
+    ...signal,
+    depositUsdc: size,
+    reason: `${signal.reason} | fusion_p=${modelProb.toFixed(2)}_edge=${fused.mlEdge.toFixed(2)}_kelly=${size}`,
+    expectedEdgeBps: Math.round(fused.mlEdge * 10_000),
+  };
+}
 
 export async function runPredictionTick(): Promise<PredictionTickSummary> {
   const summary: PredictionTickSummary = {
@@ -120,7 +164,7 @@ export async function runPredictionTick(): Promise<PredictionTickSummary> {
     console.warn("[prediction-engine] wallet snapshot:", error);
   }
 
-  // Size / risk against liquid capital, not USDC alone
+  // Size / risk against liquid capital on Forecast hot wallet (Solana signing)
   const capitalForSizing =
     tradeableCapitalUsd > 0 ? tradeableCapitalUsd : walletUsdc;
 
@@ -193,13 +237,25 @@ export async function runPredictionTick(): Promise<PredictionTickSummary> {
     tradesToday: ctx.tradesToday,
   };
 
+  // Phase 4: strategy brain — fusion weights from learning engine
+  const fusionWeights = await loadFusionWeights();
+  const fusedByMarket = new Map<string, FusedSignal>();
+  if (PREDICTION_TRADING_LIMITS.fusionEnabled) {
+    for (const snap of snapshots) {
+      fusedByMarket.set(
+        snap.market.marketId,
+        fuseMarketSignal(snap, fusionWeights),
+      );
+    }
+  }
+
   const allSignals: TradeSignal[] = [];
 
   for (const snap of snapshots) {
     const leg = ctx.legs.get(snap.market.marketId);
-    // 1) Risk-free-ish arb first
+    // 1) Temporal arb first — best risk-adjusted use of Solana Forecast capital
     allSignals.push(...signalsTemporalArb(snap, leg));
-    // 2) Directional scalp (Polymarket-style volume snipes)
+    // 2) Directional scalp (fused + ML edge-gated below)
     allSignals.push(...signalsDirectionalScalp(snap, leg, scalpCtx));
     // 3) Rotation / inventory / resolution (secondary)
     allSignals.push(...signalsRotation(snap, leg));
@@ -220,7 +276,9 @@ export async function runPredictionTick(): Promise<PredictionTickSummary> {
   const seen = new Set<string>();
   const toExecute: TradeSignal[] = [];
   const maxPerTick = PREDICTION_TRADING_LIMITS.maxSignalsPerTick;
-  for (const s of allSignals) {
+  for (const raw of allSignals) {
+    const fused = fusedByMarket.get(raw.marketId);
+    const s = sizeWithKelly(raw, fused, capitalForSizing);
     const key = `${s.marketId}:${s.side}:${s.isBuy}:${s.strategy}`;
     if (seen.has(key)) continue;
 
@@ -250,6 +308,14 @@ export async function runPredictionTick(): Promise<PredictionTickSummary> {
 
     const check = validateSignal(s, snap, ctx);
     if (!check.ok) continue;
+
+    if (PREDICTION_TRADING_LIMITS.fusionEnabled && fused) {
+      const edge = passesEdgeGate(fused, s);
+      if (!edge.ok) {
+        summary.errors.push(`edge_gate:${s.marketId}:${edge.reason}`);
+        continue;
+      }
+    }
 
     toExecute.push(s);
     if (toExecute.length >= maxPerTick) break;

@@ -4,6 +4,7 @@ import {
   PREDICTION_TRADING_LIMITS,
 } from "../config";
 import type { LegLedger, MarketSnapshot, TradeSignal } from "./types";
+import { valixGuards } from "./pipeline/risk-guards";
 
 export interface RiskContext {
   openMarketIds: Set<string>;
@@ -81,7 +82,6 @@ export function validateSignal(
     return { ok: false, reason: "exceeds_max_per_market" };
   }
 
-  // Scalp can run closer to close than arb (still gated in strategy)
   if (signal.strategy !== "directional_scalp") {
     const skip = shouldSkipMarket(snap, ctx);
     if (skip) return { ok: false, reason: skip };
@@ -96,8 +96,6 @@ export function validateSignal(
     return { ok: false, reason: "daily_trade_cap" };
   }
 
-  // Live: don't spend more than tradeable capital − reserve
-  // (USDC is topped up via auto-swap from SOL/SPL before the buy)
   if (
     !isDryRun() &&
     ctx.walletUsdc > 0 &&
@@ -105,6 +103,9 @@ export function validateSignal(
   ) {
     return { ok: false, reason: "insufficient_tradeable_capital" };
   }
+
+  const guards = valixGuards(signal, snap, ctx);
+  if (!guards.ok) return guards;
 
   return { ok: true };
 }
