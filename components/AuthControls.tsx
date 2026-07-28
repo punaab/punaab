@@ -1,81 +1,41 @@
 "use client";
 
-import Link from "next/link";
 import {
   SignInButton,
   SignUpButton,
   UserButton,
   useAuth,
 } from "@clerk/nextjs";
+import Link from "next/link";
 
 export function AuthNav() {
   const { isLoaded, isSignedIn } = useAuth();
 
-  if (!isLoaded) {
-    return <span className="meta">…</span>;
-  }
+  if (!isLoaded) return <span className="meta">…</span>;
 
   if (isSignedIn) {
     return (
-      <>
-        <Link href="/play">Play</Link>
-        <Link href="/profile">Profile</Link>
+      <div className="account-cluster">
+        <Link href="/dashboard" className="nav-pill nav-pill-accent">
+          Dashboard
+        </Link>
         <UserButton />
-      </>
-    );
-  }
-
-  return (
-    <>
-      <SignInButton mode="modal">
-        <button type="button" className="btn ghost">
-          Sign in
-        </button>
-      </SignInButton>
-      <SignUpButton mode="modal">
-        <button type="button" className="btn primary">
-          Create account
-        </button>
-      </SignUpButton>
-    </>
-  );
-}
-
-export function GateActions() {
-  const { isLoaded, isSignedIn } = useAuth();
-
-  if (!isLoaded) {
-    return <div className="gate-actions" />;
-  }
-
-  if (isSignedIn) {
-    return (
-      <div className="gate-actions">
-        <Link href="/world" className="btn primary">
-          Enter the World
-        </Link>
-        <Link href="/play" className="btn ghost">
-          Play
-        </Link>
       </div>
     );
   }
 
   return (
-    <div className="gate-actions">
-      <SignUpButton mode="modal">
-        <button type="button" className="btn primary">
-          Create account
-        </button>
-      </SignUpButton>
+    <div className="account-cluster">
       <SignInButton mode="modal">
-        <button type="button" className="btn ghost">
+        <button type="button" className="btn ghost nav-btn">
           Sign in
         </button>
       </SignInButton>
-      <Link href="/world" className="btn ghost">
-        Browse the Hub
-      </Link>
+      <SignUpButton mode="modal">
+        <button type="button" className="btn soft nav-btn nav-btn-signup">
+          Join in!
+        </button>
+      </SignUpButton>
     </div>
   );
 }

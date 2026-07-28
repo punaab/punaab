@@ -40,3 +40,17 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+.tmp-plugin-pack/
+
+# Supabase CLI local cache (never commit)
+supabase/.temp/
+
+# Local inspection / scratch outputs
+scripts/*.png
+scripts/*.bin
+scripts/*-vert-indices.json
+
+# Raw Meshy/export packs (often >100MB). Runtime uses the .glb files.
+public/assets/models/*.zip
+

@@ -1,34 +1,71 @@
-import Image from "next/image";
-import { PlaceShell } from "@/components/PlaceShell";
-import { GateActions } from "@/components/AuthControls";
+import Link from "next/link";
+import { MarketingShell } from "@/components/marketing/MarketingShell";
+import { BardWorldLazy } from "@/components/marketing/BardWorldLazy";
+import { CommunityLinks } from "@/components/marketing/CommunityLinks";
+import { COMMUNITY_PITCH } from "@/lib/community";
+import { FEATURES, FEATURES_NOTE } from "@/lib/nav";
 
-export default function GatePage() {
+export default function HomePage() {
   return (
-    <PlaceShell>
-      <section className="gate">
-        <div className="gate-copy">
-          <p className="gate-kicker">// arrival gate</p>
-          <h1>PIXELGREW</h1>
-          <p>
-            A shared universe that feels like a place. Walk the Archive, trade
-            in the Bazaar, craft in the Forge, and help write history in the
-            Chronicle. One identity. Many realms.
-          </p>
-          <GateActions />
-          <p style={{ marginTop: "1.25rem", color: "var(--muted)" }}>
-            Guests may browse open locations. Play requires an account.
-          </p>
+    <MarketingShell>
+      <section className="hero product-hero hero-live">
+        <div className="hero-watermark" aria-hidden="true">
+          PUNAAB
         </div>
-        <div className="gate-art">
-          <Image
-            src="/assets/punaab-hoodie.png"
-            alt="Punaab"
-            width={480}
-            height={480}
-            priority
-          />
+        <div className="hero-copy hero-copy-animate">
+          <p className="hero-kicker">Free traveling bard</p>
+          <h1>
+            Meet Punaab —
+            <span className="hero-gradient-line"> the traveling bard</span>
+          </h1>
+          <p className="hero-desc">
+            Free to download. Drop him into your game or story — he chats,
+            sings, trades, and wanders the road with players.
+          </p>
+          <p className="hero-inspiration" aria-hidden="true">
+            <span className="hero-inspiration-rule" />
+            <span className="hero-inspiration-text">For your inspiration</span>
+            <span className="hero-inspiration-rule" />
+          </p>
+          <div className="hero-actions">
+            <Link className="btn primary btn-glow btn-xl" href="/demo">
+              Free download
+            </Link>
+            <Link className="btn ghost" href="/#project">
+              Join the community
+            </Link>
+          </div>
+        </div>
+        <div className="hero-stage hero-stage-3d">
+          <BardWorldLazy />
         </div>
       </section>
-    </PlaceShell>
+
+      <section id="project" className="section project-band">
+        <p className="section-num">Project</p>
+        <h2>Free. Yours to use.</h2>
+        <p className="section-lead">{COMMUNITY_PITCH}</p>
+        <CommunityLinks />
+        <ul className="feature-grid">
+          {FEATURES.map((f) => (
+            <li key={f} className="feature-chip">
+              <span className="check">✓</span> {f}
+            </li>
+          ))}
+        </ul>
+        <p className="feature-note">{FEATURES_NOTE}</p>
+      </section>
+
+      <section className="section cta-band cta-glow">
+        <h2>Drop Punaab into Godot</h2>
+        <p>
+          Start a project, take your key, fetch the plugin, paste it in, and
+          hear him play.
+        </p>
+        <Link className="btn primary btn-glow btn-xl" href="/docs/getting-started">
+          Start in 5 minutes
+        </Link>
+      </section>
+    </MarketingShell>
   );
 }

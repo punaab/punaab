@@ -1,12 +1,12 @@
 import { SignUp } from "@clerk/nextjs";
-import { PlaceShell } from "@/components/PlaceShell";
+import { MarketingShell } from "@/components/marketing/MarketingShell";
 
 export default function SignUpPage() {
   return (
-    <PlaceShell title="Create account">
-      <div style={{ display: "grid", placeItems: "center", padding: "2rem 0" }}>
+    <MarketingShell>
+      <div className="clerk-frame">
         <SignUp />
       </div>
-    </PlaceShell>
+    </MarketingShell>
   );
 }

@@ -1,12 +1,12 @@
 import { SignIn } from "@clerk/nextjs";
-import { PlaceShell } from "@/components/PlaceShell";
+import { MarketingShell } from "@/components/marketing/MarketingShell";
 
 export default function SignInPage() {
   return (
-    <PlaceShell title="Sign in">
-      <div style={{ display: "grid", placeItems: "center", padding: "2rem 0" }}>
+    <MarketingShell>
+      <div className="clerk-frame">
         <SignIn />
       </div>
-    </PlaceShell>
+    </MarketingShell>
   );
 }

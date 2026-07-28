@@ -1,15 +1,19 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
 const isProtectedRoute = createRouteMatcher([
-  "/play(.*)",
-  "/profile(.*)",
-  "/forge(.*)",
-  "/bazaar(.*)",
-  "/council(.*)",
-  "/guilds(.*)",
-  "/api/v1/books/publish(.*)",
-  "/api/v1/items/craft(.*)",
-  "/api/v1/profile(.*)",
+  "/dashboard(.*)",
+  "/account(.*)",
+  "/api/v1/projects(.*)",
+  "/api/v1/keys(.*)",
+  "/api/v1/credits(.*)",
+  "/api/v1/characters(.*)",
+  // Managing embed tokens is dashboard work. The *public* embed surfaces
+  // (/api/v1/embed/chat and /config) authenticate with an embed token and an
+  // origin check instead, and must stay reachable from customers' sites.
+  "/api/v1/embed/tokens(.*)",
+  "/api/v1/embed/bridges(.*)",
+  "/api/stripe/checkout(.*)",
+  "/api/stripe/portal(.*)",
 ]);
 
 export default clerkMiddleware(async (auth, req) => {

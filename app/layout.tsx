@@ -1,24 +1,24 @@
 import type { Metadata } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
-import { Fira_Code, Tajawal } from "next/font/google";
+import { Cinzel, Lora } from "next/font/google";
 import "./globals.css";
 
-const tajawal = Tajawal({
-  variable: "--font-tajawal",
+const display = Cinzel({
+  variable: "--font-cinzel",
   subsets: ["latin"],
-  weight: ["400", "500", "700", "800"],
+  weight: ["500", "600", "700"],
 });
 
-const fira = Fira_Code({
-  variable: "--font-fira",
+const body = Lora({
+  variable: "--font-lora",
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
 });
 
 export const metadata: Metadata = {
-  title: "PixelGrew — Shared Universe Hub",
+  title: "Punaab — The Traveling Bard",
   description:
-    "Enter PixelGrew: Archive, Bazaar, Forge, Council, Realms, Chronicle, and Guild District.",
+    "A free AI bard for your game — songs, shops, chatter, and the open road.",
   icons: { icon: "/assets/punaab-logo.png" },
 };
 
@@ -29,7 +29,7 @@ export default function RootLayout({
 }>) {
   return (
     <ClerkProvider>
-      <html lang="en" className={`${tajawal.variable} ${fira.variable} h-full`}>
+      <html lang="en" className={`${display.variable} ${body.variable} h-full`}>
         <body className="min-h-full antialiased">{children}</body>
       </html>
     </ClerkProvider>
