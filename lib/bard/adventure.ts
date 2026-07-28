@@ -16,7 +16,8 @@
  *    module that writes `this.x` / `this.z`, and it is `step()`.
  * 2. **He walks with purpose.** About half a metre a second on the flat — quick
  *    enough to cover the valley, slow enough that the scenery still reads. He
- *    lingers when he arrives, and markets pull him more often than shrines.
+ *    lingers when he arrives to talk, trade, and tell stories, then picks a
+ *    fresh stretch of the map rather than commuting the same market loop.
  * 3. **Nothing here calls `Math.random`.** His itinerary is not world layout, so
  *    determinism is not strictly required — but a reproducible journey is worth
  *    having when you are trying to work out why he ended up in the fen, so the
@@ -34,6 +35,7 @@ import {
   nearestClearPoint,
   resolveMove,
 } from "@/lib/world/collision";
+import { NPCS, isAnimal } from "@/lib/world/npc";
 import { REGIONS, regionAt, type Region } from "@/lib/world/regions";
 import { ROADS, slopeAt } from "@/lib/world/terrain";
 
@@ -110,7 +112,10 @@ const ROAD_DETOUR_PREFERRED = 2.75;
 const STALL_PATIENCE = 0.85;
 
 /** How far ahead he peeks for trunks and walls before committing a step. */
-const LOOK_AHEAD = 3.4;
+const LOOK_AHEAD = 4.4;
+
+/** Hard cap on un-stick snaps — anything farther is a re-route, not a teleport. */
+const MAX_UNSTICK_JUMP = 2.35;
 
 /**
  * Seconds overlapping geometry before the un-stick fires. Long enough that
@@ -365,9 +370,13 @@ const PLACES: readonly Destination[] = DESTINATIONS.length
 
 /**
  * How many places he must see before he is allowed back somewhere. Capped one
- * short of the whole list so there is always a legal move.
+ * short of the whole list so there is always a legal move. Kept large so he
+ * explores the valley instead of ping-ponging two neighbouring stalls.
  */
-const RECENT_MEMORY = Math.max(1, Math.min(PLACES.length - 1, 10));
+const RECENT_MEMORY = Math.max(1, Math.min(PLACES.length - 1, 32));
+
+/** Chance to follow the authored tour order instead of a weighted whim. */
+const TOUR_FOLLOW_CHANCE = 0.42;
 
 /** Things he says to himself between places. */
 const TRAVEL_LINES = [
@@ -380,6 +389,38 @@ const TRAVEL_LINES = [
   "No hurry. Nothing at the end of a road that won't wait.",
   "The map's wrong here. The map's wrong most places.",
   "A tune for the next mile. That's how I keep the road company.",
+  "Haven't taken this fork in a while. Good.",
+  "Let's see what's over the next rise.",
+];
+
+/** Haggling / market chatter while he dwells on a trade stop. */
+const TRADE_LINES = [
+  "Two coins for the jar? Done — and a story thrown in.",
+  "Fresh from the road. Nothing dusty but my boots.",
+  "Trade fair and the day stays friendly.",
+  "I'll take the bread. You take the tune.",
+  "Mind the latch on that — it's older than both of us.",
+  "A fair swap, then. Shake on it.",
+];
+
+/** Conversations with locals. */
+const TALK_LINES = [
+  "Tell me how the harvest treated you.",
+  "I heard a rumour three valleys over — want the short version?",
+  "Your well water's honest. Not every place can say that.",
+  "Sit a minute. Roads are quieter with company.",
+  "That scar? Long story. The funny part's at the end.",
+  "Keep your children off the fen after dark. Old advice. Still good.",
+];
+
+/** Story beats — longer linger lines. */
+const STORY_LINES = [
+  "Once I traded a song for a boat ride and still got wet.",
+  "There was a king who banned whistling. Lasted a week.",
+  "I met a fox who spoke better than most mayors.",
+  "In the watchtower they keep a candle for travellers. I left it burning.",
+  "The first lute I owned had three strings and more opinions than I did.",
+  "Remind me someday about the inn that charged for silence.",
 ];
 
 /**
@@ -575,6 +616,30 @@ export class AdventureDirector {
         : "travelling");
     this.activityBeforeHold = null;
     this.setActivity(restore);
+  }
+
+  /**
+   * After a song: pack up, leave the stop if he was lingering, and take the
+   * road again. Prefer `hold(false)` when he should finish talking/trading
+   * first — this forces the next leg immediately.
+   */
+  resumeTravelling(): void {
+    this.held = false;
+    this.activityBeforeHold = null;
+    this.pace = 0;
+    this.state.speed = 0;
+
+    const place = this.state.stop;
+    if (place) {
+      this.state.dwellRemaining = 0;
+      this.discoverRemaining = 0;
+      this.state.stop = null;
+      this.callbacks.onDepart?.(place);
+      this.chooseDestination();
+      return;
+    }
+
+    this.setActivity("travelling");
   }
 
   update(delta: number): Readonly<AdventureState> {
@@ -874,18 +939,57 @@ export class AdventureDirector {
     this.stuckTime += dt;
     if (this.stuckTime < STUCK_PATIENCE) return;
 
-    const clear = nearestClearPoint(this.x, this.z, BARD_RADIUS);
-    const jump = Math.hypot(clear.x - this.x, clear.z - this.z);
-    this.x = clear.x;
-    this.z = clear.z;
     this.stuckTime = 0;
     this.unstickCooldown = UNSTICK_COOLDOWN;
 
-    // A short shuffle out of a doorway is nothing. Being thrown metres means the
-    // route was through solid ground, so throw the route away with it.
-    if (jump > 3 && this.state.destination) {
+    const clear = nearestClearPoint(this.x, this.z, BARD_RADIUS);
+    const jump = Math.hypot(clear.x - this.x, clear.z - this.z);
+
+    if (jump <= MAX_UNSTICK_JUMP) {
+      this.x = clear.x;
+      this.z = clear.z;
+    } else {
+      // Large snaps read as teleports. Nudge locally, then re-route around it.
+      this.nudgeClearLocal();
+      this.sidestep();
+      if (this.state.destination) {
+        this.route = this.planRoute(this.goal);
+        this.routeIndex = 0;
+        this.detours = Math.max(this.detours, 2);
+      }
+      // Still overlapping after a local probe — accept the clear point only as
+      // a last resort (usually a doorway / nested collider).
+      if (isBlocked(this.x, this.z, BARD_RADIUS)) {
+        this.x = clear.x;
+        this.z = clear.z;
+      }
+      return;
+    }
+
+    if (jump > 1.2 && this.state.destination) {
       this.route = this.planRoute(this.goal);
       this.routeIndex = 0;
+    }
+  }
+
+  /** Small ring search so un-stick never hurls him across the green. */
+  private nudgeClearLocal(): void {
+    const reaches = [1.1, 1.7, 2.3];
+    const angles = [0.55, -0.55, 1.15, -1.15, 1.85, -1.85, Math.PI];
+    for (const reach of reaches) {
+      for (const angle of angles) {
+        const heading = wrapAngle(this.heading + angle);
+        const x = this.x + Math.sin(heading) * reach;
+        const z = this.z + Math.cos(heading) * reach;
+        if (isBlocked(x, z, BARD_RADIUS)) continue;
+        const clear = nearestClearPoint(x, z, BARD_RADIUS);
+        if (Math.hypot(clear.x - this.x, clear.z - this.z) > MAX_UNSTICK_JUMP) {
+          continue;
+        }
+        this.x = clear.x;
+        this.z = clear.z;
+        return;
+      }
     }
   }
 
@@ -907,9 +1011,13 @@ export class AdventureDirector {
     // above the floor; the floor exists because a two-second visit to somewhere
     // that took four minutes to reach reads as a bug.
     const dwellScale =
-      place.activity === "trading" ? this.rng.range(1.05, 1.35) : this.rng.range(0.85, 1.2);
-    this.state.dwellRemaining = Math.max(10, place.dwell) * dwellScale;
-    this.idleHeading = wrapAngle(this.heading + this.rng.range(-1.2, 1.2));
+      place.activity === "trading"
+        ? this.rng.range(1.15, 1.45)
+        : place.activity === "talking" || place.activity === "resting"
+          ? this.rng.range(1.1, 1.4)
+          : this.rng.range(0.9, 1.25);
+    this.state.dwellRemaining = Math.max(14, place.dwell) * dwellScale;
+    this.faceCompany();
 
     const loreId = place.loreId;
     const discovered = loreId !== undefined && !this.lore.has(loreId);
@@ -932,11 +1040,62 @@ export class AdventureDirector {
     }
     if (place.waresTag) this.callbacks.onTrade?.(place.waresTag, place);
 
-    this.say(
-      place.lines.length ? this.rng.pick(place.lines) : this.rng.pick(ARRIVAL_LINES),
-      this.state.activity
-    );
-    this.chatterTimer = this.rng.range(14, 24);
+    this.say(this.arrivalLine(place), this.state.activity);
+    // First conversation beat soon after he settles in.
+    this.chatterTimer = this.rng.range(6, 12);
+  }
+
+  /** Turn toward the nearest person so talks/trades read as face-to-face. */
+  private faceCompany(): void {
+    let bestDist = 9;
+    let bestHeading: number | null = null;
+    for (const npc of NPCS) {
+      if (isAnimal(npc.kind)) continue;
+      const dx = npc.x - this.x;
+      const dz = npc.z - this.z;
+      const distance = Math.hypot(dx, dz);
+      if (distance >= bestDist) continue;
+      bestDist = distance;
+      bestHeading = Math.atan2(dx, dz);
+    }
+    this.idleHeading =
+      bestHeading ?? wrapAngle(this.heading + this.rng.range(-0.9, 0.9));
+  }
+
+  private arrivalLine(place: Destination): string {
+    if (place.lines.length && this.rng.next() < 0.7) {
+      return this.rng.pick(place.lines);
+    }
+    switch (place.activity) {
+      case "trading":
+        return this.rng.pick([
+          `Market day energy at ${place.name}. Let's see the stalls.`,
+          "Anyone buying a song with their bread?",
+          this.rng.pick(TRADE_LINES),
+        ]);
+      case "talking":
+        return this.rng.pick([
+          `Hail, ${place.name}. Got a minute for a traveller?`,
+          this.rng.pick(TALK_LINES),
+        ]);
+      case "resting":
+        return this.rng.pick([
+          "Fire looks honest. Mind if I warm the strings?",
+          this.rng.pick(STORY_LINES),
+        ]);
+      case "performing":
+        return this.rng.pick(SONG_INTRO_LINES);
+      case "discovering":
+      case "wondering":
+        return this.rng.pick([
+          `${place.name}. Didn't expect this turn.`,
+          this.rng.pick(ARRIVAL_LINES),
+        ]);
+      default:
+        return place.lines.length
+          ? this.rng.pick(place.lines)
+          : this.rng.pick(ARRIVAL_LINES);
+    }
   }
 
   private dwell(dt: number): void {
@@ -969,17 +1128,15 @@ export class AdventureDirector {
   // --- Choosing where to go next -----------------------------------------
 
   /**
-   * Interest, not itinerary.
+   * Interest, not itinerary — with enough memory and variety that he explores
+   * the valley instead of commuting the same green.
    *
-   * The hard rule is the exclusion: he will not go back somewhere until he has
-   * seen up to ten other places, which is what stops him ping-ponging between
-   * two neighbouring villages forever. Everything after that is a weighting —
-   * somewhere new beats somewhere familiar, unclaimed lore and unoffered quests
-   * pull, and distance discourages without forbidding, because a bard who never
-   * crosses the map is not wandering, he is commuting.
+   * Hard rule: recent places are excluded. Soft rules: prefer unvisited ground,
+   * new regions and activities, medium-distance legs, and sometimes the next
+   * stop on the authored tour.
    */
   private chooseDestination(): void {
-    const current = this.state.destination;
+    const current = this.state.destination ?? this.state.stop;
     const excluded = new Set(this.recent);
 
     let candidates = PLACES.filter(
@@ -994,32 +1151,43 @@ export class AdventureDirector {
       return;
     }
 
-    let total = 0;
-    const weights = candidates.map((place) => {
-      const distance = Math.hypot(place.x - this.x, place.z - this.z);
-      let weight = 1;
-      if (!this.visited.has(place.id)) weight *= 2.4;
-      if (place.loreId && !this.lore.has(place.loreId)) weight *= 1.6;
-      if (place.questId && !this.quests.has(place.questId)) weight *= 1.5;
-      if (place.activity !== current?.activity) weight *= 1.15;
-      // Markets and stalls pull harder — he is a travelling trader as much as
-      // a walker, and should turn up at people with wares often.
-      if (place.activity === "trading") weight *= 3.2;
-      else if (place.waresTag) weight *= 2.1;
-      // Gentle: at 400 metres a place is still a quarter as likely as one next
-      // door, which over an afternoon is plenty to get him everywhere.
-      weight *= 160 / (160 + distance);
-      total += weight;
-      return weight;
-    });
+    let chosen: Destination | null = null;
+    if (this.rng.next() < TOUR_FOLLOW_CHANCE) {
+      chosen = this.nextTourCandidate(excluded, current?.id ?? null);
+    }
 
-    let roll = this.rng.next() * total;
-    let chosen = candidates[candidates.length - 1];
-    for (let i = 0; i < candidates.length; i++) {
-      roll -= weights[i];
-      if (roll <= 0) {
-        chosen = candidates[i];
-        break;
+    if (!chosen) {
+      let total = 0;
+      const weights = candidates.map((place) => {
+        const distance = Math.hypot(place.x - this.x, place.z - this.z);
+        let weight = 1;
+        if (!this.visited.has(place.id)) weight *= 3.1;
+        if (place.loreId && !this.lore.has(place.loreId)) weight *= 1.7;
+        if (place.questId && !this.quests.has(place.questId)) weight *= 1.55;
+        if (place.activity !== current?.activity) weight *= 1.35;
+        if (place.regionId && place.regionId !== this.state.region.id) {
+          weight *= 1.45;
+        }
+        // Mild market interest — not enough to pin him to Wanderer's Green.
+        if (place.activity === "trading") weight *= 1.25;
+        else if (place.waresTag) weight *= 1.1;
+        // Discourage the stall next door; prefer a real walk.
+        if (distance < 40) weight *= 0.28;
+        else if (distance < 80) weight *= 0.7;
+        // Soft distance falloff — far corners stay reachable over an afternoon.
+        weight *= 240 / (240 + distance);
+        total += weight;
+        return weight;
+      });
+
+      let roll = this.rng.next() * total;
+      chosen = candidates[candidates.length - 1];
+      for (let i = 0; i < candidates.length; i++) {
+        roll -= weights[i];
+        if (roll <= 0) {
+          chosen = candidates[i];
+          break;
+        }
       }
     }
 
@@ -1028,6 +1196,10 @@ export class AdventureDirector {
     // they describe — the well, the stall, the shrine — and the thing they
     // describe usually has a collider on it.
     this.goal = nearestClearPoint(chosen.x, chosen.z, BARD_RADIUS);
+    // Prefer plaza / roadside offset if the landmark itself is solid.
+    if (isBlocked(this.goal.x, this.goal.z, BARD_RADIUS * 1.2)) {
+      this.goal = nearestClearPoint(chosen.x, chosen.z, BARD_RADIUS * 1.35);
+    }
     this.route = this.planRoute(this.goal);
     this.routeIndex = 0;
 
@@ -1035,6 +1207,36 @@ export class AdventureDirector {
     this.stallTime = 0;
     this.detours = 0;
     this.setActivity("travelling");
+  }
+
+  /** Next place along the authored TOUR that isn't recent / current. */
+  private nextTourCandidate(
+    excluded: Set<string>,
+    currentId: string | null
+  ): Destination | null {
+    let start = currentId
+      ? PLACES.findIndex((place) => place.id === currentId)
+      : -1;
+    if (start < 0) {
+      // Nearest place on the tour to where he stands.
+      let best = 0;
+      let bestDist = Infinity;
+      for (let i = 0; i < PLACES.length; i++) {
+        const distance = Math.hypot(PLACES[i].x - this.x, PLACES[i].z - this.z);
+        if (distance < bestDist) {
+          bestDist = distance;
+          best = i;
+        }
+      }
+      start = best;
+    }
+
+    for (let step = 1; step <= PLACES.length; step++) {
+      const place = PLACES[(start + step) % PLACES.length];
+      if (place.id === currentId || excluded.has(place.id)) continue;
+      return place;
+    }
+    return null;
   }
 
   private remember(id: string): void {
@@ -1134,17 +1336,50 @@ export class AdventureDirector {
   private chatter(dt: number): void {
     this.chatterTimer -= dt;
     if (this.chatterTimer > 0) return;
-    this.chatterTimer = this.rng.range(26, 60);
 
     if (this.state.stop) {
-      const lines = this.state.stop.lines;
-      if (lines.length) this.say(this.rng.pick(lines), this.state.activity);
+      this.chatterTimer = this.rng.range(10, 18);
+      this.say(this.dwellLine(this.state.stop), this.state.activity);
+      // Drift attention toward whoever he is with between lines.
+      if (this.rng.next() < 0.55) this.faceCompany();
       return;
     }
+
+    this.chatterTimer = this.rng.range(26, 60);
     // Silent while pivoting on the spot — a line delivered mid-turn reads as him
     // talking to a hedge.
     if (this.state.speed < 0.05) return;
     this.say(this.rng.pick(TRAVEL_LINES), "travelling");
+  }
+
+  private dwellLine(place: Destination): string {
+    const authored = place.lines;
+    switch (this.state.activity) {
+      case "trading":
+        return this.rng.pick(
+          authored.length && this.rng.next() < 0.35
+            ? [...TRADE_LINES, ...authored]
+            : TRADE_LINES
+        );
+      case "talking":
+        return this.rng.pick(
+          authored.length ? [...TALK_LINES, ...authored] : TALK_LINES
+        );
+      case "resting":
+        return this.rng.pick(
+          authored.length ? [...STORY_LINES, ...authored] : STORY_LINES
+        );
+      case "performing":
+        return this.rng.pick([...SONG_INTRO_LINES, ...STORY_LINES]);
+      case "discovering":
+        return authored.length
+          ? this.rng.pick(authored)
+          : this.rng.pick(STORY_LINES);
+      default:
+        return authored.length
+          ? this.rng.pick(authored)
+          : this.rng.pick(TALK_LINES);
+    }
   }
 
   private say(line: string, activity: Activity): void {

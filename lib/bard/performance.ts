@@ -5,7 +5,7 @@
  * sound until `resume()` is called from a click.
  */
 
-import { DEFAULT_SONG_ID, getSong, type Song } from "./songs";
+import { getSong, pickRandomSong, type Song } from "./songs";
 
 export type PerformanceEvent =
   | { type: "song-start"; song: Song }
@@ -75,6 +75,7 @@ export class BardPerformance {
   private timers: ReturnType<typeof setTimeout>[] = [];
   private sources: AudioBufferSourceNode[] = [];
   private currentSong: Song | null = null;
+  private lastSongId: string | null = null;
   /** Latest spectrum — SongAura reads this every frame while a song plays. */
   readonly levels: MusicLevels = { ...EMPTY_MUSIC_LEVELS };
 
@@ -190,7 +191,10 @@ export class BardPerformance {
     );
   }
 
-  /** Plays a song from `public/music/`. No synthesized fallback. */
+  /**
+   * Plays a song from `public/music/`. No synthesized fallback.
+   * Omit `songId` to pick randomly from the repertoire (no immediate repeats).
+   */
   async play(songId?: string) {
     await this.resume();
     if (!this.ctx) return;
@@ -202,7 +206,10 @@ export class BardPerformance {
       this.master.gain.setValueAtTime(0.8, t);
     }
 
-    const song = getSong(songId ?? DEFAULT_SONG_ID);
+    const song = songId
+      ? getSong(songId)
+      : pickRandomSong(this.lastSongId ?? undefined);
+    this.lastSongId = song.id;
     this.currentSong = song;
     this.emit({ type: "song-start", song });
     await this.playRecording(song);

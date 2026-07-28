@@ -11,7 +11,7 @@ export const FEATURES = [
 
 /** Footnote for starred features on the marketing page. */
 export const FEATURES_NOTE =
-  "* AI chat uses paid API usage — the model and the rest of Punaab stay free.";
+  "* AI chat uses paid API usage — the model, project, lore, and the rest of Punaab stay free.";
 
 export const DASHBOARD_NAV = [
   { href: "/dashboard", label: "Overview" },

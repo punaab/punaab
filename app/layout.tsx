@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
 import { Cinzel, Lora } from "next/font/google";
 import "./globals.css";
@@ -20,6 +20,12 @@ export const metadata: Metadata = {
   description:
     "A free AI bard for your game — songs, shops, chatter, and the open road.",
   icons: { icon: "/assets/punaab-logo.png" },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

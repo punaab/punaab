@@ -1,14 +1,14 @@
-import Link from "next/link";
 import Image from "next/image";
 import { AuthNav } from "@/components/AuthControls";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { PumpTicker } from "@/components/marketing/PumpTicker";
+import { SiteLink } from "@/components/marketing/SiteLink";
 import { COMMUNITY } from "@/lib/community";
 
 const NAV = [
   { href: "/#project", label: "Project" },
   { href: "/music", label: "Music" },
-  { href: "/embeds", label: "Embeds" },
+  { href: "/plugins", label: "Plugins" },
   { href: "/pricing", label: "Plans" },
   { href: "/docs", label: "How-To" },
   { href: "/demo", label: "Demo" },
@@ -20,7 +20,7 @@ export function MarketingShell({ children }: { children: React.ReactNode }) {
       <LoadingScreen />
       <div className="mkt-top">
         <header className="mkt-header">
-          <Link href="/" className="brand">
+          <SiteLink href="/" className="brand">
             <Image
               src="/assets/solana.png"
               alt="Punaab"
@@ -35,19 +35,19 @@ export function MarketingShell({ children }: { children: React.ReactNode }) {
                 <span>Bard</span>
               </span>
             </span>
-          </Link>
+          </SiteLink>
           <nav className="mkt-nav" aria-label="Primary">
             {NAV.map((item) => (
-              <Link key={item.href} href={item.href} className="nav-pill">
+              <SiteLink key={item.href} href={item.href} className="nav-pill">
                 {item.label}
-              </Link>
+              </SiteLink>
             ))}
           </nav>
           <div className="mkt-actions">
             <AuthNav />
-            <Link href="/dashboard" className="btn primary btn-glow header-cta">
+            <SiteLink href="/dashboard" className="btn primary btn-glow header-cta">
               Let’s Build!
-            </Link>
+            </SiteLink>
           </div>
         </header>
         <PumpTicker />
@@ -56,17 +56,15 @@ export function MarketingShell({ children }: { children: React.ReactNode }) {
       <footer className="site-footer">
         <span>© 2026 Punaab</span>
         <span className="dot">•</span>
-        <Link href="/demo">Free download</Link>
+        <SiteLink href="/demo">Free download</SiteLink>
         <span className="dot">•</span>
-        <Link href="/docs">How-To</Link>
+        <SiteLink href="/docs">How-To</SiteLink>
         <span className="dot">•</span>
-        <Link href="/music">Music</Link>
+        <SiteLink href="/music">Music</SiteLink>
         <span className="dot">•</span>
-        <Link href="/embeds">Embeds</Link>
+        <SiteLink href="/plugins">Plugins</SiteLink>
         <span className="dot">•</span>
-        <Link href="/pricing">Plans</Link>
-        <span className="dot">•</span>
-        <Link href="/meet">Meet</Link>
+        <SiteLink href="/pricing">Plans</SiteLink>
         <div className="site-footer-socials">
           <a href={COMMUNITY.x} target="_blank" rel="noopener noreferrer">
             X Twitter

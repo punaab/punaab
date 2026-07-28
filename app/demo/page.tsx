@@ -1,7 +1,7 @@
-import Link from "next/link";
 import Image from "next/image";
 import { MarketingShell } from "@/components/marketing/MarketingShell";
 import { CommunityLinks } from "@/components/marketing/CommunityLinks";
+import { SiteLink } from "@/components/marketing/SiteLink";
 import { BardDownload } from "@/components/downloads/BardDownload";
 import { COMMUNITY_PITCH } from "@/lib/community";
 
@@ -49,12 +49,12 @@ export default function DemoPage() {
           />
           <p id="watch-video">Watch Video placeholder — embed your launch trailer here.</p>
           <div className="hero-actions" style={{ justifyContent: "center" }}>
-            <Link className="btn primary" href="/dashboard">
+            <SiteLink className="btn primary" href="/dashboard">
               Let’s Build!
-            </Link>
-            <Link className="btn ghost" href="/docs/getting-started">
+            </SiteLink>
+            <SiteLink className="btn ghost" href="/docs/getting-started">
               5-minute guide
-            </Link>
+            </SiteLink>
           </div>
         </div>
       </section>

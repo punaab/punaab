@@ -21,6 +21,12 @@ export const SONGS: Song[] = [
     blurb: "Punaab's walking ballad — the road, the longing, and the way back.",
     audioFile: "until-it-leads-me-home.mp3",
   },
+  {
+    id: "the-grass-grows-green",
+    title: "The Grass Grows Green",
+    blurb: "A soft meadow air — green shoulders of the road, and light on the verge.",
+    audioFile: "the-grass-grows-green.mp3",
+  },
 ];
 
 /** Every stop / quest that asks for a song resolves here. */
@@ -28,4 +34,13 @@ export const DEFAULT_SONG_ID = SONGS[0].id;
 
 export function getSong(id: string): Song {
   return SONGS.find((s) => s.id === id) ?? SONGS[0];
+}
+
+/** One track from the repertoire, avoiding an immediate repeat when possible. */
+export function pickRandomSong(excludeId?: string): Song {
+  const pool =
+    excludeId && SONGS.length > 1
+      ? SONGS.filter((song) => song.id !== excludeId)
+      : SONGS;
+  return pool[Math.floor(Math.random() * pool.length)] ?? SONGS[0];
 }

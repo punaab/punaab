@@ -195,8 +195,8 @@ export function EmbedManager({
             <Link className="btn primary btn-glow" href="/pricing">
               See plans
             </Link>
-            <Link className="btn ghost" href="/embeds">
-              Preview on /embeds
+            <Link className="btn ghost" href="/plugins">
+              Preview on /plugins
             </Link>
           </div>
         </article>

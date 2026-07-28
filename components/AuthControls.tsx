@@ -6,7 +6,7 @@ import {
   UserButton,
   useAuth,
 } from "@clerk/nextjs";
-import Link from "next/link";
+import { SiteLink } from "@/components/marketing/SiteLink";
 
 export function AuthNav() {
   const { isLoaded, isSignedIn } = useAuth();
@@ -16,9 +16,9 @@ export function AuthNav() {
   if (isSignedIn) {
     return (
       <div className="account-cluster">
-        <Link href="/dashboard" className="nav-pill nav-pill-accent">
+        <SiteLink href="/dashboard" className="nav-pill nav-pill-accent">
           Dashboard
-        </Link>
+        </SiteLink>
         <UserButton />
       </div>
     );

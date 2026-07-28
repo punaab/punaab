@@ -22,6 +22,14 @@ export const MUSIC_TRACKS: MusicTrack[] = [
     durationHint: "~3:30",
     tags: ["theme", "ballad", "travel"],
   },
+  {
+    id: "the-grass-grows-green",
+    title: "The Grass Grows Green",
+    blurb: "A meadow tune for green verges and quiet light on the road.",
+    file: "the-grass-grows-green.mp3",
+    durationHint: "~4:00",
+    tags: ["meadow", "ballad", "travel"],
+  },
 ];
 
 export function musicUrl(file: string) {

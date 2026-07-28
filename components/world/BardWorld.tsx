@@ -44,7 +44,7 @@ import {
   EMPTY_MUSIC_LEVELS,
   type MusicLevels,
 } from "@/lib/bard/performance";
-import { getSong } from "@/lib/bard/songs";
+import { walkAmbience } from "@/lib/bard/walk-ambience";
 import { detectQuality, type QualityBudget } from "@/lib/world/quality";
 
 /**
@@ -319,26 +319,57 @@ export function BardWorld() {
   }, []);
 
   // --- The adventure ------------------------------------------------------
+  // Callbacks live on a ref so the director is constructed once — remounting
+  // him snaps Punaab back to Wanderer's Cross every time `say` identity changes.
+  const adventureCallbacks = useRef({
+    onSay: (_line: string, _activity: Activity) => {},
+    onArrive: (_stop: Stop) => {},
+    onTrade: (_waresTag: string, _stop: Stop) => {},
+    onLore: (_loreId: string, _stop: Stop) => {},
+    onDepart: (_stop: Stop) => {},
+  });
+
+  adventureCallbacks.current = {
+    onSay: (line, currentActivity) => {
+      say(line, currentActivity === "wondering" ? "thought" : "speech");
+    },
+    onArrive: (stop: Stop) => {
+      setCaption(captionFor(stop));
+      if (captionTimer.current) clearTimeout(captionTimer.current);
+      // Keep the stop caption for most of the dwell so it isn't a flash.
+      const lingerMs = Math.max(12_000, (stop.dwell || 14) * 900);
+      captionTimer.current = setTimeout(() => {
+        setCaption("Punaab is on the road.");
+      }, lingerMs);
+      if (audioOnRef.current && stop.songId) {
+        // One random track from the repertoire — never a fixed setlist.
+        void performance.play();
+      }
+    },
+    onTrade: (_waresTag, stop) => {
+      setCaption(`Punaab is trading at ${stop.name}.`);
+    },
+    onLore: (_loreId, stop) => {
+      say(`Something worth remembering at ${stop.name}.`, "thought");
+    },
+    onDepart: () => {
+      setCaption("Punaab is on the road.");
+    },
+  };
+
   const director = useMemo(
     () =>
       new AdventureDirector({
-        onSay: (line, currentActivity) => {
-          say(line, currentActivity === "wondering" ? "thought" : "speech");
-        },
-        onArrive: (stop: Stop) => {
-          setCaption(captionFor(stop));
-          if (captionTimer.current) clearTimeout(captionTimer.current);
-          captionTimer.current = setTimeout(() => {
-            setCaption("Punaab is on the road.");
-          }, 7000);
-          if (stop.songId && audioOnRef.current) {
-            void performance.play(stop.songId);
-          } else if (stop.songId) {
-            setNowPlaying(getSong(stop.songId).title);
-          }
-        },
+        onSay: (line, activity) =>
+          adventureCallbacks.current.onSay(line, activity),
+        onArrive: (stop) => adventureCallbacks.current.onArrive(stop),
+        onTrade: (waresTag, stop) =>
+          adventureCallbacks.current.onTrade(waresTag, stop),
+        onLore: (loreId, stop) =>
+          adventureCallbacks.current.onLore(loreId, stop),
+        onDepart: (stop) => adventureCallbacks.current.onDepart(stop),
       }),
-    [performance, say]
+    []
   );
 
   // --- Audio events -> animation and bubbles ------------------------------
@@ -413,6 +444,64 @@ export function BardWorld() {
     return () => observer.disconnect();
   }, [nowPlaying]);
 
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [immersive, setImmersive] = useState(false);
+  const [uiHidden, setUiHidden] = useState(false);
+
+  const exitImmersive = useCallback(async () => {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      }
+    } catch {
+      // Ignore — CSS fallback still clears below.
+    }
+    setImmersive(false);
+    setUiHidden(false);
+  }, []);
+
+  const enterImmersive = useCallback(async () => {
+    const el = stageRef.current;
+    if (!el) return;
+    setImmersive(true);
+    try {
+      if (el.requestFullscreen) {
+        await el.requestFullscreen();
+      }
+    } catch {
+      // iOS / blocked FS — CSS fixed overlay still covers the viewport.
+    }
+  }, []);
+
+  const toggleImmersive = useCallback(() => {
+    if (immersive) void exitImmersive();
+    else void enterImmersive();
+  }, [immersive, enterImmersive, exitImmersive]);
+
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      if (!document.fullscreenElement) {
+        setImmersive(false);
+        setUiHidden(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (!stageRef.current) return;
+      // Esc restores chrome and leaves full screen together.
+      if (uiHidden) setUiHidden(false);
+      if (stageRef.current.classList.contains("is-immersive")) {
+        void exitImmersive();
+      }
+    };
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [exitImmersive, uiHidden]);
+
   const toggleAudio = useCallback(async () => {
     if (audioOn) {
       // Silencing him is a direct consequence of the click, so it happens
@@ -429,9 +518,10 @@ export function BardWorld() {
     }
     // Must happen inside the click for the browser to unlock the context.
     await performance.resume();
+    walkAmbience.unlock();
     audioOnRef.current = true;
     setAudioOn(true);
-    void performance.play("until-it-leads-me-home");
+    void performance.play();
   }, [audioOn, performance]);
 
   const handleActivityChange = useCallback((next: Activity) => {
@@ -439,7 +529,11 @@ export function BardWorld() {
   }, []);
 
   return (
-    <div className="bard-world">
+    <div
+      ref={stageRef}
+      className={`bard-world${immersive ? " is-immersive" : ""}`}
+      onPointerDown={() => walkAmbience.unlock()}
+    >
       {bootScene && (
         <Canvas
           shadows
@@ -472,7 +566,7 @@ export function BardWorld() {
               singing={singing}
               playingMusic={playingMusic}
               activity={activity}
-              bubble={bubble}
+              bubble={uiHidden ? null : bubble}
               onActivityChange={handleActivityChange}
               sampleMusic={sampleMusic}
               enrichWorld={enrichWorld}
@@ -486,73 +580,147 @@ export function BardWorld() {
         <ValleyLoader progress={bootProgress} fading={loaderFading} />
       )}
 
-      {!showLoader && <div className="bard-world-caption">{caption}</div>}
-
-      {!showLoader && (
-        <div className="bard-world-dock">
-          {nowPlaying && (
-            <div className="bard-now-playing" title={nowPlaying}>
-              <span className="bard-now-playing-icon" aria-hidden="true">
-                ♪
-              </span>
-              <div
-                ref={nowPlayingViewportRef}
-                className="bard-now-playing-viewport"
-              >
-                <span
-                  ref={nowPlayingTextRef}
-                  className={`bard-now-playing-text${
-                    nowPlayingOverflows ? " is-scrolling" : ""
-                  }`}
-                >
-                  {nowPlaying}
-                </span>
-              </div>
-            </div>
-          )}
-          <div className="bard-world-footer">
-            <div className="bard-world-hint">
-              Drag to look · The bard walks the road
-            </div>
+      {!showLoader && !uiHidden && (
+        <>
+          <div className="bard-world-caption">{caption}</div>
+          <div className="bard-world-chrome">
             <button
               type="button"
-              className={`bard-sound-toggle${audioOn ? " is-on" : ""}`}
-              onClick={toggleAudio}
-              aria-pressed={audioOn}
+              className="bard-ui-toggle"
+              onClick={(event) => {
+                event.stopPropagation();
+                setUiHidden(true);
+              }}
+              aria-label="Hide UI"
+              title="Hide UI"
             >
-              <svg
-                className="bard-sound-icon"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-                focusable="false"
-              >
-                <path
-                  fill="currentColor"
-                  d="M4 9v6h3.5L14 20V4L7.5 9H4zm11.5 1.1a3.2 3.2 0 0 1 0 3.8l-1.2-1.1a1.6 1.6 0 0 0 0-1.6l1.2-1.1zm2.3-2.6a6.5 6.5 0 0 1 0 8.9l-1.2-1.2a4.8 4.8 0 0 0 0-6.5l1.2-1.2z"
-                />
-              </svg>
-              {audioOn ? "Stop song" : "PLAY A SONG"}
+              Hide UI
+            </button>
+            <button
+              type="button"
+              className={`bard-fs-toggle${immersive ? " is-exit" : ""}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                toggleImmersive();
+              }}
+              aria-pressed={immersive}
+              aria-label={immersive ? "Exit full screen" : "Full screen"}
+              title={immersive ? "Exit full screen (Esc)" : "Full screen"}
+            >
+              {immersive ? (
+                <>
+                  <svg
+                    className="bard-fs-icon"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    <path
+                      fill="currentColor"
+                      d="M9 3H5v4h2V5h2V3zm10 0h-4v2h2v2h2V3zM7 15H5v4h4v-2H7v-2zm12 0h-2v2h-2v2h4v-4z"
+                    />
+                  </svg>
+                  <span>Exit</span>
+                </>
+              ) : (
+                <svg
+                  className="bard-fs-icon"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  focusable="false"
+                >
+                  <path
+                    fill="currentColor"
+                    d="M4 4h6v2H6v4H4V4zm10 0h6v6h-2V6h-4V4zM4 14h2v4h4v2H4v-6zm14 0h2v6h-6v-2h4v-4z"
+                  />
+                </svg>
+              )}
             </button>
           </div>
-        </div>
+
+          <div className="bard-world-dock">
+            {nowPlaying && (
+              <div className="bard-now-playing" title={nowPlaying}>
+                <span className="bard-now-playing-icon" aria-hidden="true">
+                  ♪
+                </span>
+                <div
+                  ref={nowPlayingViewportRef}
+                  className="bard-now-playing-viewport"
+                >
+                  <span
+                    ref={nowPlayingTextRef}
+                    className={`bard-now-playing-text${
+                      nowPlayingOverflows ? " is-scrolling" : ""
+                    }`}
+                  >
+                    {nowPlaying}
+                  </span>
+                </div>
+              </div>
+            )}
+            <div className="bard-world-footer">
+              <div className="bard-world-hint">
+                {immersive
+                  ? "Drag to look · Esc or Exit to leave"
+                  : "Drag to look · The bard walks the road"}
+              </div>
+              <div className="bard-world-footer-actions">
+                {immersive && (
+                  <button
+                    type="button"
+                    className="bard-fs-toggle is-exit bard-fs-toggle-dock"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void exitImmersive();
+                    }}
+                  >
+                    Exit full screen
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className={`bard-sound-toggle${audioOn ? " is-on" : ""}`}
+                  onClick={toggleAudio}
+                  aria-pressed={audioOn}
+                >
+                  <svg
+                    className="bard-sound-icon"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    <path
+                      fill="currentColor"
+                      d="M4 9v6h3.5L14 20V4L7.5 9H4zm11.5 1.1a3.2 3.2 0 0 1 0 3.8l-1.2-1.1a1.6 1.6 0 0 0 0-1.6l1.2-1.1zm2.3-2.6a6.5 6.5 0 0 1 0 8.9l-1.2-1.2a4.8 4.8 0 0 0 0-6.5l1.2-1.2z"
+                    />
+                  </svg>
+                  {audioOn ? "Stop song" : "PLAY A SONG"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
 }
 
 function captionFor(stop: Stop): string {
-  switch (stop.id) {
-    case "village":
-      return "Punaab is trading in the village.";
-    case "stones":
-      return "Punaab is singing at the standing stones.";
-    case "ruin":
-      return "Punaab is exploring the old watchtower.";
-    case "camp":
-      return "Punaab is resting by the fire.";
-    case "lake":
-      return "Punaab is playing by the lake.";
+  switch (stop.activity) {
+    case "trading":
+      return `Punaab is trading at ${stop.name}.`;
+    case "talking":
+      return `Punaab is talking with folks at ${stop.name}.`;
+    case "resting":
+      return `Punaab is resting at ${stop.name}.`;
+    case "performing":
+      return `Punaab is playing at ${stop.name}.`;
+    case "discovering":
+      return `Punaab discovered ${stop.name}.`;
+    case "wondering":
+      return `Punaab is taking in ${stop.name}.`;
     default:
-      return "Punaab has stopped to talk.";
+      return `Punaab stopped at ${stop.name}.`;
   }
 }

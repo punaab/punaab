@@ -16,9 +16,19 @@ import {
 import { heightAt, normalAt } from "@/lib/world/terrain";
 import { SongAura } from "@/components/world/SongAura";
 import type { MusicLevels } from "@/lib/bard/performance";
+import { walkAmbience } from "@/lib/bard/walk-ambience";
 
 /** Idle / strum-idle play at half speed — unhurried. */
 const IDLE_RATE = 0.5;
+
+function pickLongestClip(
+  clips: THREE.AnimationClip[]
+): THREE.AnimationClip | null {
+  return clips.reduce<THREE.AnimationClip | null>(
+    (best, clip) => (!best || clip.duration > best.duration ? clip : best),
+    null
+  );
+}
 
 /**
  * Divisor for walk clip timeScale. Tuned so full travel pace plays at ~0.5×
@@ -27,11 +37,13 @@ const IDLE_RATE = 0.5;
 const WALK_CLIP_SPEED = 1.16;
 
 /**
- * Sole sits a touch above the heightfield so the shoe mesh (below the toe
- * bone) never clips. Larger than a hairline — tiny clearance still read as
- * sunk on slopes once the mesh is considered.
+ * Sole sits a hair above the heightfield so the shoe mesh never clips. Kept
+ * tiny — larger clearance reads as floating once the LOD terrain mesh sits
+ * slightly below the analytic heightAt sample.
  */
-const FOOT_CLEARANCE = 0.028;
+const FOOT_CLEARANCE = 0.006;
+/** Cap plant-lift so a bad toe sample cannot hoist him a handspan off the dirt. */
+const MAX_FOOT_LIFT = 0.05;
 
 /** How fast he blends into the standing strum. */
 const PLAY_FOLLOW = 4.5;
@@ -196,16 +208,18 @@ export function Bard({
     return anchor;
   }, [model]);
 
+  // Prefer Foot (sole) over ToeBase — toes sit a few centimetres higher and
+  // were biasing plant-lift so he hovered after each step.
   const leftToe = useMemo(
     () =>
-      model.getObjectByName("LeftToeBase") ??
-      model.getObjectByName("LeftFoot"),
+      model.getObjectByName("LeftFoot") ??
+      model.getObjectByName("LeftToeBase"),
     [model]
   );
   const rightToe = useMemo(
     () =>
-      model.getObjectByName("RightToeBase") ??
-      model.getObjectByName("RightFoot"),
+      model.getObjectByName("RightFoot") ??
+      model.getObjectByName("RightToeBase"),
     [model]
   );
 
@@ -233,10 +247,20 @@ export function Bard({
   const lootRollQuat = useMemo(() => new THREE.Quaternion(), []);
   const rootWorldQuat = useMemo(() => new THREE.Quaternion(), []);
 
+  const idleClip = useMemo(
+    () => pickLongestClip(idleGltf.animations),
+    [idleGltf.animations]
+  );
+  const walkClip = useMemo(
+    () => pickLongestClip(walkGltf.animations),
+    [walkGltf.animations]
+  );
+  const strumIdleClip = useMemo(
+    () => pickLongestClip(strumIdleGltf.animations),
+    [strumIdleGltf.animations]
+  );
+
   useEffect(() => {
-    const idleClip = idleGltf.animations[0];
-    const walkClip = walkGltf.animations[0];
-    const strumIdleClip = strumIdleGltf.animations[0];
     if (!idleClip || !walkClip || !strumIdleClip) return;
 
     const mixer = new THREE.AnimationMixer(model);
@@ -266,7 +290,7 @@ export function Bard({
       mixer.uncacheRoot(model);
       locomotionRef.current = null;
     };
-  }, [model, idleGltf.animations, walkGltf.animations, strumIdleGltf.animations]);
+  }, [model, idleClip, walkClip, strumIdleClip]);
 
   useEffect(() => {
     bardRef.current = wrapperRef.current;
@@ -274,6 +298,7 @@ export function Bard({
     return () => {
       bardRef.current = null;
       headAnchorRef.current = null;
+      walkAmbience.setWalking(0);
     };
   }, [bardRef, headAnchorRef, headAnchor]);
 
@@ -297,6 +322,7 @@ export function Bard({
       restRemaining.current -= delta;
       if (restRemaining.current <= 0) {
         performPhase.current = "loose";
+        // Song is done — keep lingering to talk/trade if he was at a stop.
         director.hold(false);
       }
     }
@@ -350,6 +376,9 @@ export function Bard({
     // Full standing strum while a song is on — never a walking strum.
     loco.strumIdle.setEffectiveWeight(p);
 
+    // Grass loop follows the walk blend; silent while he stands or strums.
+    walkAmbience.setWalking(w * (1 - p));
+
     // Loot only while he is mid-song (or blending in/out of it).
     loot.visible = p > 0.08;
     loot.scale.setScalar(LOOT_WORLD_SCALE * Math.min(1, p * 1.15));
@@ -385,8 +414,8 @@ export function Bard({
     loco.mixer.update(delta);
 
     // Grounding: place the root on the heightfield, then only PUSH UP if a
-    // toe digs in. Pulling down to the "lower" foot was sinking him whenever
-    // both soles sampled slightly above a crest or mid-stride.
+    // sole digs in. Follow both up and down so a crest plant cannot leave him
+    // hovering for half a stride.
     const baseY = heightAt(x, z) + FOOT_CLEARANCE;
     root.position.y = baseY;
     root.updateMatrixWorld(true);
@@ -403,16 +432,19 @@ export function Bard({
         heightAt(rightFootWorld.x, rightFootWorld.z) +
         FOOT_CLEARANCE -
         rightFootWorld.y;
-      extraLift = Math.max(0, leftLift, rightLift);
+      extraLift = Math.min(
+        MAX_FOOT_LIFT,
+        Math.max(0, leftLift, rightLift)
+      );
     }
 
     const targetY = baseY + extraLift;
-    if (groundedY.current === null || targetY >= groundedY.current) {
+    if (groundedY.current === null) {
       groundedY.current = targetY;
     } else {
-      // Ease downhill so a one-frame crest sample cannot drop him into dirt.
+      const rate = targetY >= groundedY.current ? 24 : 18;
       groundedY.current +=
-        (targetY - groundedY.current) * Math.min(1, delta * 10);
+        (targetY - groundedY.current) * Math.min(1, delta * rate);
     }
     root.position.y = groundedY.current;
 

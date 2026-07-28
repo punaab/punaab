@@ -1,7 +1,7 @@
-import Link from "next/link";
 import { MarketingShell } from "@/components/marketing/MarketingShell";
 import { BardWorldLazy } from "@/components/marketing/BardWorldLazy";
 import { CommunityLinks } from "@/components/marketing/CommunityLinks";
+import { SiteLink } from "@/components/marketing/SiteLink";
 import { COMMUNITY_PITCH } from "@/lib/community";
 import { FEATURES, FEATURES_NOTE } from "@/lib/nav";
 
@@ -28,12 +28,12 @@ export default function HomePage() {
             <span className="hero-inspiration-rule" />
           </p>
           <div className="hero-actions">
-            <Link className="btn primary btn-glow btn-xl" href="/demo">
+            <SiteLink className="btn primary btn-glow btn-xl" href="/demo">
               Free download
-            </Link>
-            <Link className="btn ghost" href="/#project">
+            </SiteLink>
+            <SiteLink className="btn ghost" href="/#project">
               Join the community
-            </Link>
+            </SiteLink>
           </div>
         </div>
         <div className="hero-stage hero-stage-3d">
@@ -57,14 +57,14 @@ export default function HomePage() {
       </section>
 
       <section className="section cta-band cta-glow">
-        <h2>Drop Punaab into Godot</h2>
+        <h2>Drop Punaab Into Your Game</h2>
         <p>
           Start a project, take your key, fetch the plugin, paste it in, and
           hear him play.
         </p>
-        <Link className="btn primary btn-glow btn-xl" href="/docs/getting-started">
+        <SiteLink className="btn primary btn-glow btn-xl" href="/docs/getting-started">
           Start in 5 minutes
-        </Link>
+        </SiteLink>
       </section>
     </MarketingShell>
   );

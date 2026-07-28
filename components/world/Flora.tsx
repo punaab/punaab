@@ -1714,9 +1714,14 @@ function placeClump(
 
     results.push({
       x: cx + ox,
-      // The clump's own gradient carries each member to its own height. Over a
-      // couple of metres that is accurate to centimetres and it costs nothing.
-      y: groundScratch.y + groundScratch.dydx * ox + groundScratch.dydz * oz,
+      // The clump's own gradient carries each member to its own height. Sink a
+      // touch so plants meet the drawn LOD mesh (which sits below heightAt
+      // between vertices) instead of hovering a centimetre above it.
+      y:
+        groundScratch.y +
+        groundScratch.dydx * ox +
+        groundScratch.dydz * oz -
+        0.025,
       z: cz + oz,
       scale: lerp(
         options.scale[0],
@@ -2313,11 +2318,14 @@ function grassVertexShader(index: number, ring: GrassRing, density: number): str
       vec2 mapUv = world * ${glf(1 / WORLD_SIZE)} + 0.5;
 
       vec4 mask = texture2D( uMask, mapUv );
-      float ground = uHeightMin + texture2D( uHeight, mapUv ).r * uHeightRange;
-      // Planted six centimetres down. The height field is coarser than the
-      // terrain mesh near the mountains, so a blade sitting exactly on the
-      // sampled surface would hover on some ground and sink on other.
-      vec3 root = vec3( world.x, ground - 0.06, world.y );
+      // Height is packed as 16-bit in R (lo) + G (hi). Channel-wise bilinear
+      // still reconstructs the lerp of the decoded metres (see buildMeadow).
+      vec4 htex = texture2D( uHeight, mapUv );
+      float hn = ( htex.r * 255.0 + htex.g * 65280.0 ) / 65535.0;
+      float ground = uHeightMin + hn * uHeightRange;
+      // Planted under the analytic surface: the drawn LOD mesh sits a touch
+      // below heightAt between vertices, and a flush plant would hover.
+      vec3 root = vec3( world.x, ground - 0.11, world.y );
 
       // Plan distance only — the follow camera sits several metres above the
       // bard, and folding that height into density thins the sward underfoot
@@ -2490,20 +2498,21 @@ function buildMeadow(budget: QualityBudget, clock: WindClock): Meadow {
 
   const ground = bakeGrassGround(groundResolution(budget));
 
-  // Encode height into RGBA8 rather than R16F. Half-float red textures are
-  // filterable in theory on WebGL2, but a surprising number of drivers hand
-  // back zero (or refuse the upload), which plants every blade at y = 0 —
-  // ten metres under the valley floor, and completely invisible. A normalised
-  // byte field samples everywhere LinearFilter works.
+  // Encode height as 16-bit into R (lo) + G (hi) of an RGBA8 texture.
+  // R16F would be nicer, but a surprising number of WebGL2 drivers hand back
+  // zero (or refuse the upload) for half-float red — every blade then plants
+  // at y = 0, ten metres under the valley and invisible. Byte textures sample
+  // everywhere LinearFilter works; packing 16-bit keeps quantisation under a
+  // centimetre instead of the ~70 cm steps a single-byte field had.
   const heightRange = Math.max(1e-3, ground.maxHeight - ground.minHeight);
   const encodedHeights = new Uint8Array(ground.height.length * 4);
   for (let i = 0; i < ground.height.length; i++) {
     const t = (ground.height[i] - ground.minHeight) / heightRange;
-    const byte = Math.max(0, Math.min(255, Math.round(t * 255)));
+    const q = Math.max(0, Math.min(65535, Math.round(t * 65535)));
     const o = i * 4;
-    encodedHeights[o] = byte;
-    encodedHeights[o + 1] = byte;
-    encodedHeights[o + 2] = byte;
+    encodedHeights[o] = q & 255;
+    encodedHeights[o + 1] = (q >> 8) & 255;
+    encodedHeights[o + 2] = 0;
     encodedHeights[o + 3] = 255;
   }
   const heightTexture = new THREE.DataTexture(
@@ -3125,7 +3134,7 @@ export function Flora({
         if (groundScratch.slope > 0.68) continue;
         verge.push({
           x,
-          y: groundScratch.y - 0.012,
+          y: groundScratch.y - 0.028,
           z,
           scale: 1.0 + hash2(guard, 19) * 0.95,
           yaw: hash2(guard, 23) * Math.PI * 2,

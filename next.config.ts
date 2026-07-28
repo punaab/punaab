@@ -8,6 +8,15 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  async redirects() {
+    return [
+      {
+        source: "/embeds",
+        destination: "/plugins",
+        permanent: true,
+      },
+    ];
+  },
 };
 
 export default nextConfig;
