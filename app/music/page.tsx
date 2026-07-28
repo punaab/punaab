@@ -1,22 +1,58 @@
+import Image from "next/image";
 import { MarketingShell } from "@/components/marketing/MarketingShell";
 import { MusicLibrary } from "@/components/music/MusicLibrary";
+import { PUNAAB_LUTE_PREVIEW_URL } from "@/lib/bard/punaab-model";
 
 export const metadata = {
   title: "Music — Punaab",
   description:
-    "Free downloadable fantasy music for your games — Punaab's walking ballad and more as it ships.",
+    "Free downloadable fantasy music for your games — Punaab's tracks are CC BY. Use, arrange & perform with credit.",
 };
 
 export default function MusicPage() {
   return (
     <MarketingShell>
-      <section className="section">
-        <p className="section-num">Music</p>
-        <h2>Free tracks for the road</h2>
-        <p className="section-lead">
-          Royalty-free music for Punaab&apos;s world. Download the .mp3 for your
-          game or stream.
-        </p>
+      <section className="section music-page">
+        <div className="music-page-top">
+          <p className="section-num">Music</p>
+          <aside className="music-license" aria-label="Open license">
+            <span className="music-license-mark">CC BY</span>
+            <p>
+              Punaab&apos;s music is open license — use, arrange &amp; perform
+              with credit: <code>SongTitle - Punaab</code>
+            </p>
+          </aside>
+        </div>
+
+        <div className="music-lute-banner" aria-hidden="true">
+            <Image
+              src={PUNAAB_LUTE_PREVIEW_URL}
+              alt=""
+              width={640}
+              height={640}
+              className="music-lute-art"
+              priority
+              unoptimized
+            />
+        </div>
+
+        <div className="music-headline">
+          <div className="music-headline-copy">
+            <h2>Free tracks for the road</h2>
+            <p className="section-lead">
+              Royalty-free music for your world. Take 1 track or the whole
+              package.
+            </p>
+          </div>
+          <a
+            className="btn primary btn-glow music-download-all"
+            href="/downloads/punaab-music.zip"
+            download="punaab-music.zip"
+          >
+            Download all
+          </a>
+        </div>
+
         <MusicLibrary />
       </section>
     </MarketingShell>

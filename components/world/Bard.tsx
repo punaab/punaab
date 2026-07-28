@@ -13,7 +13,8 @@ import {
   PUNAAB_STRUM_IDLE_URL,
   PUNAAB_WALK_URL,
 } from "@/lib/bard/punaab-model";
-import { heightAt, normalAt } from "@/lib/world/terrain";
+import { normalAt } from "@/lib/world/terrain";
+import { surfaceAt } from "@/lib/world/surfaces";
 import { SongAura } from "@/components/world/SongAura";
 import type { MusicLevels } from "@/lib/bard/performance";
 import { walkAmbience } from "@/lib/bard/walk-ambience";
@@ -37,13 +38,17 @@ function pickLongestClip(
 const WALK_CLIP_SPEED = 1.16;
 
 /**
- * Sole sits a hair above the heightfield so the shoe mesh never clips. Kept
- * tiny — larger clearance reads as floating once the LOD terrain mesh sits
- * slightly below the analytic heightAt sample.
+ * Sole sits a hair above the walkable surface so the shoe mesh never clips.
+ * Tiny — the LOD terrain mesh sits slightly below the analytic sample, and a
+ * larger gap reads as floating.
  */
-const FOOT_CLEARANCE = 0.006;
-/** Cap plant-lift so a bad toe sample cannot hoist him a handspan off the dirt. */
-const MAX_FOOT_LIFT = 0.05;
+const FOOT_CLEARANCE = 0.012;
+/** Cap plant-lift so a bad sole sample cannot hoist him a handspan off the dirt. */
+const MAX_FOOT_LIFT = 0.04;
+/** Allow a small downward correction when both soles are floating. */
+const MAX_FOOT_DROP = 0.03;
+/** Snap onto elevated decks (bridges) instead of easing up through the span. */
+const DECK_SNAP = 0.1;
 
 /** How fast he blends into the standing strum. */
 const PLAY_FOLLOW = 4.5;
@@ -322,13 +327,13 @@ export function Bard({
       restRemaining.current -= delta;
       if (restRemaining.current <= 0) {
         performPhase.current = "loose";
-        // Song is done — keep lingering to talk/trade if he was at a stop.
         director.hold(false);
       }
     }
 
     const resting = performPhase.current === "rest";
-    const heldStill = performPhase.current !== "loose";
+    const heldStill =
+      performPhase.current === "song" || performPhase.current === "rest";
 
     const adventure = director.update(delta);
     const { x, z } = adventure.position;
@@ -348,15 +353,15 @@ export function Bard({
     root.rotation.x += (slopePitch * 0.08 - root.rotation.x) * delta * 4;
     root.rotation.z += (slopeRoll * 0.08 - root.rotation.z) * delta * 4;
 
-    // Songs + post-song rest: stand still. Travel: blend idle↔walk from speed.
+    // Freeze locomotion while he sings — no walk blend bleed-through.
     const speed = heldStill ? 0 : adventure.speed;
     smoothedSpeed.current +=
       (speed - smoothedSpeed.current) * Math.min(1, delta * 6);
     const shownSpeed = smoothedSpeed.current;
     const targetWalk =
-      !heldStill && shownSpeed > 0.04
-        ? Math.min(1, shownSpeed / Math.max(0.12, director.walkSpeed * 0.6))
-        : 0;
+      heldStill || shownSpeed <= 0.04
+        ? 0
+        : Math.min(1, shownSpeed / Math.max(0.12, director.walkSpeed * 0.6));
     walkWeight.current += (targetWalk - walkWeight.current) * Math.min(1, delta * 5);
 
     const targetPlay = playing ? 1 : 0;
@@ -380,8 +385,9 @@ export function Bard({
     walkAmbience.setWalking(w * (1 - p));
 
     // Loot only while he is mid-song (or blending in/out of it).
+    // Full size while held — no shrink-away; it just disappears when he stops.
     loot.visible = p > 0.08;
-    loot.scale.setScalar(LOOT_WORLD_SCALE * Math.min(1, p * 1.15));
+    loot.scale.setScalar(LOOT_WORLD_SCALE);
 
     // Pack bobs once per footfall — soft settle when he stands still.
     packStepPhase.current += shownSpeed * delta * BACKPACK_STEPS_PER_METRE * Math.PI;
@@ -408,15 +414,15 @@ export function Bard({
     );
 
     const walkRate = Math.min(0.55, Math.max(0.3, shownSpeed / WALK_CLIP_SPEED));
-    loco.walk.setEffectiveTimeScale(heldStill ? 0 : walkRate);
+    loco.walk.setEffectiveTimeScale(heldStill || shownSpeed < 0.04 ? 0 : walkRate);
     loco.idle.setEffectiveTimeScale(IDLE_RATE);
     loco.strumIdle.setEffectiveTimeScale(playing ? IDLE_RATE : IDLE_RATE * 0.85);
     loco.mixer.update(delta);
 
-    // Grounding: place the root on the heightfield, then only PUSH UP if a
-    // sole digs in. Follow both up and down so a crest plant cannot leave him
-    // hovering for half a stride.
-    const baseY = heightAt(x, z) + FOOT_CLEARANCE;
+    // Grounding: stand on the walkable surface (terrain or bridge/dock deck),
+    // then nudge so neither sole sinks. Snap up onto decks — easing through a
+    // multi-metre rise reads as walking through the bridge.
+    const baseY = surfaceAt(x, z) + FOOT_CLEARANCE;
     root.position.y = baseY;
     root.updateMatrixWorld(true);
 
@@ -425,16 +431,17 @@ export function Bard({
       leftToe.getWorldPosition(leftFootWorld);
       rightToe.getWorldPosition(rightFootWorld);
       const leftLift =
-        heightAt(leftFootWorld.x, leftFootWorld.z) +
+        surfaceAt(leftFootWorld.x, leftFootWorld.z) +
         FOOT_CLEARANCE -
         leftFootWorld.y;
       const rightLift =
-        heightAt(rightFootWorld.x, rightFootWorld.z) +
+        surfaceAt(rightFootWorld.x, rightFootWorld.z) +
         FOOT_CLEARANCE -
         rightFootWorld.y;
+      // Plant the deeper sole; allow a small drop when both feet float.
       extraLift = Math.min(
         MAX_FOOT_LIFT,
-        Math.max(0, leftLift, rightLift)
+        Math.max(-MAX_FOOT_DROP, leftLift, rightLift)
       );
     }
 
@@ -442,9 +449,13 @@ export function Bard({
     if (groundedY.current === null) {
       groundedY.current = targetY;
     } else {
-      const rate = targetY >= groundedY.current ? 24 : 18;
-      groundedY.current +=
-        (targetY - groundedY.current) * Math.min(1, delta * rate);
+      const gap = targetY - groundedY.current;
+      if (gap >= DECK_SNAP) {
+        groundedY.current = targetY;
+      } else {
+        const rate = gap >= 0 ? 32 : 22;
+        groundedY.current += gap * Math.min(1, delta * rate);
+      }
     }
     root.position.y = groundedY.current;
 

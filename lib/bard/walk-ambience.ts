@@ -10,7 +10,7 @@ export const WALK_GRASS_URL = "/assets/sounds/sfx/walking-on-grass.mp3";
 /** Peak loudness while he is fully in the walk blend. */
 const VOLUME = 0.1;
 /** Slow the loop a touch so footfalls match his unhurried pace. */
-const PLAYBACK_RATE = 0.6;
+const PLAYBACK_RATE = 0.7;
 
 class WalkAmbience {
   private audio: HTMLAudioElement | null = null;

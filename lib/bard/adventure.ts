@@ -168,7 +168,15 @@ function hash2(x: number, y: number): number {
 class Stream {
   private step = 0;
 
-  constructor(private readonly seed: number) {}
+  constructor(readonly seed: number) {}
+
+  get cursor(): number {
+    return this.step;
+  }
+
+  set cursor(value: number) {
+    this.step = Math.max(0, value | 0);
+  }
 
   next(): number {
     return hash2(this.seed, this.step++);
@@ -454,6 +462,57 @@ const ARRIVAL_LINES = [
   "Right. Let's have a look at you.",
 ];
 
+/**
+ * Snapshot of the director for local resume after refresh.
+ * Travels stay on this browser only — not shared with other visitors.
+ */
+export type AdventureSnapshot = {
+  v: 1;
+  seed: number;
+  rngStep: number;
+  x: number;
+  z: number;
+  heading: number;
+  pace: number;
+  route: Waypoint[];
+  routeIndex: number;
+  goal: Waypoint;
+  started: boolean;
+  recent: string[];
+  visited: string[];
+  lore: string[];
+  quests: string[];
+  travelTime: number;
+  stallTime: number;
+  detours: number;
+  stuckTime: number;
+  unstickCooldown: number;
+  discoverRemaining: number;
+  pauseRemaining: number;
+  nextPause: number;
+  chatterTimer: number;
+  slopeTimer: number;
+  slopeFactor: number;
+  idleHeading: number;
+  activity: Activity;
+  destinationId: string | null;
+  stopId: string | null;
+  dwellRemaining: number;
+  regionId: string;
+  pendingRegionId: string | null;
+  pendingRegionTime: number;
+};
+
+function placeById(id: string | null | undefined): Destination | null {
+  if (!id) return null;
+  return PLACES.find((place) => place.id === id) ?? null;
+}
+
+function regionById(id: string | null | undefined): Region | null {
+  if (!id) return null;
+  return REGIONS.find((region) => region.id === id) ?? null;
+}
+
 // ---------------------------------------------------------------------------
 // Public shape
 // ---------------------------------------------------------------------------
@@ -515,7 +574,7 @@ export class AdventureDirector {
   readonly walkSpeed = WALK_SPEED;
 
   private readonly callbacks: AdventureCallbacks;
-  private readonly rng: Stream;
+  private rng: Stream;
 
   private readonly state: AdventureState;
 
@@ -644,18 +703,106 @@ export class AdventureDirector {
 
   update(delta: number): Readonly<AdventureState> {
     // A tab that was in the background hands back a delta measured in seconds.
-    // Integrating that in one go would teleport him through a wall, so cap it —
-    // he loses a little ground, which nobody notices, instead of his collision.
+    // Integrating that in one go would teleport him through a wall, so cap it.
     const dt = Math.min(Math.max(delta, 0), 0.05);
-
     if (!this.started) this.begin();
+    this.tick(dt);
+    return this.state;
+  }
 
+  snapshot(): AdventureSnapshot {
+    return {
+      v: 1,
+      seed: this.rng.seed,
+      rngStep: this.rng.cursor,
+      x: this.x,
+      z: this.z,
+      heading: this.heading,
+      pace: this.pace,
+      route: this.route.map((p) => ({ x: p.x, z: p.z })),
+      routeIndex: this.routeIndex,
+      goal: { x: this.goal.x, z: this.goal.z },
+      started: this.started,
+      recent: [...this.recent],
+      visited: [...this.visited],
+      lore: [...this.lore],
+      quests: [...this.quests],
+      travelTime: this.travelTime,
+      stallTime: this.stallTime,
+      detours: this.detours,
+      stuckTime: this.stuckTime,
+      unstickCooldown: this.unstickCooldown,
+      discoverRemaining: this.discoverRemaining,
+      pauseRemaining: this.pauseRemaining,
+      nextPause: this.nextPause,
+      chatterTimer: this.chatterTimer,
+      slopeTimer: this.slopeTimer,
+      slopeFactor: this.slopeFactor,
+      idleHeading: this.idleHeading,
+      activity: this.state.activity,
+      destinationId: this.state.destination?.id ?? null,
+      stopId: this.state.stop?.id ?? null,
+      dwellRemaining: this.state.dwellRemaining,
+      regionId: this.state.region.id,
+      pendingRegionId: this.pendingRegion?.id ?? null,
+      pendingRegionTime: this.pendingRegionTime,
+    };
+  }
+
+  /** Resume a local journey after refresh. Colliders must already be installed. */
+  restore(snapshot: AdventureSnapshot): void {
+    this.rng = new Stream(snapshot.seed);
+    this.rng.cursor = snapshot.rngStep;
+    this.x = snapshot.x;
+    this.z = snapshot.z;
+    this.heading = snapshot.heading;
+    this.pace = snapshot.pace;
+    this.route = snapshot.route.map((p) => ({ x: p.x, z: p.z }));
+    this.routeIndex = snapshot.routeIndex;
+    this.goal = { x: snapshot.goal.x, z: snapshot.goal.z };
+    this.started = snapshot.started;
+    this.recent = [...snapshot.recent];
+    this.visited = new Set(snapshot.visited);
+    this.lore = new Set(snapshot.lore);
+    this.quests = new Set(snapshot.quests);
+    this.travelTime = snapshot.travelTime;
+    this.stallTime = snapshot.stallTime;
+    this.detours = snapshot.detours;
+    this.stuckTime = snapshot.stuckTime;
+    this.unstickCooldown = snapshot.unstickCooldown;
+    this.discoverRemaining = snapshot.discoverRemaining;
+    this.pauseRemaining = snapshot.pauseRemaining;
+    this.nextPause = snapshot.nextPause;
+    this.chatterTimer = snapshot.chatterTimer;
+    this.slopeTimer = snapshot.slopeTimer;
+    this.slopeFactor = snapshot.slopeFactor;
+    this.idleHeading = snapshot.idleHeading;
+    this.held = false;
+    this.activityBeforeHold = null;
+    // Songs don't persist across refresh — don't resume mid-performance.
+    this.state.activity =
+      snapshot.activity === "performing"
+        ? (placeById(snapshot.stopId)?.activity ?? "travelling")
+        : snapshot.activity;
+    this.state.destination = placeById(snapshot.destinationId);
+    this.state.stop = placeById(snapshot.stopId);
+    this.state.dwellRemaining = snapshot.dwellRemaining;
+    this.state.region = regionById(snapshot.regionId) ?? regionAt(this.x, this.z);
+    this.pendingRegion = regionById(snapshot.pendingRegionId);
+    this.pendingRegionTime = snapshot.pendingRegionTime;
+    this.state.position.set(this.x, 0, this.z);
+    this.state.heading = this.heading;
+    this.state.speed = 0;
+    this.state.blocked = false;
+  }
+
+  private tick(dt: number): void {
     if (this.held) {
       this.pace = 0;
       this.state.speed = 0;
       this.state.position.set(this.x, 0, this.z);
       this.state.heading = this.heading;
-      return this.state;
+      return;
     }
 
     if (this.state.stop) this.dwell(dt);
@@ -667,7 +814,6 @@ export class AdventureDirector {
 
     this.state.position.set(this.x, 0, this.z);
     this.state.heading = this.heading;
-    return this.state;
   }
 
   // --- Lifecycle ---------------------------------------------------------
@@ -1038,7 +1184,9 @@ export class AdventureDirector {
       this.quests.add(questId);
       this.callbacks.onQuest?.(questId, place);
     }
-    if (place.waresTag) this.callbacks.onTrade?.(place.waresTag, place);
+    if (place.waresTag) {
+      this.callbacks.onTrade?.(place.waresTag, place);
+    }
 
     this.say(this.arrivalLine(place), this.state.activity);
     // First conversation beat soon after he settles in.
@@ -1191,6 +1339,31 @@ export class AdventureDirector {
       }
     }
 
+    this.departFor(chosen);
+  }
+
+  /**
+   * Send him somewhere specific, by destination id.
+   *
+   * This is what the world map calls when a visitor picks a place. It goes
+   * through exactly the same commit path the autonomous chooser uses — same
+   * clearance search, same road routing, same activity change — so a place
+   * reached by clicking behaves identically to one he wandered to himself.
+   * Returns false for an unknown id rather than silently doing nothing.
+   */
+  travelTo(destinationId: string): boolean {
+    const place = PLACES.find((candidate) => candidate.id === destinationId);
+    if (!place) return false;
+
+    // Clear the recent-visit memory of this place, or the wander logic will
+    // treat a destination the visitor deliberately chose as one to avoid.
+    this.recent = this.recent.filter((id) => id !== destinationId);
+    this.departFor(place);
+    return true;
+  }
+
+  /** Commits to a destination: find a standable goal, route to it, and go. */
+  private departFor(chosen: Destination): void {
     this.state.destination = chosen;
     // Somewhere he can actually stand. Destinations are authored at the thing
     // they describe — the well, the stall, the shrine — and the thing they

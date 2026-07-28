@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { readFileSync, existsSync } from "fs";
+import { existsSync } from "fs";
 import path from "path";
+import { getShareAppUrl } from "@/lib/app-url";
 
 export async function GET() {
   const zipPath = path.join(
@@ -23,6 +24,6 @@ export async function GET() {
 
   // Prefer static file for browsers
   return NextResponse.redirect(
-    new URL("/downloads/punaab-godot-0.1.0.zip", process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000")
+    new URL("/downloads/punaab-godot-0.1.0.zip", getShareAppUrl())
   );
 }

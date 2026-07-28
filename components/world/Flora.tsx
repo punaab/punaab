@@ -19,9 +19,16 @@ import {
   barkFields,
   makeFoliageAlpha,
   makeRockNormalMap,
-  makeTreeBillboard,
-  type BillboardShape,
 } from "@/lib/world/textures";
+import {
+  decorateTranslucency,
+  leafCell,
+  leafCellUv,
+  makeCanopyBillboard,
+  makeLeafAtlas,
+  type CanopyBillboardShape,
+  type LeafKind,
+} from "@/lib/world/foliage";
 import type { QualityBudget } from "@/lib/world/quality";
 import { GHIBLI, ghibliSunDirection } from "@/lib/world/ghibli-palette";
 import {
@@ -36,6 +43,12 @@ import {
   ringBand,
   type GrassRing,
 } from "@/lib/world/grass";
+import {
+  buildFlowerMesh,
+  placeFlowers,
+  type FlowerLod,
+  type FlowerMesh,
+} from "@/lib/world/flowers";
 
 /**
  * Everything that grows.
@@ -556,6 +569,19 @@ function crossedCards(width: number, height: number): THREE.BufferGeometry {
 // Trees
 // ---------------------------------------------------------------------------
 
+/**
+ * The leaf end of the film stock.
+ *
+ * `gTrans` is the meadow's transmitted colour — the hot yellow-green a blade
+ * goes when the sun is behind it — and it is the right note for a backlit leaf
+ * for exactly the same reason. Nothing here is a new hue; every one of these is
+ * a mix of two entries in `ghibli-palette`, so the canopy stays on the same
+ * stock as the grass under it and the haze behind it.
+ */
+const LEAF_TRANS = hexRgb(GHIBLI.gTrans);
+const LEAF_TIP = hexRgb(GHIBLI.gTip);
+const LEAF_WARM = hexRgb(GHIBLI.warm);
+
 type TreeSpec = {
   id: string;
   /** Fraction of the tree budget this species takes. */
@@ -578,6 +604,47 @@ type TreeSpec = {
   barkDark: Rgb;
   leaf: Rgb;
   leafShade: Rgb;
+  /**
+   * The sunlit / backlit end of this species' leaf ramp.
+   *
+   * A canopy is never one green. The leaves on top of it are half a stop
+   * brighter and markedly yellower than the ones in its middle, because they
+   * are thinner, younger and lit from two sides — and reproducing that spread
+   * is most of the difference between foliage and a painted sphere.
+   */
+  leafSun: Rgb;
+
+  // --- near-level foliage ---------------------------------------------------
+
+  /** Which family of sprays hangs off this species' twigs. */
+  leafKind: LeafKind;
+  /** Leaf clusters on the detailed level, at the high tier. Scaled per tier. */
+  clusters: number;
+  /** Quads per cluster. Three reads as volume; two is enough for a needle fan. */
+  clusterPlanes: 2 | 3;
+  /** Cluster length and width in metres, before the instance scale. */
+  clusterLength: number;
+  clusterWidth: number;
+  /** How far the tip of a spray hangs below its attachment, as a fraction. */
+  clusterDroop: number;
+  /**
+   * Radius of the opaque inner mass, as a fraction of the crown.
+   *
+   * The shells no longer *are* the canopy — they sit well inside it and exist
+   * only to stop you seeing straight through the middle of a tree to the hill
+   * behind. Everything at the boundary is leaves.
+   */
+  massScale: number;
+
+  // --- branching ------------------------------------------------------------
+
+  /** Secondary limbs grown off each primary. */
+  boughForks: number;
+  /** Twigs grown off each secondary. Detailed level only. */
+  twigForks: number;
+  /** A fourth order of twiglets — bare species, which are nothing but wood. */
+  twiglets: number;
+
   scale: [number, number];
   maxSlope: number;
   minHeight: number;
@@ -586,7 +653,7 @@ type TreeSpec = {
   clumpRadius: number;
   minRoadDistance: number;
   minWaterDistance: number;
-  billboard: BillboardShape;
+  billboard: CanopyBillboardShape;
 };
 
 const TREES: TreeSpec[] = [
@@ -607,8 +674,22 @@ const TREES: TreeSpec[] = [
     leafless: false,
     bark: TRUNK_LIT,
     barkDark: TRUNK_SHADE,
-    leaf: C_LIT,
-    leafShade: C_SHADE,
+    // Firs are the darkest green in the valley. That contrast against the
+    // broadleaf woods is most of what makes the pine belt read as somewhere
+    // else, and a fir the colour of an oak reads as neither.
+    leaf: mixRgb(C_MID, C_SHADE, 0.42),
+    leafShade: C_DEEP,
+    leafSun: mixRgb(C_LIT, LEAF_TIP, 0.35),
+    leafKind: "needle",
+    clusters: 104,
+    clusterPlanes: 2,
+    clusterLength: 1.15,
+    clusterWidth: 0.62,
+    clusterDroop: 0.36,
+    massScale: 0.66,
+    boughForks: 0,
+    twigForks: 0,
+    twiglets: 0,
     scale: [0.62, 1.35],
     maxSlope: 0.5,
     minHeight: WATER_LEVEL + 0.8,
@@ -618,18 +699,18 @@ const TREES: TreeSpec[] = [
     minRoadDistance: 5,
     minWaterDistance: 2,
     billboard: {
-      blobs: [
-        [0.5, 0.92, 0.08],
-        [0.5, 0.82, 0.12],
-        [0.5, 0.7, 0.16],
-        [0.5, 0.56, 0.2],
-        [0.5, 0.42, 0.24],
-        [0.5, 0.3, 0.27],
-      ],
-      trunk: 0.24,
-      trunkWidth: 0.024,
-      leaf: C_LIT,
-      bark: TRUNK_SHADE,
+      form: "spire",
+      trunk: 0.17,
+      trunkWidth: 0.03,
+      boughs: 6,
+      puffs: 54,
+      puffRadius: [0.045, 0.12],
+      spread: 0.42,
+      leaf: mixRgb(C_MID, C_SHADE, 0.42),
+      leafDark: C_DEEP,
+      leafSun: mixRgb(C_LIT, LEAF_TIP, 0.35),
+      bark: TRUNK_LIT,
+      barkDark: TRUNK_SHADE,
     },
   },
   {
@@ -657,7 +738,18 @@ const TREES: TreeSpec[] = [
     bark: srgb(120, 102, 82),
     barkDark: srgb(52, 44, 36),
     leaf: hexRgb("#98AC43"),
-    leafShade: C_MID,
+    leafShade: C_SHADE,
+    leafSun: mixRgb(LEAF_TIP, LEAF_TRANS, 0.38),
+    leafKind: "broad",
+    clusters: 118,
+    clusterPlanes: 3,
+    clusterLength: 1.2,
+    clusterWidth: 1,
+    clusterDroop: 0.22,
+    massScale: 0.58,
+    boughForks: 2,
+    twigForks: 2,
+    twiglets: 0,
     scale: [0.66, 1.45],
     maxSlope: 0.42,
     minHeight: WATER_LEVEL + 0.8,
@@ -667,17 +759,18 @@ const TREES: TreeSpec[] = [
     minRoadDistance: 5.5,
     minWaterDistance: 2.5,
     billboard: {
-      blobs: [
-        [0.5, 0.78, 0.23],
-        [0.3, 0.67, 0.19],
-        [0.7, 0.69, 0.19],
-        [0.42, 0.55, 0.18],
-        [0.62, 0.53, 0.16],
-      ],
-      trunk: 0.42,
-      trunkWidth: 0.045,
+      form: "dome",
+      trunk: 0.38,
+      trunkWidth: 0.05,
+      boughs: 4,
+      puffs: 66,
+      puffRadius: [0.055, 0.15],
+      spread: 0.42,
       leaf: hexRgb("#98AC43"),
-      bark: srgb(114, 96, 78),
+      leafDark: C_SHADE,
+      leafSun: mixRgb(LEAF_TIP, LEAF_TRANS, 0.38),
+      bark: srgb(120, 102, 82),
+      barkDark: srgb(52, 44, 36),
     },
   },
   {
@@ -706,6 +799,19 @@ const TREES: TreeSpec[] = [
     barkDark: srgb(92, 88, 84),
     leaf: hexRgb("#A9B65C"),
     leafShade: C_MID,
+    // The lightest crown in the valley, and the one that goes most obviously
+    // translucent — birch leaves are thin enough to read as lit glass.
+    leafSun: mixRgb(LEAF_TIP, LEAF_TRANS, 0.55),
+    leafKind: "small",
+    clusters: 96,
+    clusterPlanes: 3,
+    clusterLength: 0.86,
+    clusterWidth: 0.66,
+    clusterDroop: 0.44,
+    massScale: 0.5,
+    boughForks: 2,
+    twigForks: 2,
+    twiglets: 0,
     scale: [0.7, 1.3],
     maxSlope: 0.46,
     minHeight: WATER_LEVEL + 0.8,
@@ -715,16 +821,18 @@ const TREES: TreeSpec[] = [
     minRoadDistance: 5,
     minWaterDistance: 2,
     billboard: {
-      blobs: [
-        [0.5, 0.83, 0.15],
-        [0.38, 0.71, 0.13],
-        [0.62, 0.69, 0.12],
-        [0.5, 0.6, 0.12],
-      ],
-      trunk: 0.5,
-      trunkWidth: 0.022,
+      form: "column",
+      trunk: 0.36,
+      trunkWidth: 0.028,
+      boughs: 3,
+      puffs: 50,
+      puffRadius: [0.04, 0.105],
+      spread: 0.4,
       leaf: hexRgb("#A9B65C"),
-      bark: srgb(208, 202, 190),
+      leafDark: C_MID,
+      leafSun: mixRgb(LEAF_TIP, LEAF_TRANS, 0.55),
+      bark: srgb(216, 210, 198),
+      barkDark: srgb(92, 88, 84),
     },
   },
   {
@@ -746,6 +854,20 @@ const TREES: TreeSpec[] = [
     barkDark: srgb(42, 38, 32),
     leaf: hexRgb("#6E9440"),
     leafShade: C_DEEP,
+    leafSun: mixRgb(C_LIT, LEAF_TIP, 0.5),
+    leafKind: "long",
+    clusters: 108,
+    clusterPlanes: 3,
+    clusterLength: 1.55,
+    clusterWidth: 0.58,
+    // The whole species is this number. A willow is a curtain: the leaves hang
+    // nearly vertically and the crown's outline is made of what falls out of
+    // it, not of the dome it falls from.
+    clusterDroop: 0.78,
+    massScale: 0.5,
+    boughForks: 2,
+    twigForks: 2,
+    twiglets: 0,
     scale: [0.7, 1.24],
     maxSlope: 0.34,
     minHeight: WATER_LEVEL + 0.15,
@@ -755,16 +877,18 @@ const TREES: TreeSpec[] = [
     minRoadDistance: 4.5,
     minWaterDistance: -1,
     billboard: {
-      blobs: [
-        [0.5, 0.74, 0.21],
-        [0.28, 0.6, 0.17],
-        [0.72, 0.6, 0.17],
-        [0.5, 0.5, 0.19],
-      ],
-      trunk: 0.34,
-      trunkWidth: 0.04,
+      form: "weep",
+      trunk: 0.4,
+      trunkWidth: 0.046,
+      boughs: 5,
+      puffs: 62,
+      puffRadius: [0.045, 0.115],
+      spread: 0.42,
       leaf: hexRgb("#6E9440"),
-      bark: srgb(92, 82, 68),
+      leafDark: C_DEEP,
+      leafSun: mixRgb(C_LIT, LEAF_TIP, 0.5),
+      bark: srgb(96, 86, 70),
+      barkDark: srgb(42, 38, 32),
     },
   },
   {
@@ -786,6 +910,19 @@ const TREES: TreeSpec[] = [
     barkDark: srgb(46, 36, 28),
     leaf: C_MID,
     leafShade: C_DEEP,
+    leafSun: mixRgb(LEAF_TIP, LEAF_WARM, 0.34),
+    leafKind: "blossom",
+    // The sparsest crown of the six: an orchard tree is pruned open so light
+    // reaches the fruit, and you can see the sky through one from underneath.
+    clusters: 72,
+    clusterPlanes: 3,
+    clusterLength: 0.82,
+    clusterWidth: 0.72,
+    clusterDroop: 0.26,
+    massScale: 0.52,
+    boughForks: 2,
+    twigForks: 2,
+    twiglets: 0,
     scale: [0.82, 1.12],
     maxSlope: 0.24,
     minHeight: WATER_LEVEL + 1,
@@ -795,15 +932,18 @@ const TREES: TreeSpec[] = [
     minRoadDistance: 4,
     minWaterDistance: 4,
     billboard: {
-      blobs: [
-        [0.5, 0.7, 0.24],
-        [0.32, 0.58, 0.16],
-        [0.68, 0.58, 0.16],
-      ],
-      trunk: 0.4,
-      trunkWidth: 0.036,
+      form: "open",
+      trunk: 0.44,
+      trunkWidth: 0.04,
+      boughs: 4,
+      puffs: 34,
+      puffRadius: [0.05, 0.13],
+      spread: 0.4,
       leaf: C_MID,
-      bark: srgb(102, 82, 62),
+      leafDark: C_DEEP,
+      leafSun: mixRgb(LEAF_TIP, LEAF_WARM, 0.34),
+      bark: srgb(106, 86, 66),
+      barkDark: srgb(46, 36, 28),
     },
   },
   {
@@ -813,18 +953,32 @@ const TREES: TreeSpec[] = [
     height: 6.8,
     trunkRadius: 0.3,
     lean: 0.34,
-    branches: 3,
+    branches: 5,
     branchAngle: 1.25,
     crownShells: 0,
-    crownRadius: 1.4,
+    crownRadius: 2.2,
     crownFlatten: 1,
-    crownRise: 0.5,
+    crownRise: 0.4,
     conifer: false,
     leafless: true,
     bark: srgb(152, 140, 124),
     barkDark: srgb(62, 54, 46),
     leaf: srgb(120, 110, 96),
     leafShade: srgb(52, 46, 40),
+    leafSun: srgb(150, 138, 112),
+    // Nothing hangs on it. A dead tree has to carry the whole silhouette in
+    // wood, which is why this is the one species that spends its entire
+    // triangle budget on branching orders instead of leaves.
+    leafKind: "broad",
+    clusters: 0,
+    clusterPlanes: 2,
+    clusterLength: 0,
+    clusterWidth: 0,
+    clusterDroop: 0,
+    massScale: 0,
+    boughForks: 2,
+    twigForks: 2,
+    twiglets: 2,
     scale: [0.58, 1.2],
     maxSlope: 0.55,
     minHeight: WATER_LEVEL + 0.2,
@@ -834,25 +988,162 @@ const TREES: TreeSpec[] = [
     minRoadDistance: 3.5,
     minWaterDistance: 0,
     billboard: {
-      blobs: [],
-      trunk: 0.96,
-      trunkWidth: 0.03,
+      form: "bare",
+      trunk: 0.62,
+      trunkWidth: 0.038,
+      boughs: 4,
+      puffs: 0,
+      puffRadius: [0, 0],
+      spread: 0.42,
       leaf: srgb(120, 110, 96),
-      bark: srgb(148, 136, 120),
+      leafDark: srgb(52, 46, 40),
+      leafSun: srgb(150, 138, 112),
+      bark: srgb(152, 140, 124),
+      barkDark: srgb(62, 54, 46),
     },
   },
 ];
 
-type Anchor = { x: number; y: number; z: number; scale: number };
+type Anchor = {
+  x: number;
+  y: number;
+  z: number;
+  /** Crown mass this point is worth, as a fraction of `crownRadius`. */
+  scale: number;
+  /** Unit heading of the limb that ends here. */
+  dx: number;
+  dy: number;
+  dz: number;
+  /** 0 on the stem, 1 at a twig tip. Twig tips carry the most exposed leaves. */
+  tip: number;
+};
+
+const UP = new THREE.Vector3(0, 1, 0);
+const SIDE_FALLBACK = new THREE.Vector3(1, 0, 0);
+
+/**
+ * One limb, and everything that grows out of it.
+ *
+ * Recursive, because a tree is: the rule that makes a bough fork is the rule
+ * that makes a twig fork, only shorter and thinner. Three orders is where a
+ * crown stops being a canopy balanced on a pole and starts being something a
+ * structure is visibly holding up; a fourth is only worth its triangles on the
+ * dead species, where the wood *is* the tree.
+ *
+ * Every limb tip becomes an anchor with its heading attached, which is what
+ * lets the leaf shoots know which way the branch under them was going. Shoots
+ * scattered on a sphere read as a fur ball; shoots that follow their branch
+ * read as a crown.
+ */
+function addBough(
+  b: MeshBuilder,
+  anchors: Anchor[],
+  bark: (t: number) => Rgb,
+  spec: TreeSpec,
+  from: THREE.Vector3,
+  dir: THREE.Vector3,
+  length: number,
+  radius: number,
+  order: number,
+  maxOrder: number,
+  seed: number,
+  detail: boolean
+) {
+  const sides = !detail ? 4 : order === 0 ? 6 : order === 1 ? 5 : order === 2 ? 4 : 3;
+  const curved = detail && order <= 1;
+  // Limbs turn upward as they reach out, harder the thinner they get. A
+  // straight one reads as a spar bolted to a post.
+  const rise = length * (0.24 + order * 0.09);
+
+  const mid = new THREE.Vector3(
+    from.x + dir.x * length * 0.52,
+    from.y + dir.y * length * 0.52 + rise * 0.28,
+    from.z + dir.z * length * 0.52
+  );
+  const end = new THREE.Vector3(
+    from.x + dir.x * length,
+    from.y + dir.y * length + rise,
+    from.z + dir.z * length
+  );
+
+  if (curved) {
+    addTube(b, [from, mid, end], [radius, radius * 0.58, radius * 0.2], sides, bark, 0.6);
+  } else {
+    addTube(b, [from, end], [radius, radius * 0.22], sides, bark, 0.6);
+  }
+
+  const heading = new THREE.Vector3().subVectors(end, mid).normalize();
+  const tipness = order / Math.max(1, maxOrder);
+  anchors.push({
+    x: end.x,
+    y: end.y,
+    z: end.z,
+    scale: lerp(0.98, 0.42, tipness),
+    dx: heading.x,
+    dy: heading.y,
+    dz: heading.z,
+    tip: tipness,
+  });
+
+  if (order >= maxOrder) return;
+  const forks =
+    order === 0 ? spec.boughForks : order === 1 ? spec.twigForks : spec.twiglets;
+  if (forks <= 0) return;
+
+  const side = new THREE.Vector3().crossVectors(heading, UP);
+  if (side.lengthSq() < 1e-6) side.copy(SIDE_FALLBACK);
+  side.normalize();
+  const across = new THREE.Vector3().crossVectors(side, heading).normalize();
+
+  for (let f = 0; f < forks; f++) {
+    const h1 = hash2(seed * 31 + f * 7, order * 97 + f);
+    const h2 = hash2(seed * 17 + f * 13, order * 41 + f * 3);
+    // Where along the limb the fork leaves. Nothing forks from its own base:
+    // a limb that splits at the shoulder is a Y, and a tree is not made of Ys.
+    const along = 0.46 + (f / Math.max(1, forks)) * 0.42 + h1 * 0.12;
+    const at = new THREE.Vector3(
+      lerp(from.x, end.x, along),
+      lerp(from.y, end.y, along),
+      lerp(from.z, end.z, along)
+    );
+    // Golden angle around the limb, so successive forks spiral rather than
+    // stacking into a flat fan.
+    const roll = f * 2.39996 + h2 * 1.2 + order * 0.7;
+    const open = 0.5 + h1 * 0.55;
+    const child = new THREE.Vector3(
+      heading.x * Math.cos(open) +
+        (side.x * Math.cos(roll) + across.x * Math.sin(roll)) * Math.sin(open),
+      heading.y * Math.cos(open) +
+        (side.y * Math.cos(roll) + across.y * Math.sin(roll)) * Math.sin(open),
+      heading.z * Math.cos(open) +
+        (side.z * Math.cos(roll) + across.z * Math.sin(roll)) * Math.sin(open)
+    ).normalize();
+
+    addBough(
+      b,
+      anchors,
+      bark,
+      spec,
+      at,
+      child,
+      length * lerp(0.46, 0.7, h2),
+      radius * lerp(0.44, 0.6, h1),
+      order + 1,
+      maxOrder,
+      seed * 3 + f * 29 + order * 131,
+      detail
+    );
+  }
+}
 
 /**
  * The trunk and its branching, as one mesh.
  *
- * A stem, three or four primaries off it, and a secondary on each. That is not
- * many branches, but it is the whole difference between a canopy floating on a
- * pole and a canopy something is *holding up* — and once the leaf masses hang
- * off branch tips rather than stacking on the axis, the crown stops being
- * symmetrical, which is most of the rest of it.
+ * A stem, its primaries, their secondaries and — on the detailed level — the
+ * twigs off those. The count matters less than the fact that the crown is
+ * *attached*: once leaf shoots hang off twig tips rather than stacking on the
+ * axis, the crown stops being symmetrical, which is most of what separates a
+ * tree from a lollipop.
  */
 function buildTrunk(spec: TreeSpec, detail: boolean): {
   geometry: THREE.BufferGeometry;
@@ -940,11 +1231,19 @@ function buildTrunk(spec: TreeSpec, detail: boolean): {
         }
       }
 
+      // A whorl's foliage hangs off limbs radiating from the stem, so the
+      // heading points outward and a little down — the same droop the limbs
+      // above are drawn with. Tip weight is high: on a conifer, almost all the
+      // exposed needle is at the ends of the branches.
       anchors.push({
         x: cx,
         y: y - reach * 0.06,
         z: cz,
         scale: whorlScale,
+        dx: 0,
+        dy: -0.26,
+        dz: 0,
+        tip: 0.85,
       });
     }
     anchors.push({
@@ -952,6 +1251,11 @@ function buildTrunk(spec: TreeSpec, detail: boolean): {
       y: spec.height * 1.04,
       z: tip.z,
       scale: 0.12,
+      // The leader points straight up and is nothing but tip.
+      dx: 0,
+      dy: 1,
+      dz: 0,
+      tip: 1,
     });
     return { geometry: b.build(), anchors };
   }
@@ -991,12 +1295,32 @@ function buildTrunk(spec: TreeSpec, detail: boolean): {
         mid.z - spreadX * length * 0.38
       );
       addTube(b, [mid, side], [r0 * 0.5, r0 * 0.16], 4, bark, 0.6);
-      anchors.push({ x: side.x, y: side.y, z: side.z, scale: 0.6 });
+      const sideDir = side.clone().sub(mid).normalize();
+      anchors.push({
+        x: side.x,
+        y: side.y,
+        z: side.z,
+        scale: 0.6,
+        dx: sideDir.x,
+        dy: sideDir.y,
+        dz: sideDir.z,
+        tip: 1,
+      });
     } else {
       addTube(b, [from, end], [r0, r0 * 0.24], 4, bark, 0.6);
     }
 
-    anchors.push({ x: end.x, y: end.y, z: end.z, scale: 0.9 });
+    const endDir = end.clone().sub(mid).normalize();
+    anchors.push({
+      x: end.x,
+      y: end.y,
+      z: end.z,
+      scale: 0.9,
+      dx: endDir.x,
+      dy: endDir.y,
+      dz: endDir.z,
+      tip: 1,
+    });
   }
 
   // Two masses over the middle, or the crown comes out a ring of pompoms with
@@ -1006,12 +1330,23 @@ function buildTrunk(spec: TreeSpec, detail: boolean): {
     y: lerp(crownBase, spec.height, 0.86),
     z: tip.z * 0.7,
     scale: 1,
+    // Interior mass: no limb direction to speak of, and shaded rather than
+    // exposed, so it carries almost none of the tip weighting.
+    dx: 0,
+    dy: 1,
+    dz: 0,
+    tip: 0.15,
   });
   anchors.push({
     x: tip.x * 0.4 + spec.crownRadius * 0.18,
     y: lerp(crownBase, spec.height, 0.52),
     z: tip.z * 0.4 - spec.crownRadius * 0.2,
     scale: 0.76,
+    // The lower interior mass. Deeper in the crown again, so shadier still.
+    dx: 0,
+    dy: 1,
+    dz: 0,
+    tip: 0.1,
   });
 
   return { geometry: b.build(), anchors };
@@ -1478,57 +1813,9 @@ const COVER: PlantSpec[] = [
         seed: 1499,
       }),
   },
-  {
-    id: "wildflower",
-    share: 0.15,
-    weights: { meadow: 1, orchard: 0.55, farmland: 0.26, broadleaf: 0.2, shore: 0.14 },
-    scale: [0.7, 1.3],
-    maxSlope: 0.42,
-    minHeight: WATER_LEVEL + 0.7,
-    maxHeight: 40,
-    clump: 5,
-    clumpRadius: 1.3,
-    minRoadDistance: 2,
-    minWaterDistance: 1.5,
-    lean: 0.5,
-    sway: "high",
-    build: (detail) => {
-      const b = new MeshBuilder();
-      const stem = srgb(98, 120, 58);
-      const petal = srgb(228, 216, 134);
-      const blades = detail ? 7 : 4;
-      for (let i = 0; i < blades; i++) {
-        addBlade(
-          b,
-          i * 2.39996,
-          0.55,
-          0.3 + hash2(i, 3) * 0.14,
-          0.011,
-          2,
-          srgb(70, 88, 44),
-          stem,
-          0.05
-        );
-      }
-      if (detail) {
-        // Three flat heads, which is all a flower needs to be at the distance
-        // anything shorter than a shrub is ever seen from.
-        for (let i = 0; i < 3; i++) {
-          const yaw = i * 2.1 + 0.4;
-          const r = 0.05;
-          const cx = Math.cos(yaw) * 0.07;
-          const cz = Math.sin(yaw) * 0.07;
-          const y = 0.33 + hash2(i * 11, 7) * 0.08;
-          const a = b.vertex(cx - r, y, cz - r, 0, 1, 0, 0, 0, petal);
-          const c = b.vertex(cx + r, y, cz - r, 0, 1, 0, 1, 0, petal);
-          const d = b.vertex(cx + r, y, cz + r, 0, 1, 0, 1, 1, petal);
-          const e = b.vertex(cx - r, y, cz + r, 0, 1, 0, 0, 1, petal);
-          b.quad(a, c, d, e);
-        }
-      }
-      return b.build();
-    },
-  },
+  // The `wildflower` entry that used to sit here — three flat quads on a stub
+  // of stem — has moved out to `lib/world/flowers.ts` and become thirteen
+  // species with petals on them. See the flower block in the component below.
   {
     id: "tussock",
     share: 0.14,
@@ -2877,7 +3164,7 @@ export function Flora({
       const canopy = buildCanopy(spec, detailed.anchors, true);
       const simpleCanopy = buildCanopy(spec, simplified.anchors, false);
 
-      const billboard = makeTreeBillboard(spec.billboard, 224, s * 13 + 3);
+      const billboard = makeCanopyBillboard(spec.billboard, 224, s * 13 + 3);
       const billboardMaterial = new THREE.MeshLambertMaterial({
         vertexColors: true,
         map: billboard,
@@ -3268,7 +3555,7 @@ export function Flora({
     }
 
     return { group, groups, geometries, materials, textures, meshes, meadow };
-  }, [budget, layers, 9]);
+  }, [budget, layers]);
 
   useFrame((state, delta) => {
     clock.current.uTime.value += delta;

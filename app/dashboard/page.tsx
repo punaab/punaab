@@ -2,62 +2,85 @@ import Link from "next/link";
 import { auth } from "@clerk/nextjs/server";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { ensureProfile } from "@/lib/profiles";
-import { getCreditBalance } from "@/lib/credits";
+import { getGoldBalance } from "@/lib/gold";
+import { isLoreAdmin } from "@/lib/lore-admin";
 
 export default async function DashboardPage() {
   const { userId } = await auth();
   const { profile, supabase } = await ensureProfile(userId!);
-  let projectCount = 0;
-  let credits = 500;
+  const loreAdmin = isLoreAdmin(userId);
+  let gold = 0;
+  let hasCharacter = false;
+  let inviteCount = 0;
 
   if (supabase && profile.id !== "local") {
-    const [{ count }, balance] = await Promise.all([
+    const [goldBalance, character, invites] = await Promise.all([
+      getGoldBalance(supabase, profile.id),
       supabase
-        .from("projects")
+        .from("player_characters")
+        .select("profile_id")
+        .eq("profile_id", profile.id)
+        .maybeSingle(),
+      supabase
+        .from("profiles")
         .select("*", { count: "exact", head: true })
-        .eq("owner_id", profile.id),
-      getCreditBalance(supabase, profile.id),
+        .eq("referred_by", profile.id),
     ]);
-    projectCount = count ?? 0;
-    credits = balance;
+    gold = goldBalance;
+    hasCharacter = Boolean(character.data);
+    inviteCount = invites.count ?? 0;
   }
 
   return (
     <DashboardShell
       title="Overview"
-      subtitle="Drop Punaab into your game in under five minutes."
+      subtitle="Your traveler, gold wallet, invites, and worldbuilding."
     >
       <div className="card-grid">
         <article className="card">
-          <p className="meta">plan</p>
-          <h2>{profile.plan_code}</h2>
-          <p>Your current subscription tier.</p>
+          <p className="meta">gold</p>
+          <h2>{gold.toLocaleString()}</h2>
+          <p>
+            From World upvotes and referrals.{" "}
+            <Link href="/dashboard/character">Open wallet</Link>
+          </p>
         </article>
         <article className="card">
-          <p className="meta">credits</p>
-          <h2>{credits.toLocaleString()}</h2>
-          <p>Cloud AI and music burn credits. Local AI does not.</p>
+          <p className="meta">invites</p>
+          <h2>{inviteCount.toLocaleString()}</h2>
+          <p>
+            Friends who joined with your referral link.{" "}
+            <Link href="/dashboard/character">Copy invite</Link>
+          </p>
         </article>
         <article className="card">
-          <p className="meta">projects</p>
-          <h2>{projectCount}</h2>
-          <p>Each project gets its own API key and bard config.</p>
+          <p className="meta">community</p>
+          <h2>Worldbuild</h2>
+          <p>
+            <Link href="/world">Contribute</Link> so the valley can grow.
+            {loreAdmin && (
+              <>
+                {" "}
+                · <Link href="/world/review">Review queue</Link>
+              </>
+            )}
+          </p>
         </article>
       </div>
 
-      {projectCount === 0 ? (
+      {!hasCharacter ? (
         <article className="card empty-state">
-          <h2>Create your first project</h2>
+          <h2>Create your character</h2>
           <p>
-            Next step: make a project, copy an API key, download the Godot
-            plugin, paste the key, and hit play.
+            Name your traveler, grab your invite link, and start earning gold on
+            the road.
           </p>
           <div className="hero-actions" style={{ justifyContent: "center" }}>
-            <Link className="btn primary" href="/dashboard/projects">
-              Create project
+            <Link className="btn primary" href="/dashboard/character">
+              Create character
             </Link>
-            <Link className="btn ghost" href="/docs/getting-started">
-              Getting started
+            <Link className="btn ghost" href="/world">
+              Help us world-build
             </Link>
           </div>
         </article>
@@ -66,13 +89,16 @@ export default async function DashboardPage() {
           <h2>What&apos;s next?</h2>
           <ol>
             <li>
-              <Link href="/dashboard/downloads">Download the Godot plugin</Link>
+              <Link href="/dashboard/character">Invite friends for gold</Link>
             </li>
             <li>
-              <Link href="/dashboard/keys">Copy an API key</Link>
+              <Link href="/world">Help us world-build</Link>
             </li>
             <li>
-              <Link href="/docs/godot">Paste it into the Punaab node</Link>
+              <Link href="/models">Download free models</Link>
+            </li>
+            <li>
+              <Link href="/music">Download free music</Link>
             </li>
           </ol>
         </article>

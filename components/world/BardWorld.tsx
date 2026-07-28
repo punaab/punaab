@@ -28,6 +28,8 @@ import { Flora } from "./Flora";
 import { FollowCamera } from "./FollowCamera";
 import { NPCs } from "./NPCs";
 import { SpeechBubble, type BubbleKind } from "./SpeechBubble";
+import { WorldMap } from "./WorldMap";
+import { findPlace } from "@/lib/world/cartography";
 import { Terrain } from "./Terrain";
 import { Water } from "./Water";
 import { ensureWorldColliders } from "@/lib/world/world-colliders";
@@ -39,13 +41,14 @@ import {
   type Activity,
   type Stop,
 } from "@/lib/bard/adventure";
+import { loadLocalJourney, saveLocalJourney } from "@/lib/bard/local-journey";
 import {
   BardPerformance,
   EMPTY_MUSIC_LEVELS,
   type MusicLevels,
 } from "@/lib/bard/performance";
 import { walkAmbience } from "@/lib/bard/walk-ambience";
-import { detectQuality, type QualityBudget } from "@/lib/world/quality";
+import { budgetFor, detectQuality, type QualityBudget } from "@/lib/world/quality";
 
 /**
  * The hero scene: Punaab travelling a fantasy valley, followed by a camera,
@@ -94,8 +97,9 @@ function Scene({
   // takes a step, or the first frames of movement pass straight through the
   // world. Doing it here — during render, before the bard and the NPCs mount —
   // rather than in an effect is deliberate: effects run after children have
-  // already had a frame to move. Colliders stay eager even when meshes defer.
-  ensureWorldColliders(budget);
+  // already had a frame to move. Shared pathing always uses the medium set so
+  // every visitor agrees on where the walls are.
+  ensureWorldColliders(budgetFor("medium"));
 
   // Bump when placement/footing code changes so Fast Refresh cannot keep a
   // floating architecture graph alive across edits.
@@ -209,6 +213,10 @@ export function BardWorld() {
   const [budget] = useState<QualityBudget>(detectQuality);
   const [bubble, setBubble] = useState<Bubble>(null);
   const [audioOn, setAudioOn] = useState(false);
+  const [mapOpen, setMapOpen] = useState(false);
+  // Which place he is standing at, so the map can mark it. Only ever changes
+  // on arrival and departure, so it is cheap React state rather than a ref.
+  const [currentPlaceId, setCurrentPlaceId] = useState<string | null>(null);
   const [nowPlaying, setNowPlaying] = useState<string | null>(null);
   const [nowPlayingOverflows, setNowPlayingOverflows] = useState(false);
   const [caption, setCaption] = useState("Punaab is on the road.");
@@ -219,9 +227,6 @@ export function BardWorld() {
   const [enrichWorld, setEnrichWorld] = useState(false);
   const [loaderFading, setLoaderFading] = useState(false);
   const [showLoader, setShowLoader] = useState(true);
-  // Display-only: advanced on a steady clock, not asset spikes.
-  const [bootProgress, setBootProgress] = useState(0);
-  const sceneReadyRef = useRef(false);
 
   const bardRef = useRef<THREE.Object3D | null>(null);
   const headAnchorRef = useRef<THREE.Object3D | null>(null);
@@ -249,8 +254,12 @@ export function BardWorld() {
   }, []);
 
   const handleSceneReady = useCallback(() => {
-    sceneReadyRef.current = true;
     setSceneReady(true);
+  }, []);
+
+  const handleLoaderFinished = useCallback(() => {
+    setLoaderFading(true);
+    window.setTimeout(() => setShowLoader(false), 560);
   }, []);
 
   // Core (bard + grass) is up — dismiss the loader, then stream in the rest.
@@ -259,52 +268,6 @@ export function BardWorld() {
     const t = window.setTimeout(() => setEnrichWorld(true), 160);
     return () => window.clearTimeout(t);
   }, [sceneReady]);
-
-  // Steady linear fill toward a soft ceiling, then a short catch-up to 100
-  // once the valley has drawn — never tied to jumpy asset percentages.
-  useEffect(() => {
-    // Use rAF timestamps only — `performance` in this component is BardPerformance.
-    let last = 0;
-    let value = 0;
-    let frame = 0;
-    // Core boot is shorter now (grass + character), so the bar can move a bit faster.
-    const RATE_PCT_PER_SEC = 32;
-    const CEILING = 90;
-    const FINISH_PCT_PER_SEC = 70;
-
-    const tick = (now: number) => {
-      if (last === 0) last = now;
-      const dt = Math.min(0.05, (now - last) / 1000);
-      last = now;
-
-      if (sceneReadyRef.current) {
-        // Same steady feel on the way out — no sudden snap to 100.
-        value = Math.min(100, value + FINISH_PCT_PER_SEC * dt);
-        setBootProgress(value);
-        if (value < 100) frame = requestAnimationFrame(tick);
-        return;
-      }
-
-      if (value < CEILING) {
-        value = Math.min(CEILING, value + RATE_PCT_PER_SEC * dt);
-      } else {
-        // Past the expected window: creep the last few points slowly.
-        value = Math.min(96, value + 1.5 * dt);
-      }
-      setBootProgress(value);
-      frame = requestAnimationFrame(tick);
-    };
-
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, []);
-
-  useEffect(() => {
-    if (!sceneReady || bootProgress < 99.5) return;
-    setLoaderFading(true);
-    const t = window.setTimeout(() => setShowLoader(false), 560);
-    return () => window.clearTimeout(t);
-  }, [sceneReady, bootProgress]);
 
   const performance = useMemo(() => new BardPerformance(), []);
   const sampleMusic = useRef<() => MusicLevels>(() => EMPTY_MUSIC_LEVELS);
@@ -334,6 +297,7 @@ export function BardWorld() {
       say(line, currentActivity === "wondering" ? "thought" : "speech");
     },
     onArrive: (stop: Stop) => {
+      setCurrentPlaceId(stop.id);
       setCaption(captionFor(stop));
       if (captionTimer.current) clearTimeout(captionTimer.current);
       // Keep the stop caption for most of the dwell so it isn't a flash.
@@ -353,24 +317,44 @@ export function BardWorld() {
       say(`Something worth remembering at ${stop.name}.`, "thought");
     },
     onDepart: () => {
+      setCurrentPlaceId(null);
       setCaption("Punaab is on the road.");
     },
   };
 
-  const director = useMemo(
-    () =>
-      new AdventureDirector({
-        onSay: (line, activity) =>
-          adventureCallbacks.current.onSay(line, activity),
-        onArrive: (stop) => adventureCallbacks.current.onArrive(stop),
-        onTrade: (waresTag, stop) =>
-          adventureCallbacks.current.onTrade(waresTag, stop),
-        onLore: (loreId, stop) =>
-          adventureCallbacks.current.onLore(loreId, stop),
-        onDepart: (stop) => adventureCallbacks.current.onDepart(stop),
-      }),
-    []
-  );
+  const director = useMemo(() => {
+    ensureWorldColliders(budgetFor("medium"));
+    const next = new AdventureDirector({
+      onSay: (line, activity) =>
+        adventureCallbacks.current.onSay(line, activity),
+      onArrive: (stop) => adventureCallbacks.current.onArrive(stop),
+      onTrade: (waresTag, stop) =>
+        adventureCallbacks.current.onTrade(waresTag, stop),
+      onLore: (loreId, stop) =>
+        adventureCallbacks.current.onLore(loreId, stop),
+      onDepart: (stop) => adventureCallbacks.current.onDepart(stop),
+    });
+    const saved = loadLocalJourney();
+    if (saved) next.restore(saved);
+    return next;
+  }, []);
+
+  // Remember where he was on this browser only — not shared across visitors.
+  useEffect(() => {
+    const persist = () => saveLocalJourney(director);
+    const interval = window.setInterval(persist, 4_000);
+    const onHide = () => {
+      if (document.visibilityState === "hidden") persist();
+    };
+    window.addEventListener("beforeunload", persist);
+    document.addEventListener("visibilitychange", onHide);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("beforeunload", persist);
+      document.removeEventListener("visibilitychange", onHide);
+      persist();
+    };
+  }, [director]);
 
   // --- Audio events -> animation and bubbles ------------------------------
   useEffect(() => {
@@ -502,6 +486,12 @@ export function BardWorld() {
     };
   }, [exitImmersive, uiHidden]);
 
+  const getBardPosition = useCallback(() => {
+    const bard = bardRef.current;
+    if (!bard) return null;
+    return { x: bard.position.x, z: bard.position.z };
+  }, []);
+
   const toggleAudio = useCallback(async () => {
     if (audioOn) {
       // Silencing him is a direct consequence of the click, so it happens
@@ -577,13 +567,37 @@ export function BardWorld() {
       )}
 
       {showLoader && (
-        <ValleyLoader progress={bootProgress} fading={loaderFading} />
+        <ValleyLoader
+          ready={sceneReady}
+          fading={loaderFading}
+          onFinished={handleLoaderFinished}
+        />
       )}
 
       {!showLoader && !uiHidden && (
         <>
           <div className="bard-world-caption">{caption}</div>
           <div className="bard-world-chrome">
+            <button
+              type="button"
+              className="bard-map-open"
+              onClick={(event) => {
+                event.stopPropagation();
+                setMapOpen(true);
+              }}
+              aria-label="Open the map of PIXELGREW"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true" width="18" height="18">
+                <path
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.7"
+                  strokeLinejoin="round"
+                  d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2zM9 4v14M15 6v14"
+                />
+              </svg>
+              <span>Map</span>
+            </button>
             <button
               type="button"
               className="bard-ui-toggle"
@@ -639,31 +653,30 @@ export function BardWorld() {
           </div>
 
           <div className="bard-world-dock">
-            {nowPlaying && (
-              <div className="bard-now-playing" title={nowPlaying}>
-                <span className="bard-now-playing-icon" aria-hidden="true">
-                  ♪
-                </span>
-                <div
-                  ref={nowPlayingViewportRef}
-                  className="bard-now-playing-viewport"
-                >
-                  <span
-                    ref={nowPlayingTextRef}
-                    className={`bard-now-playing-text${
-                      nowPlayingOverflows ? " is-scrolling" : ""
-                    }`}
-                  >
-                    {nowPlaying}
-                  </span>
-                </div>
-              </div>
-            )}
             <div className="bard-world-footer">
-              <div className="bard-world-hint">
-                {immersive
-                  ? "Drag to look · Esc or Exit to leave"
-                  : "Drag to look · The bard walks the road"}
+              <div className="bard-world-hint-slot">
+                {nowPlaying ? (
+                  <div className="bard-now-playing" title={nowPlaying}>
+                    <span className="bard-now-playing-icon" aria-hidden="true">
+                      ♪
+                    </span>
+                    <div
+                      ref={nowPlayingViewportRef}
+                      className="bard-now-playing-viewport"
+                    >
+                      <span
+                        ref={nowPlayingTextRef}
+                        className={`bard-now-playing-text${
+                          nowPlayingOverflows ? " is-scrolling" : ""
+                        }`}
+                      >
+                        {nowPlaying}
+                      </span>
+                    </div>
+                  </div>
+                ) : immersive ? (
+                  <div className="bard-world-hint">Esc or Exit to leave</div>
+                ) : null}
               </div>
               <div className="bard-world-footer-actions">
                 {immersive && (
@@ -700,6 +713,24 @@ export function BardWorld() {
               </div>
             </div>
           </div>
+
+          <WorldMap
+            open={mapOpen}
+            onClose={() => setMapOpen(false)}
+            currentPlaceId={currentPlaceId}
+            getBardPosition={getBardPosition}
+            onTravel={(placeId) => {
+              const dispatched = director.travelTo(placeId);
+              if (dispatched) {
+                // Say where he is headed straight away. The walk itself can be
+                // minutes long, so without this the map closes and apparently
+                // nothing happens.
+                const place = findPlace(placeId);
+                if (place) setCaption(`Punaab sets out for ${place.name}.`);
+              }
+              return dispatched;
+            }}
+          />
         </>
       )}
     </div>

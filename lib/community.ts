@@ -8,16 +8,16 @@ export const PUMP_MINT =
   "8xWMreut8z93Pg4Uh1HgY9eWNJJxUtyWnGPjjnuJpump";
 
 export const COMMUNITY = {
-  /** Free model, docs, and site source. */
-  github: "https://github.com/punaab/punaab",
   /** Official X / Twitter. */
   x: "https://x.com/notbitcoinceo",
   /** Punaab coin on Pump.fun */
   pump: `https://pump.fun/coin/${PUMP_MINT}`,
+  /** Community Telegram group. */
+  telegram: "https://t.me/+KqRFKkAiSLo1YjFh",
 } as const;
 
 export const COMMUNITY_PITCH =
-  "Punaab is free to download. Use him in your own story or game, change him, and monetize what you make. This is a community project — join in and help us make him better.";
+  "Punaab is free to download. Use him in your own story or game, change him, and monetize what you make. Share lore in the hall — this is a community project.";
 
 /** Lore line that scrolls in the Pump.fun ticker. */
 export const PUMP_TICKER_LORE =

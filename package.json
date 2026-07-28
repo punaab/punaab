@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "pack:godot": "node scripts/pack-godot-plugin.js",
+    "pack:music": "node scripts/pack-music.js",
     "setup:stripe": "node scripts/setup-stripe-products.js",
     "apply:migration": "node scripts/apply-migration.js"
   },
@@ -18,10 +19,12 @@
     "@react-three/postprocessing": "^3.0.4",
     "@supabase/supabase-js": "^2.110.9",
     "@types/three": "^0.185.1",
+    "@vercel/blob": "^2.6.1",
     "next": "16.2.12",
     "postprocessing": "^6.39.3",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "react-force-graph-2d": "^1.29.1",
     "stripe": "^22.3.2",
     "three": "^0.185.1",
     "zod": "^4.4.3"
@@ -33,6 +36,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.12",
+    "pg": "^8.22.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

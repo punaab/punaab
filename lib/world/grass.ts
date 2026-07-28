@@ -47,9 +47,10 @@ import {
   ROAD_HALF_WIDTH,
   WATERS,
   distanceToRoad,
-  heightAt,
   fbm,
+  heightAt,
 } from "./terrain";
+import { drawnHeightAt, terrainLodReady } from "./surfaces";
 import { biomeWeights, type BiomeId } from "./regions";
 import { isBlocked } from "./collision";
 import type { QualityTier } from "./quality";
@@ -426,6 +427,17 @@ function clamp01(t: number) {
  * and it turns six hundred thousand allocations into ten thousand.
  */
 export function bakeGrassGround(size: number): GrassGround {
+  if (process.env.NODE_ENV !== "production" && !terrainLodReady()) {
+    // `drawnHeightAt` falls back to `heightAt` when no LOD plan has been
+    // published, which silently reintroduces floating grass — up to two metres
+    // of it on a ridge. That only happens if <Flora> ever renders before
+    // <Terrain>, so this is a tripwire on the render order rather than a
+    // condition to handle.
+    console.warn(
+      "[punaab] grass baked before Terrain published its LOD plan — blades will float on convex ground"
+    );
+  }
+
   const step = WORLD_SIZE / size;
   const height = new Float32Array(size * size);
   const mask = new Uint8Array(size * size * 4);
@@ -437,7 +449,12 @@ export function bakeGrassGround(size: number): GrassGround {
     const z = -HALF_WORLD + (j + 0.5) * step;
     for (let i = 0; i < size; i++) {
       const x = -HALF_WORLD + (i + 0.5) * step;
-      const y = heightAt(x, z);
+      // The height the terrain is DRAWN at, not the height function it was
+      // built from. Between two mesh vertices the drawn surface is a flat
+      // triangle, and over a hilltop that triangle cuts the corner and sits
+      // below the function — so a blade rooted at `heightAt` floats above the
+      // hill it should be growing on, by up to 1.3m at the coarser LODs.
+      const y = drawnHeightAt(x, z);
       height[j * size + i] = y;
       if (y < minHeight) minHeight = y;
       if (y > maxHeight) maxHeight = y;

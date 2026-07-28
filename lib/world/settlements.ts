@@ -372,7 +372,7 @@ export const SETTLEMENTS: Settlement[] = [
   },
   {
     id: "saltmere-quay",
-    name: "Saltmere Quay",
+    name: "Fishtopia",
     kind: "port",
     x: -150,
     z: 182,

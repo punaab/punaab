@@ -19,7 +19,15 @@ export const metadata: Metadata = {
   title: "Punaab — The Traveling Bard",
   description:
     "A free AI bard for your game — songs, shops, chatter, and the open road.",
-  icons: { icon: "/assets/punaab-logo.png" },
+  icons: {
+    icon: [
+      {
+        url: "/assets/images/pixel_coin.svg",
+        type: "image/svg+xml",
+      },
+    ],
+    apple: "/assets/images/pixel_coin.svg",
+  },
 };
 
 export const viewport: Viewport = {

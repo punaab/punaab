@@ -10,7 +10,12 @@ import {
   hash2,
   type PartKey,
 } from "./architecture-parts";
-import { KIND_RECIPES, PART_MATERIAL, buildSails } from "./architecture-kinds";
+import {
+  KIND_RECIPES,
+  PART_MATERIAL,
+  buildSails,
+  bridgeFor,
+} from "./architecture-kinds";
 import {
   BEDDING,
   GROUND_FOOTPRINTS,
@@ -870,6 +875,41 @@ function buildArchitecture(budget: QualityBudget): Assembly {
 
     const recipe = KIND_RECIPES[kind];
     if (!recipe) continue;
+
+    // Bridges are built one at a time rather than instanced.
+    //
+    // Every other kind shares one geometry across all its instances, which is
+    // what makes 628 structures affordable. A bridge cannot: its deck is an
+    // arch pinned to the ground at *its own* two ends, and those differ from
+    // bridge to bridge. Sharing a mesh would mean sharing one arch, which is
+    // how the deck ended up disagreeing with the approach road in the first
+    // place. There are five bridges in the valley, so five draw calls is a
+    // rounding error against being able to walk onto them smoothly.
+    if (kind === "bridge") {
+      for (const { structure, index } of all) {
+        const builder = new Build(kindSeed(kind) + index * 7919, lod);
+        bridgeFor(builder, structure);
+        scratchPosition.set(structure.x, structure.y, structure.z);
+        scratchEuler.set(0, structure.rotation, 0);
+        scratchQuaternion.setFromEuler(scratchEuler);
+        scratchScale.setScalar(structure.scale);
+        emit(
+          `bridge:${structure.id}`,
+          builder.build(),
+          [
+            new THREE.Matrix4().compose(
+              scratchPosition,
+              scratchQuaternion,
+              scratchScale
+            ),
+          ],
+          [index],
+          true
+        );
+      }
+      continue;
+    }
+
     const variants = recipe.variants[lod];
 
     // Split by variant first: every instance of one mesh must share geometry.
@@ -1093,9 +1133,12 @@ const FIRE_LIGHTS: Record<QualityBudget["tier"], number> = {
 };
 
 export function Architecture({ budget }: { budget: QualityBudget }) {
-  // Rev bumps force a rebuild through Fast Refresh — structure Y is sampled at
-  // build time, so a stale memo is exactly the floating-cottage bug.
-  const built = useMemo(() => buildArchitecture(budget), [budget, 6]);
+  // Structure Y is sampled at build time, so this memo holds geometry that
+  // encodes where the ground was. `budget` is the only thing that can change
+  // it at runtime. (A literal in the dependency list does nothing here — it is
+  // constant, so React compares it equal on every render; editing it only
+  // busts the memo because the edit itself triggers a Fast Refresh remount.)
+  const built = useMemo(() => buildArchitecture(budget), [budget]);
 
   const smoke = useMemo(() => {
     if (budget.tier === "low" || built.chimneys.length === 0) return null;

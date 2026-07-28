@@ -241,7 +241,7 @@ export const DEFAULT_QUESTS: Quest[] = [
     title: "The Gable Count",
     giverId: "underlyme",
     regionId: "saltmere",
-    body: "The water is low enough this year to count the gables, and there is a list in the chest at Saltmere Quay of every household that came out of Underlyme while it was drowning. If the two numbers agree then everybody got out, and I can stop turning it over. If the gables come to more than the households — and I have counted twice, and I would very much like to be wrong about this — then somebody stayed.",
+    body: "The water is low enough this year to count the gables, and there is a list in the chest at Fishtopia of every household that came out of Underlyme while it was drowning. If the two numbers agree then everybody got out, and I can stop turning it over. If the gables come to more than the households — and I have counted twice, and I would very much like to be wrong about this — then somebody stayed.",
     steps: [
       step("count", "Count the gables from the shingle while the water holds low. Twice, and from two places.", "underlyme"),
       step("list", "Get the household list out of the chest at the quay. They will want a reason. Give them one.", "mere-lamp"),

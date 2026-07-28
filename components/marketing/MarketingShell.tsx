@@ -2,22 +2,23 @@ import Image from "next/image";
 import { AuthNav } from "@/components/AuthControls";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { PumpTicker } from "@/components/marketing/PumpTicker";
+import { ReferralCapture } from "@/components/marketing/ReferralCapture";
+import { PoweredByPixelgrew } from "@/components/marketing/PoweredByPixelgrew";
 import { SiteLink } from "@/components/marketing/SiteLink";
 import { COMMUNITY } from "@/lib/community";
 
 const NAV = [
-  { href: "/#project", label: "Project" },
+  { href: "/project", label: "Project" },
+  { href: "/world", label: "Archive" },
   { href: "/music", label: "Music" },
-  { href: "/plugins", label: "Plugins" },
-  { href: "/pricing", label: "Plans" },
-  { href: "/docs", label: "How-To" },
-  { href: "/demo", label: "Demo" },
+  { href: "/models", label: "Models" },
 ] as const;
 
 export function MarketingShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="site-root">
       <LoadingScreen />
+      <ReferralCapture />
       <div className="mkt-top">
         <header className="mkt-header">
           <SiteLink href="/" className="brand">
@@ -46,7 +47,7 @@ export function MarketingShell({ children }: { children: React.ReactNode }) {
           <div className="mkt-actions">
             <AuthNav />
             <SiteLink href="/dashboard" className="btn primary btn-glow header-cta">
-              Let’s Build!
+              CREATE
             </SiteLink>
           </div>
         </header>
@@ -54,30 +55,22 @@ export function MarketingShell({ children }: { children: React.ReactNode }) {
       </div>
       <main>{children}</main>
       <footer className="site-footer">
-        <span>© 2026 Punaab</span>
-        <span className="dot">•</span>
-        <SiteLink href="/demo">Free download</SiteLink>
-        <span className="dot">•</span>
-        <SiteLink href="/docs">How-To</SiteLink>
-        <span className="dot">•</span>
-        <SiteLink href="/music">Music</SiteLink>
-        <span className="dot">•</span>
-        <SiteLink href="/plugins">Plugins</SiteLink>
-        <span className="dot">•</span>
-        <SiteLink href="/pricing">Plans</SiteLink>
         <div className="site-footer-socials">
+          <span>© 2026 punaab.com</span>
+          <span className="dot">•</span>
           <a href={COMMUNITY.x} target="_blank" rel="noopener noreferrer">
             X Twitter
+          </a>
+          <span className="dot">•</span>
+          <a href={COMMUNITY.telegram} target="_blank" rel="noopener noreferrer">
+            Telegram
           </a>
           <span className="dot">•</span>
           <a href={COMMUNITY.pump} target="_blank" rel="noopener noreferrer">
             PUMP.FUN
           </a>
-          <span className="dot">•</span>
-          <a href={COMMUNITY.github} target="_blank" rel="noopener noreferrer">
-            GitHub
-          </a>
         </div>
+        <PoweredByPixelgrew className="pixelgrew-credit-footer" />
       </footer>
     </div>
   );

@@ -287,6 +287,10 @@ export class BardPerformance {
    * Cuts the performance. Pass `fade` (seconds) to ramp the master down first
    * so a click-to-silence doesn't chop the last note dead. A faded stop also
    * emits `song-end`; a hard cut (used when starting the next track) does not.
+   *
+   * Master gain stays near zero after a fade — never snaps back to full volume
+   * while the convolver still holds a reverb tail (that was the “loud chord
+   * then silence” bug). `play()` restores the level for the next song.
    */
   stop(fade = 0) {
     for (const timer of this.timers) clearTimeout(timer);
@@ -302,30 +306,59 @@ export class BardPerformance {
     const sources = this.sources;
     this.sources = [];
 
-    const finish = () => {
+    const silenceMaster = () => {
+      if (!this.master || !this.ctx) return;
+      const t = this.ctx.currentTime;
+      this.master.gain.cancelScheduledValues(t);
+      this.master.gain.setValueAtTime(0.0001, t);
+    };
+
+    const releaseSources = () => {
       for (const source of sources) {
         try {
           source.stop();
         } catch {
           // already finished
         }
+        try {
+          source.disconnect();
+        } catch {
+          // already disconnected
+        }
       }
-      if (this.master && this.ctx) {
-        const t = this.ctx.currentTime;
-        this.master.gain.cancelScheduledValues(t);
-        this.master.gain.setValueAtTime(0.8, t);
-      }
+      silenceMaster();
     };
 
     if (fade > 0 && this.master && this.ctx && sources.length > 0) {
       const now = this.ctx.currentTime;
       const gain = this.master.gain;
+      const endAt = now + fade;
       gain.cancelScheduledValues(now);
-      gain.setValueAtTime(gain.value, now);
-      gain.linearRampToValueAtTime(0.0001, now + fade);
-      this.timers.push(setTimeout(finish, Math.ceil(fade * 1000) + 30));
+      gain.setValueAtTime(Math.max(gain.value, 0.0001), now);
+      gain.linearRampToValueAtTime(0.0001, endAt);
+      // Stop the buffers at the end of the ramp while master is still muted,
+      // so the stop click and the convolver tail never get amplified.
+      for (const source of sources) {
+        try {
+          source.stop(endAt);
+        } catch {
+          // already finished
+        }
+      }
+      this.timers.push(
+        setTimeout(() => {
+          for (const source of sources) {
+            try {
+              source.disconnect();
+            } catch {
+              // already disconnected
+            }
+          }
+          silenceMaster();
+        }, Math.ceil(fade * 1000) + 40)
+      );
     } else {
-      finish();
+      releaseSources();
     }
 
     if (ended && fade > 0) {

@@ -33,7 +33,7 @@ async function main() {
     "..",
     "supabase",
     "migrations",
-    "001_punaab_core.sql"
+    "001_profiles.sql"
   );
   const sql = fs.readFileSync(sqlPath, "utf8");
   const dbUrl = process.env.DATABASE_URL || process.env.SUPABASE_DB_URL;

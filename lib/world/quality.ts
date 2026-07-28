@@ -78,6 +78,29 @@ export type QualityBudget = {
   rocks: number;
   /** Ferns and bracken. Kept as its own field; existing callers pass it. */
   ferns: number;
+  /**
+   * Flowering plants placed across the valley, all species.
+   *
+   * Like `trees`, a request rather than a promise: flowers are sited in drifts
+   * and a drift that lands on a cliff or a rooftop is dropped whole, so the
+   * delivered population runs a little under this.
+   *
+   * The number is smaller than `groundCover` for a reason that is not thrift.
+   * Flowers do not spread evenly — the whole population lives in a few hundred
+   * dense patches with bare sward between them — so raising this does not make
+   * the meadow flowerier, it makes each patch denser until the plants
+   * interpenetrate. More flowers past this point is more *drifts*, and that is
+   * governed by the drift field in `lib/world/flowers.ts`, not here.
+   */
+  flowers: number;
+  /**
+   * Distance beyond which flowers are not drawn.
+   *
+   * Deliberately much shorter than `drawDistance`. A buttercup is three
+   * centimetres across; past a hundred metres a whole drift of them is one
+   * pixel of yellow, which the terrain's own colour already supplies.
+   */
+  flowerRadius: number;
 
   // --- Level of detail ----------------------------------------------------
 
@@ -144,6 +167,8 @@ const BUDGETS: Record<QualityTier, QualityBudget> = {
     grassRadius: 36,
     rocks: 320,
     ferns: 600,
+    flowers: 5200,
+    flowerRadius: 55,
 
     lodNear: 30,
     lodMid: 82,
@@ -182,6 +207,8 @@ const BUDGETS: Record<QualityTier, QualityBudget> = {
     grassRadius: 68,
     rocks: 1000,
     ferns: 2200,
+    flowers: 24000,
+    flowerRadius: 95,
 
     lodNear: 48,
     lodMid: 130,
@@ -220,6 +247,8 @@ const BUDGETS: Record<QualityTier, QualityBudget> = {
     grassRadius: 90,
     rocks: 1700,
     ferns: 4000,
+    flowers: 46000,
+    flowerRadius: 125,
 
     lodNear: 64,
     lodMid: 170,

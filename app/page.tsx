@@ -1,9 +1,13 @@
 import { MarketingShell } from "@/components/marketing/MarketingShell";
 import { BardWorldLazy } from "@/components/marketing/BardWorldLazy";
 import { CommunityLinks } from "@/components/marketing/CommunityLinks";
+import { GoldLeaderboard } from "@/components/marketing/GoldLeaderboard";
+import { PoweredByPixelgrew } from "@/components/marketing/PoweredByPixelgrew";
 import { SiteLink } from "@/components/marketing/SiteLink";
-import { COMMUNITY_PITCH } from "@/lib/community";
-import { FEATURES, FEATURES_NOTE } from "@/lib/nav";
+import { FEATURES } from "@/lib/nav";
+
+const HOME_PROJECT_PITCH =
+  "The Traveling Bard is free to download. Use him in your own story or game, change him, and monetize what you make. Share lore in the hall — this is a community project.";
 
 export default function HomePage() {
   return (
@@ -13,7 +17,7 @@ export default function HomePage() {
           PUNAAB
         </div>
         <div className="hero-copy hero-copy-animate">
-          <p className="hero-kicker">Free traveling bard</p>
+          <p className="hero-kicker">Smart Traveling Bard</p>
           <h1>
             Meet Punaab —
             <span className="hero-gradient-line"> the traveling bard</span>
@@ -28,11 +32,11 @@ export default function HomePage() {
             <span className="hero-inspiration-rule" />
           </p>
           <div className="hero-actions">
-            <SiteLink className="btn primary btn-glow btn-xl" href="/demo">
-              Free download
+            <SiteLink className="btn primary btn-glow btn-xl" href="/world">
+              Contribute
             </SiteLink>
-            <SiteLink className="btn ghost" href="/#project">
-              Join the community
+            <SiteLink className="btn ghost" href="/models">
+              Free models
             </SiteLink>
           </div>
         </div>
@@ -42,9 +46,9 @@ export default function HomePage() {
       </section>
 
       <section id="project" className="section project-band">
-        <p className="section-num">Project</p>
-        <h2>Free. Yours to use.</h2>
-        <p className="section-lead">{COMMUNITY_PITCH}</p>
+        <PoweredByPixelgrew className="pixelgrew-credit-band" />
+        <h2>Build Together. Yours to Use.</h2>
+        <p className="section-lead">{HOME_PROJECT_PITCH}</p>
         <CommunityLinks />
         <ul className="feature-grid">
           {FEATURES.map((f) => (
@@ -53,17 +57,21 @@ export default function HomePage() {
             </li>
           ))}
         </ul>
-        <p className="feature-note">{FEATURES_NOTE}</p>
+        <SiteLink className="btn soft project-band-more" href="/project">
+          Read the full project scroll
+        </SiteLink>
       </section>
 
+      <GoldLeaderboard />
+
       <section className="section cta-band cta-glow">
-        <h2>Drop Punaab Into Your Game</h2>
+        <h2>Write the next scrap of lore</h2>
         <p>
-          Start a project, take your key, fetch the plugin, paste it in, and
-          hear him play.
+          Characters, quests, dialogue, places — sign in, publish an entry, and
+          let the community upvote and refine it.
         </p>
-        <SiteLink className="btn primary btn-glow btn-xl" href="/docs/getting-started">
-          Start in 5 minutes
+        <SiteLink className="btn primary btn-glow btn-xl" href="/world">
+          Help us world-build
         </SiteLink>
       </section>
     </MarketingShell>

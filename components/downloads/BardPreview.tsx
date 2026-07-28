@@ -4,11 +4,14 @@ import { Environment, Lightformer, useGLTF } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import {
   Suspense,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  type MutableRefObject,
+  type PointerEvent as ReactPointerEvent,
 } from "react";
 import * as THREE from "three";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
@@ -16,21 +19,17 @@ import type { BardPalette } from "@/lib/bard/build-bard";
 import {
   PUNAAB_HEIGHT,
   PUNAAB_IDLE_URL,
-  PUNAAB_STRUM_IDLE_URL,
+  PUNAAB_STATIC_8K_URL,
   PUNAAB_WALK_URL,
 } from "@/lib/bard/punaab-model";
 
-export type PreviewAnim = "idle" | "walk" | "strum-idle";
-
+/** Extra space so the figure sits cleanly in the frame. */
+const FRAME_PADDING = 1.22;
 const CLIP_RATE = 0.85;
-/** Extra space so walk/strum limb swings stay inside the frame. */
-const FRAME_PADDING = 1.28;
-
-const URLS: Record<PreviewAnim, string> = {
-  idle: PUNAAB_IDLE_URL,
-  walk: PUNAAB_WALK_URL,
-  "strum-idle": PUNAAB_STRUM_IDLE_URL,
-};
+/** Radians of yaw per pixel of horizontal drag. */
+const DRAG_YAW = 0.0075;
+/** Slow idle spin when the player is not dragging. */
+const IDLE_SPIN = 0.28;
 
 type Frame = {
   offset: [number, number, number];
@@ -38,9 +37,15 @@ type Frame = {
   height: number;
 };
 
+type PreviewMode = "static" | "idle" | "walk";
+
+type Turntable = {
+  yaw: MutableRefObject<number>;
+  dragging: MutableRefObject<boolean>;
+};
+
 function pickClip(clips: THREE.AnimationClip[]): THREE.AnimationClip | null {
   if (!clips.length) return null;
-  // Prefer a real loop — some Meshy packs ship a near-zero stub alongside the clip.
   return clips.reduce((best, clip) =>
     clip.duration > best.duration ? clip : best
   );
@@ -59,7 +64,6 @@ function measureFrame(model: THREE.Object3D): Frame {
 
   const size = box.getSize(new THREE.Vector3());
   const center = box.getCenter(new THREE.Vector3());
-  // Feet on the shadow plane, torso centered on X/Z (models are often off-origin).
   const height = Math.max(size.y, PUNAAB_HEIGHT * 0.85);
   return {
     offset: [-center.x, -box.min.y, -center.z],
@@ -68,7 +72,6 @@ function measureFrame(model: THREE.Object3D): Frame {
   };
 }
 
-/** Pull the camera back so the full standing figure fits with animation padding. */
 function FitCamera({ frame }: { frame: Frame }) {
   const { camera, size } = useThree();
 
@@ -93,22 +96,23 @@ function FitCamera({ frame }: { frame: Frame }) {
   return null;
 }
 
-/**
- * Turntable preview of the authored Punaab GLB.
- *
- * Each pack is its own skinned scene + clip so the mixer always binds to the
- * bones that shipped with that file.
- */
 function Model({
-  anim,
+  mode,
   onFrame,
+  turntable,
 }: {
-  anim: PreviewAnim;
+  mode: PreviewMode;
   onFrame: (frame: Frame) => void;
+  turntable: Turntable;
 }) {
-  const url = URLS[anim];
+  const url =
+    mode === "static"
+      ? PUNAAB_STATIC_8K_URL
+      : mode === "walk"
+        ? PUNAAB_WALK_URL
+        : PUNAAB_IDLE_URL;
   const gltf = useGLTF(url);
-  const turntable = useRef<THREE.Group>(null);
+  const groupRef = useRef<THREE.Group>(null);
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
 
   const model = useMemo(() => {
@@ -130,6 +134,10 @@ function Model({
   }, [frame, onFrame]);
 
   useEffect(() => {
+    if (mode === "static") {
+      mixerRef.current = null;
+      return;
+    }
     const clip = pickClip(gltf.animations);
     if (!clip) return;
 
@@ -148,22 +156,20 @@ function Model({
       mixer.uncacheRoot(model);
       mixerRef.current = null;
     };
-    // Depend on the pack URL / model, not `gltf.animations` identity — a fresh
-    // array reference each render would restart the mixer and freeze at frame 0.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- gltf.animations from cached GLB
-  }, [model, url]);
+  }, [model, url, mode]);
 
-  useFrame((state, delta) => {
+  useFrame((_, delta) => {
     mixerRef.current?.update(Math.min(delta, 0.05));
-    const group = turntable.current;
-    if (group) {
-      // Face the camera first, then slow turntable.
-      group.rotation.y = Math.PI + state.clock.elapsedTime * 0.35;
+    if (!turntable.dragging.current) {
+      turntable.yaw.current += delta * IDLE_SPIN;
     }
+    const group = groupRef.current;
+    if (group) group.rotation.y = turntable.yaw.current;
   });
 
   return (
-    <group ref={turntable}>
+    <group ref={groupRef}>
       <group position={frame.offset}>
         <primitive object={model} />
       </group>
@@ -171,7 +177,13 @@ function Model({
   );
 }
 
-function PreviewScene({ anim }: { anim: PreviewAnim }) {
+function PreviewScene({
+  mode,
+  turntable,
+}: {
+  mode: PreviewMode;
+  turntable: Turntable;
+}) {
   const [frame, setFrame] = useState<Frame>({
     offset: [0, -PUNAAB_HEIGHT * 0.5, 0],
     centerY: PUNAAB_HEIGHT * 0.5,
@@ -212,7 +224,7 @@ function PreviewScene({ anim }: { anim: PreviewAnim }) {
         />
       </Environment>
 
-      <Model key={anim} anim={anim} onFrame={setFrame} />
+      <Model key={mode} mode={mode} onFrame={setFrame} turntable={turntable} />
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
         <circleGeometry args={[2.2, 48]} />
@@ -224,19 +236,51 @@ function PreviewScene({ anim }: { anim: PreviewAnim }) {
 
 export function BardPreview({
   palette: _palette,
-  anim,
   playing,
 }: {
-  palette: BardPalette;
-  anim?: PreviewAnim;
-  /** Embed toggle — walk when true, idle when false. Ignored if `anim` is set. */
+  /** Kept for embed callers; palette is authored into the GLB now. */
+  palette?: BardPalette;
+  /** Embed toggle — walk when true, idle when false. Downloads use static. */
   playing?: boolean;
 }) {
-  const mode: PreviewAnim =
-    anim !== undefined ? anim : playing ? "walk" : "idle";
+  const mode: PreviewMode =
+    playing === undefined ? "static" : playing ? "walk" : "idle";
+
+  const yaw = useRef(Math.PI);
+  const dragging = useRef(false);
+  const lastX = useRef(0);
+  const turntable = useMemo(() => ({ yaw, dragging }), []);
+
+  const onPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    dragging.current = true;
+    lastX.current = event.clientX;
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }, []);
+
+  const onPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!dragging.current) return;
+    const dx = event.clientX - lastX.current;
+    lastX.current = event.clientX;
+    yaw.current += dx * DRAG_YAW;
+  }, []);
+
+  const onPointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    dragging.current = false;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }, []);
 
   return (
-    <div className="bard-preview">
+    <div
+      className="bard-preview is-draggable"
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+      role="img"
+      aria-label="Punaab model preview. Drag left or right to turn."
+    >
       <Canvas
         shadows
         frameloop="always"
@@ -254,13 +298,13 @@ export function BardPreview({
         }}
       >
         <Suspense fallback={null}>
-          <PreviewScene anim={mode} />
+          <PreviewScene mode={mode} turntable={turntable} />
         </Suspense>
       </Canvas>
     </div>
   );
 }
 
+useGLTF.preload(PUNAAB_STATIC_8K_URL);
 useGLTF.preload(PUNAAB_IDLE_URL);
 useGLTF.preload(PUNAAB_WALK_URL);
-useGLTF.preload(PUNAAB_STRUM_IDLE_URL);

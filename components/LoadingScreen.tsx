@@ -42,12 +42,13 @@ export function LoadingScreen() {
     <div className={`loader-screen${percent >= 100 ? " loader-fade" : ""}`}>
       <div className="loader-content">
         <Image
-          src="/assets/punaab-wink.png"
-          alt="Punaab"
-          width={140}
-          height={140}
+          src="/assets/backpack.svg"
+          alt="Punaab's backpack"
+          width={180}
+          height={180}
           className="loader-mascot"
           priority
+          unoptimized
         />
         <div className="loader-code-text">
           <span className="code-line" data-line="1">
@@ -63,16 +64,29 @@ export function LoadingScreen() {
             The journey begins.
           </span>
         </div>
-        <div className="loader-spinner-wrapper">
-          <div className="loader-spinner" />
+
+        <div className="valley-loader-track loader-boot-track" aria-hidden="true">
+          <span className="valley-loader-cap left" />
+          <div className="valley-loader-trough">
+            <div
+              className="valley-loader-fill"
+              style={{ width: `${percent}%` }}
+            >
+              <span className="valley-loader-shimmer" />
+            </div>
+            <span
+              className="valley-loader-runner"
+              style={{ left: `${percent}%` }}
+            />
+          </div>
+          <span className="valley-loader-cap right" />
         </div>
-        <div className="loader-progress-wrapper">
-          <div
-            className="loader-progress-bar"
-            style={{ width: `${percent}%` }}
-          />
+
+        <div className="valley-loader-meta">
+          <span className="valley-loader-rule" aria-hidden="true" />
+          <span className="valley-loader-pct">{percent}%</span>
+          <span className="valley-loader-rule" aria-hidden="true" />
         </div>
-        <div className="loader-percentage">{percent}%</div>
       </div>
     </div>
   );

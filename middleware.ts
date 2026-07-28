@@ -7,6 +7,8 @@ const isProtectedRoute = createRouteMatcher([
   "/api/v1/keys(.*)",
   "/api/v1/credits(.*)",
   "/api/v1/characters(.*)",
+  "/api/v1/player-character(.*)",
+  "/api/v1/gold(.*)",
   // Managing embed tokens is dashboard work. The *public* embed surfaces
   // (/api/v1/embed/chat and /config) authenticate with an embed token and an
   // origin check instead, and must stay reachable from customers' sites.
@@ -14,6 +16,10 @@ const isProtectedRoute = createRouteMatcher([
   "/api/v1/embed/bridges(.*)",
   "/api/stripe/checkout(.*)",
   "/api/stripe/portal(.*)",
+  "/world/review(.*)",
+  "/api/community/lore/upload(.*)",
+  "/api/community/lore/review(.*)",
+  "/api/community/lore/(.*)/review(.*)",
 ]);
 
 export default clerkMiddleware(async (auth, req) => {

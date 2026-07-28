@@ -17,6 +17,13 @@
 import * as THREE from "three";
 
 import {
+  BRIDGE_DECK_LENGTH,
+  bridgeDeckLocalY,
+  bridgeProfile,
+} from "@/lib/world/bridges";
+import type { Structure } from "@/lib/world/settlements";
+
+import {
   Build,
   PALETTE,
   chimney,
@@ -1210,88 +1217,174 @@ function dock(b: Build): void {
 }
 
 /** A bridge. The deck sits at the group origin, which is the road surface. */
-function bridge(b: Build): void {
-  const span = 11.0;
-  const width = 5.2;
+/**
+ * A timber trestle bridge, arched over its channel.
+ *
+ * Wood rather than masonry, and a trestle rather than an arch ring, because a
+ * trestle is the honest answer to uneven ground: every bent drops its own legs
+ * to whatever the bed is under it, so the bridge meets the river bank instead
+ * of arguing with it. A stone arch has one springing height and must be either
+ * buried or stilted anywhere the banks disagree — which is exactly what was
+ * happening here.
+ *
+ * The deck follows `bridgeDeckLocalY`, the same curve `surfaces.ts` walks on,
+ * so what you see and what you stand on cannot drift apart.
+ */
+export function bridgeFor(b: Build, s: Structure): void {
+  const profile = bridgeProfile(s);
+  const width = 4.6;
+  const half = BRIDGE_DECK_LENGTH / 2;
+  // Local Y of the deck at span parameter t, relative to the structure origin.
+  const deckY = (t: number) => bridgeDeckLocalY(s, profile, t) / s.scale;
 
-  // Two abutments and a mid pier, all standing in the channel.
-  for (const z of [-span / 2, 0, span / 2]) {
-    const isPier = z === 0;
-    const w = isPier ? 1.5 : 2.4;
-    const courses = b.lod > 0 ? 9 : 5;
-    for (let i = 0; i < courses; i++) {
-      stoneCourse(
-        b,
-        PALETTE.rubble,
-        width * (isPier ? 0.94 : 1),
-        4.6 / courses,
-        w,
-        -4.6 + (i + 0.5) * (4.6 / courses),
-        z
+  const bents = b.lod > 0 ? 6 : 4;
+  const planks = b.lod > 0 ? 26 : 13;
+
+  // --- Trestle bents ------------------------------------------------------
+  // Skipped at the very ends: there the deck already meets the bank, and a leg
+  // there would stand on the road.
+  for (let i = 1; i < bents; i++) {
+    const t = -1 + (i / bents) * 2;
+    const z = t * half;
+    const top = deckY(t) - 0.34;
+
+    // How far down to the bed. The channel is deepest at the crown, so the
+    // legs lengthen toward the middle — which is what makes a trestle read as
+    // spanning something.
+    const drop = 1.4 + (1 - t * t) * (profile.rise / s.scale + 2.6);
+
+    for (const side of [-1, 1]) {
+      const splay = side * (width / 2 - 0.45);
+      // Legs rake outward as they descend; a vertical trestle looks like scaffold.
+      b.cylinder(
+        "timber",
+        b.shade(PALETTE.oak, 0.22),
+        0.15,
+        0.19,
+        drop,
+        6,
+        [splay + side * drop * 0.09, top - drop / 2, z],
+        [0, 0, -side * 0.17]
       );
     }
-    if (isPier) {
-      // Cutwater, pointed upstream. A square pier in a river is a dam.
-      b.cylinder("stone", b.shade(PALETTE.rubble, 0.12), 0.75, 0.75, 4.6, 3, [0, -2.3, -1.1], [0, Math.PI, 0]);
-    }
-  }
-
-  // Arch rings between the piers.
-  for (const side of [-1, 1]) {
-    const voussoirs = b.lod > 0 ? 9 : 5;
-    for (let i = 0; i < voussoirs; i++) {
-      const a = Math.PI * (0.06 + (i / (voussoirs - 1)) * 0.88);
+    // Cap beam across the bent, and a cross brace under it.
+    b.box("timber", b.shade(PALETTE.oak, 0.16), [width - 0.5, 0.22, 0.26], [0, top, z]);
+    if (b.lod > 0) {
       b.box(
-        "stone",
-        b.shade(PALETTE.ashlar, 0.13),
-        [width * 0.98, 0.55, 0.6],
-        [0, -1.35 + Math.sin(a) * 1.45, side * (span / 4) + Math.cos(a) * (span / 4 - 0.4)],
-        [a - Math.PI / 2, 0, 0]
+        "timber",
+        b.shade(PALETTE.oakPale, 0.24),
+        [width - 0.9, 0.12, 0.14],
+        [0, top - drop * 0.45, z],
+        [0, 0, 0.1]
       );
     }
   }
 
-  // Deck: worn stone with the wheel ruts polished into it.
-  const decks = b.lod > 0 ? 12 : 6;
-  for (let i = 0; i < decks; i++) {
+  // --- Stringers ----------------------------------------------------------
+  // Two long beams under the planks, stepped along the arch so they curve.
+  for (const side of [-1, 1]) {
+    const segments = b.lod > 0 ? 14 : 7;
+    for (let i = 0; i < segments; i++) {
+      const t0 = -1 + (i / segments) * 2;
+      const t1 = -1 + ((i + 1) / segments) * 2;
+      const mid = (t0 + t1) / 2;
+      const y0 = deckY(t0) - 0.2;
+      const y1 = deckY(t1) - 0.2;
+      b.box(
+        "timber",
+        b.shade(PALETTE.oak, 0.14),
+        [0.26, 0.3, (half * 2) / segments + 0.04],
+        [side * (width / 2 - 0.5), (y0 + y1) / 2, mid * half],
+        // Pitch each segment along the local slope of the arch.
+        [Math.atan2(y1 - y0, (half * 2) / segments), 0, 0]
+      );
+    }
+  }
+
+  // --- Deck planks --------------------------------------------------------
+  // Laid across the span, each one sitting at its own point on the curve, with
+  // a little gap and a little wobble. A single long box would be a ramp.
+  for (let i = 0; i < planks; i++) {
+    const t = -1 + ((i + 0.5) / planks) * 2;
+    const z = t * half;
+    const worn = b.range(0.9, 1.0);
     b.box(
-      "stone",
-      b.shade(PALETTE.rubble, 0.1),
-      [width, 0.26, (span + 2.4) / decks],
-      [0, -0.13, -(span + 2.4) / 2 + (i + 0.5) * ((span + 2.4) / decks)]
+      "plank",
+      b.shade(PALETTE.plank, 0.26),
+      [width * worn, 0.14, (half * 2) / planks - 0.05],
+      [b.wobble(0.05), deckY(t) - 0.07, z],
+      [0, b.wobble(0.015), b.wobble(0.02)]
     );
   }
 
-  // Parapets, one of them missing a stretch where a cart went through it.
+  // --- Handrails ----------------------------------------------------------
   for (const side of [-1, 1]) {
-    const blocks = b.lod > 0 ? 15 : 8;
-    for (let i = 0; i < blocks; i++) {
-      if (side === 1 && (i === 5 || i === 6)) continue;
-      const z = -(span + 1.8) / 2 + (i + 0.5) * ((span + 1.8) / blocks);
-      b.box(
-        "stone",
-        b.shade(PALETTE.rubble, 0.18),
-        [0.5, b.range(0.7, 0.95), (span + 1.8) / blocks - 0.03],
-        [side * (width / 2 - 0.28), 0.42, z],
-        [0, b.wobble(0.02), b.wobble(0.02)]
+    const posts = b.lod > 0 ? 9 : 5;
+    for (let i = 0; i <= posts; i++) {
+      const t = -1 + (i / posts) * 2;
+      // One post is gone on the downstream side — nobody has replaced it.
+      if (side === 1 && i === 3) continue;
+      b.cylinder(
+        "timber",
+        b.shade(PALETTE.oak, 0.2),
+        0.075,
+        0.085,
+        1.05,
+        5,
+        [side * (width / 2 - 0.3), deckY(t) + 0.45, t * half],
+        [b.wobble(0.04), 0, b.wobble(0.05)]
       );
     }
-    b.box("stone", b.shade(PALETTE.ashlar, 0.1), [0.62, 0.14, span + 1.8], [side * (width / 2 - 0.28), 0.9, 0]);
-  }
-  if (b.lod > 0) {
-    for (let i = 0; i < 5; i++) {
-      b.rock("stone", b.shade(PALETTE.rubble, 0.2), [b.range(0.25, 0.5), 0.2, b.range(0.25, 0.5)], [b.range(2.4, 3.6), -4.4, b.range(-2, 2)], [b.range(0, 3), b.range(0, 3), b.range(0, 3)]);
+    // Rail, stepped along the arch like the stringers.
+    const rails = b.lod > 0 ? 12 : 6;
+    for (let i = 0; i < rails; i++) {
+      const t0 = -1 + (i / rails) * 2;
+      const t1 = -1 + ((i + 1) / rails) * 2;
+      const y0 = deckY(t0) + 0.95;
+      const y1 = deckY(t1) + 0.95;
+      if (side === 1 && i >= 3 && i <= 4) continue;
+      b.box(
+        "plank",
+        b.shade(PALETTE.plankPale, 0.22),
+        [0.13, 0.16, (half * 2) / rails + 0.03],
+        [side * (width / 2 - 0.3), (y0 + y1) / 2, ((t0 + t1) / 2) * half],
+        [Math.atan2(y1 - y0, (half * 2) / rails), 0, 0]
+      );
     }
+  }
+
+  // --- Abutments ----------------------------------------------------------
+  // A few dry-stone blocks where the timber meets the bank, so the deck does
+  // not simply end in mid-air over the earth.
+  for (const k of [-1, 1] as const) {
+    const t = k * 0.94;
+    b.box(
+      "stone",
+      b.shade(PALETTE.rubble, 0.14),
+      [width + 0.5, 1.1, 1.2],
+      [0, deckY(t) - 0.75, t * half]
+    );
   }
 }
 
 /** A palisade gate. Local +X spans the road; the arch opens along +Z. */
+/** How deep a gate tower is founded below the road surface it straddles. */
+const GATE_FOOTING = 3.4;
+
 function gate(b: Build, roadHalfWidth: number): void {
   const offset = roadHalfWidth + 1.5;
   const height = 5.4;
 
   for (const side of [-1, 1]) {
     b.push([side * offset, 0, 0]);
+
+    // A buried plinth. A gate straddles the road, so it is levelled to the
+    // graded carriageway — but its towers stand out on the verge, where the
+    // ground has already fallen away by up to three metres. Founding them well
+    // below the road surface is both what a mason would do and the only thing
+    // that stops a tower hanging in the air beside its own gateway.
+    b.box("stone", b.shade(PALETTE.rubble, 0.06), [2.7, GATE_FOOTING, 2.7], [0, -GATE_FOOTING / 2, 0]);
+
     const courses = b.lod > 0 ? 11 : 6;
     for (let i = 0; i < courses; i++) {
       stoneCourse(b, PALETTE.rubble, 2.5, height / courses, 2.5, (i + 0.5) * (height / courses), 0);
@@ -1344,6 +1437,15 @@ function gate(b: Build, roadHalfWidth: number): void {
 // ---------------------------------------------------------------------------
 
 /** A fence panel. Local +X runs along the line. */
+/**
+ * How far fence posts are driven below their panel's floor.
+ *
+ * Sized against the worst drop measured across a 3.8m panel anywhere in the
+ * valley (1.45m), with margin. Fences are placed on ground up to `maxSlope`
+ * 0.42, which over a panel is about 1.6m of fall.
+ */
+const FENCE_SKIRT = 1.8;
+
 function fence(b: Build, variant: number): void {
   const length = 3.8;
   if (variant === 1) {
@@ -1355,9 +1457,15 @@ function fence(b: Build, variant: number): void {
         b.shade(PALETTE.oakPale, 0.22),
         0.035,
         0.045,
-        1.35,
+        // Driven well below the ground line. A fence panel is rigid and the
+        // ground under it is not, so one end of every panel on a slope sits
+        // proud — the placer levels the panel to the LOWEST point beneath it,
+        // and the stakes have to reach down to that from wherever they stand.
+        // A buried stake costs a few vertices and is invisible; a floating one
+        // is the first thing you notice.
+        1.35 + FENCE_SKIRT,
         5,
-        [-length / 2 + (i / stakes) * length, 0.6, 0],
+        [-length / 2 + (i / stakes) * length, 0.6 - FENCE_SKIRT / 2, 0],
         [b.wobble(0.04), 0, b.wobble(0.05)]
       );
     }
@@ -1375,8 +1483,8 @@ function fence(b: Build, variant: number): void {
     b.box(
       "timber",
       b.shade(PALETTE.oak, 0.2),
-      [0.12, 1.3, 0.12],
-      [x, 0.6, b.wobble(0.03)],
+      [0.12, 1.3 + FENCE_SKIRT, 0.12],
+      [x, 0.6 - FENCE_SKIRT / 2, b.wobble(0.03)],
       [b.wobble(0.05), b.wobble(0.1), b.wobble(0.06)]
     );
   }
@@ -1539,7 +1647,9 @@ export const KIND_RECIPES: Record<StructureKind, KindRecipe> = {
   forge: { variants: [1, 1, 1], build: (b) => forge(b) },
   inn: { variants: [1, 1, 1], build: (b) => inn(b) },
   dock: { variants: [1, 1, 1], build: (b) => dock(b) },
-  bridge: { variants: [1, 1, 1], build: (b) => bridge(b) },
+  // Built per-structure by Architecture.tsx (see `bridgeFor`), because each
+  // bridge has its own arch. Never reached through this table.
+  bridge: { variants: [1, 1, 1], build: () => {} },
   fence: { variants: [1, 2, 2], build: (b, v) => fence(b, v) },
   shrine: { variants: [1, 2, 2], build: (b, v) => shrine(b, v) },
   ruin: { variants: [2, 2, 2], build: (b, v) => ruin(b, v) },

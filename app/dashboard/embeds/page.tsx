@@ -5,6 +5,7 @@ import {
   type BridgeRow,
   type EmbedTokenRow,
 } from "@/components/dashboard/EmbedManager";
+import { getShareAppUrl } from "@/lib/app-url";
 import { capabilitiesFor } from "@/lib/plans";
 import { ensureProfile } from "@/lib/profiles";
 
@@ -55,8 +56,7 @@ export default async function EmbedsPage() {
 
   // Snippets have to carry an absolute URL — they run on somebody else's site,
   // where a relative path would resolve against their domain.
-  const appOrigin =
-    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") || "https://punaab.com";
+  const appOrigin = getShareAppUrl();
 
   return (
     <DashboardShell

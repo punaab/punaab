@@ -43,8 +43,8 @@ export function DashboardShell({
             <h1>{title}</h1>
             {subtitle ? <p>{subtitle}</p> : null}
           </div>
-          <Link href="/dashboard/projects" className="btn primary">
-            New project
+          <Link href="/dashboard/character" className="btn primary">
+            Create character
           </Link>
         </header>
         <div className="dash-content">{children}</div>

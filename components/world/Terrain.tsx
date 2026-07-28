@@ -15,7 +15,9 @@ import {
   fbm,
   heightAt,
 } from "@/lib/world/terrain";
+import { setTerrainLod } from "@/lib/world/surfaces";
 import { biomeWeights, type BiomeId } from "@/lib/world/regions";
+import { GHIBLI, ghibliSunDirection } from "@/lib/world/ghibli-palette";
 import { makeTerrainSurfaces, type TerrainSurfaces } from "@/lib/world/textures";
 import {
   budgetFor,
@@ -997,22 +999,46 @@ function makeTerrainMaterial(surfaces: TerrainSurfaces): THREE.MeshStandardMater
     // at fifty — the instinct — flattens the entire middle distance, which is
     // most of what the camera looks at.
     uDetailFade: { value: new THREE.Vector2(95, 300) },
+    // Aerial perspective. See the fog injection below for why these exist.
+    uSunDir: { value: new THREE.Vector3(...ghibliSunDirection()).normalize() },
+    uHaze: { value: new THREE.Color(GHIBLI.haze).convertSRGBToLinear() },
+    uHazeSun: { value: new THREE.Color(GHIBLI.skyHorizonSun).convertSRGBToLinear() },
+    uMist: { value: new THREE.Color(GHIBLI.mist).convertSRGBToLinear() },
   };
 
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, extra);
+
+    // `String.replace` returns the original string when the pattern is absent,
+    // so a renamed shader chunk removes a feature silently and completely.
+    // These are the chunks this material rewrites; losing one is invisible in
+    // the render and would otherwise only show up as "the fog isn't working".
+    if (process.env.NODE_ENV !== "production") {
+      for (const chunk of [
+        "#include <map_fragment>",
+        "#include <normal_fragment_maps>",
+        "#include <fog_fragment>",
+      ]) {
+        if (!shader.fragmentShader.includes(chunk)) {
+          console.warn(`[punaab] terrain shader: missing ${chunk} — that override did not apply`);
+        }
+      }
+    }
 
     shader.vertexShader = shader.vertexShader
       .replace(
         "#include <common>",
         `#include <common>
          attribute vec4 aSplat;
-         varying vec4 vSplat;`
+         varying vec4 vSplat;
+         varying vec3 vWorldPos;`
       )
       .replace(
         "#include <begin_vertex>",
         `#include <begin_vertex>
-         vSplat = aSplat;`
+         vSplat = aSplat;
+         // World position, for the height-dependent haze in the fragment stage.
+         vWorldPos = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;`
       );
 
     shader.fragmentShader = shader.fragmentShader
@@ -1020,6 +1046,11 @@ function makeTerrainMaterial(surfaces: TerrainSurfaces): THREE.MeshStandardMater
         "#include <common>",
         `#include <common>
          varying vec4 vSplat;
+         varying vec3 vWorldPos;
+         uniform vec3 uSunDir;
+         uniform vec3 uHaze;
+         uniform vec3 uHazeSun;
+         uniform vec3 uMist;
          uniform sampler2D uRockNormal;
          uniform sampler2D uMacro;
          uniform float uMacroScale;
@@ -1062,12 +1093,69 @@ function makeTerrainMaterial(surfaces: TerrainSurfaces): THREE.MeshStandardMater
            mapN.xy *= normalScale * relief;
            normal = normalize( tbn * mapN );
          #endif`
+      )
+      .replace(
+        "#include <fog_fragment>",
+        `{
+           // --- Aerial perspective ------------------------------------------
+           //
+           // Deliberately NOT wrapped in an ifdef on three's own USE_FOG.
+           // This replaces three's fog rather than extending it, so gating it
+           // on that define means the whole effect silently compiles to
+           // nothing whenever scene.fog is null or fails to attach — which is
+           // invisible in the render and indistinguishable from "the fog isn't
+           // working".
+           //
+           // Replaces three's uniform exponential fog, which is the reason the
+           // far mountains read as a strange flat texture: uniform fog whitens
+           // a peak and its own foot by exactly the same amount, so a mountain
+           // arrives as one even wash with high-frequency detail still crawling
+           // across it. Nothing about that says "twelve kilometres away".
+           //
+           // Real distance haze is a column of air, so it depends on how much
+           // atmosphere the sightline passes through — which means it thins
+           // with altitude. Making the fog height-dependent is what separates a
+           // ridge from the valley it stands in: the base of every massif sinks
+           // into haze while the summit stays legible above it, and the eye
+           // reads depth instead of texture.
+           float aerialDist = length( vViewPosition );
+
+           // Air thins upward. The exponent is a scale height, not a taste
+           // value — it is what makes high ground clear and low ground milky.
+           float airDensity = mix(
+             1.0,
+             exp( -max( vWorldPos.y - 4.0, 0.0 ) / 48.0 ),
+             0.78
+           );
+
+           float haze = 1.0 - exp(
+             -pow( max( aerialDist - 30.0, 0.0 ) / 430.0, 1.2 ) * 2.7 * airDensity
+           );
+
+           // Mie forward scatter: haze looking toward the sun is warm and
+           // bright, away from it cool. A single grey fog colour is the other
+           // half of why distance reads as flat.
+           vec3 viewDir = normalize( vWorldPos - cameraPosition );
+           float towardSun = max( dot( -viewDir, uSunDir ), 0.0 );
+           vec3 hazeColor = mix( uHaze, uHazeSun, pow( towardSun, 2.6 ) * 0.85 );
+
+           // Mist pooling. Settles in the low ground and only at distance, so
+           // the valley floor between here and a far massif fills in and the
+           // mountain's feet are lost in it — which is the specific thing that
+           // makes a range sit *behind* the land rather than on top of it.
+           float pool = smoothstep( 52.0, 4.0, vWorldPos.y )
+                      * smoothstep( 60.0, 260.0, aerialDist );
+           hazeColor = mix( hazeColor, uMist, pool * 0.7 );
+           haze = clamp( haze + pool * 0.30, 0.0, 1.0 );
+
+           gl_FragColor.rgb = mix( gl_FragColor.rgb, hazeColor, haze );
+         }`
       );
   };
 
   // Every chunk shares this material instance, but three keys its program cache
   // on the compiled source; a stable key keeps the whole terrain on one program.
-  material.customProgramCacheKey = () => "punaab-terrain-v1";
+  material.customProgramCacheKey = () => "punaab-terrain-v3-aerial";
 
   return material;
 }
@@ -1119,6 +1207,13 @@ export function Terrain({
       if (i < 0 || j < 0 || i >= chunks || j >= chunks) return Infinity;
       return bySegments[levels[j * chunks + i]];
     };
+
+    // Hand the plan to the footing code. Everything that walks stands on the
+    // surface that is *drawn*, not on the height function the mesh was built
+    // from — between two vertices those differ by up to two thirds of a metre,
+    // which is a bard buried to the thigh. Publishing the plan rather than
+    // letting `surfaces.ts` recompute it keeps one opinion about the ground.
+    setTerrainLod({ chunks, chunkSize, bySegments, levels });
 
     const geometries: THREE.BufferGeometry[] = [];
     for (let j = 0; j < chunks; j++) {

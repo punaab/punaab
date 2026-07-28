@@ -6,19 +6,42 @@ import {
   UserButton,
   useAuth,
 } from "@clerk/nextjs";
+import { useEffect, useState } from "react";
 import { SiteLink } from "@/components/marketing/SiteLink";
 
 export function AuthNav() {
   const { isLoaded, isSignedIn } = useAuth();
+  const [isLoreAdmin, setIsLoreAdmin] = useState(false);
+
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn) {
+      setIsLoreAdmin(false);
+      return;
+    }
+    let cancelled = false;
+    void fetch("/api/community/lore/admin")
+      .then((r) => r.json())
+      .then((data: { isAdmin?: boolean }) => {
+        if (!cancelled) setIsLoreAdmin(Boolean(data.isAdmin));
+      })
+      .catch(() => {
+        if (!cancelled) setIsLoreAdmin(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoaded, isSignedIn]);
 
   if (!isLoaded) return <span className="meta">…</span>;
 
   if (isSignedIn) {
     return (
       <div className="account-cluster">
-        <SiteLink href="/dashboard" className="nav-pill nav-pill-accent">
-          Dashboard
-        </SiteLink>
+        {isLoreAdmin && (
+          <SiteLink href="/world/review" className="nav-pill">
+            Review
+          </SiteLink>
+        )}
         <UserButton />
       </div>
     );
