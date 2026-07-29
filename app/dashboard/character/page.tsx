@@ -8,8 +8,9 @@ export const metadata = {
 export default function PlayerCharacterPage() {
   return (
     <DashboardShell
-      title="Create your character"
-      subtitle="Name your traveler, check your gold wallet, and invite friends to the road."
+      title="Character & purse"
+      subtitle="Name your traveler, check the gold wallet, and invite friends to the road."
+      primaryAction={null}
     >
       <PlayerStudio />
     </DashboardShell>

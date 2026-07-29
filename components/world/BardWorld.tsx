@@ -232,6 +232,8 @@ export function BardWorld() {
   const headAnchorRef = useRef<THREE.Object3D | null>(null);
   const nowPlayingTextRef = useRef<HTMLSpanElement | null>(null);
   const nowPlayingViewportRef = useRef<HTMLDivElement | null>(null);
+  const nowPlayingChipRef = useRef<HTMLDivElement | null>(null);
+  const nowPlayingSlotRef = useRef<HTMLDivElement | null>(null);
   const pluckSignal = useRef(0);
   const singing = useRef(false);
   const playingMusic = useRef(false);
@@ -408,23 +410,39 @@ export function BardWorld() {
   useEffect(() => {
     const text = nowPlayingTextRef.current;
     const viewport = nowPlayingViewportRef.current;
-    if (!nowPlaying || !text || !viewport) {
+    const chip = nowPlayingChipRef.current;
+    const slot = nowPlayingSlotRef.current;
+    if (!nowPlaying || !text || !viewport || !chip || !slot) {
       setNowPlayingOverflows(false);
       return;
     }
     const measure = () => {
-      const overflow = text.scrollWidth > viewport.clientWidth + 2;
+      // Compare natural title width to room left in the footer slot
+      // (chip grows with content; slot is the real ceiling).
+      const styles = getComputedStyle(chip);
+      const padX =
+        (parseFloat(styles.paddingLeft) || 0) +
+        (parseFloat(styles.paddingRight) || 0);
+      const gap = parseFloat(styles.gap) || 0;
+      const icon = chip.querySelector(".bard-now-playing-icon");
+      const iconW = icon instanceof HTMLElement ? icon.offsetWidth : 0;
+      const available = Math.max(0, slot.clientWidth - padX - gap - iconW);
+      const textW = text.scrollWidth;
+      const overflow = textW > available + 2;
       setNowPlayingOverflows(overflow);
       if (overflow) {
-        const distance = text.scrollWidth - viewport.clientWidth;
-        text.style.setProperty("--bard-scroll", `${distance}px`);
+        const viewportW = Math.max(1, available);
+        text.style.setProperty(
+          "--bard-scroll",
+          `${Math.max(0, textW - viewportW)}px`,
+        );
       } else {
         text.style.removeProperty("--bard-scroll");
       }
     };
     measure();
     const observer = new ResizeObserver(measure);
-    observer.observe(viewport);
+    observer.observe(slot);
     return () => observer.disconnect();
   }, [nowPlaying]);
 
@@ -654,9 +672,13 @@ export function BardWorld() {
 
           <div className="bard-world-dock">
             <div className="bard-world-footer">
-              <div className="bard-world-hint-slot">
+              <div ref={nowPlayingSlotRef} className="bard-world-hint-slot">
                 {nowPlaying ? (
-                  <div className="bard-now-playing" title={nowPlaying}>
+                  <div
+                    ref={nowPlayingChipRef}
+                    className={`bard-now-playing${nowPlayingOverflows ? " is-marquee" : ""}`}
+                    title={nowPlaying}
+                  >
                     <span className="bard-now-playing-icon" aria-hidden="true">
                       ♪
                     </span>

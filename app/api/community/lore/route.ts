@@ -2,51 +2,23 @@ import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import {
   isLoreCategory,
-  isLoreLinkKind,
   isLoreSort,
-  LORE_BODY_MAX,
-  LORE_BODY_MIN,
-  LORE_SUMMARY_MAX,
-  LORE_TITLE_MAX,
   makeLoreSlug,
-  normalizeLegacyCategory,
   type CommunityLoreListItem,
-  type LoreCategoryId,
-  type LoreLinkKind,
   type LoreSort,
 } from "@/lib/community-lore";
 import { ensureLoreHub } from "@/lib/lore-hub";
 import { mapLoreRow, type LoreDbRow } from "@/lib/lore-map";
+import {
+  ensureArtMirror,
+  parseLoreWriteBody,
+  replaceOutboundLinks,
+} from "@/lib/lore-write";
 import { ensureProfile } from "@/lib/profiles";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 const SELECT =
-  "id, title, body, category, created_at, author_id, slug, summary, location_key, tags, meta, is_hub, image_url, status, profiles!community_lore_author_id_fkey(display_name)";
-
-function parseTags(raw: unknown): string[] {
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .filter((t): t is string => typeof t === "string")
-    .map((t) => t.trim().toLowerCase())
-    .filter(Boolean)
-    .slice(0, 12);
-}
-
-function parseLinks(
-  raw: unknown
-): Array<{ toId: string; kind: LoreLinkKind; note?: string }> {
-  if (!Array.isArray(raw)) return [];
-  const out: Array<{ toId: string; kind: LoreLinkKind; note?: string }> = [];
-  for (const item of raw) {
-    if (!item || typeof item !== "object") continue;
-    const toId = String((item as { toId?: string }).toId || "").trim();
-    const kindRaw = String((item as { kind?: string }).kind || "related");
-    const note = String((item as { note?: string }).note || "").trim();
-    if (!toId || !isLoreLinkKind(kindRaw)) continue;
-    out.push({ toId, kind: kindRaw, note: note || undefined });
-  }
-  return out.slice(0, 24);
-}
+  "id, title, body, category, created_at, author_id, slug, summary, location_key, tags, meta, is_hub, image_url, status, pending_revision, profiles!community_lore_author_id_fkey(display_name)";
 
 function sortLore(lore: CommunityLoreListItem[], sort: LoreSort) {
   const copy = [...lore];
@@ -60,7 +32,9 @@ function sortLore(lore: CommunityLoreListItem[], sort: LoreSort) {
       case "alpha":
         return a.title.localeCompare(b.title, undefined, { sensitivity: "base" });
       case "longest":
-        return b.body.length - a.body.length || b.createdAt.localeCompare(a.createdAt);
+        return (
+          b.body.length - a.body.length || b.createdAt.localeCompare(a.createdAt)
+        );
       case "votes":
       default:
         if (b.voteCount !== a.voteCount) return b.voteCount - a.voteCount;
@@ -79,6 +53,11 @@ export async function GET(req: Request) {
   const category =
     categoryParam && isLoreCategory(categoryParam) ? categoryParam : null;
   const mine = params.get("mine") === "1";
+  const q = (params.get("q") || "").trim().slice(0, 80);
+  const limit = Math.min(
+    200,
+    Math.max(1, Number(params.get("limit") || 200) || 200)
+  );
 
   if (!supabase) {
     return NextResponse.json({
@@ -97,19 +76,25 @@ export async function GET(req: Request) {
     myProfileId = profile.id === "local" ? null : profile.id;
   }
 
-  let query = supabase.from("community_lore").select(SELECT).limit(200);
+  let query = supabase.from("community_lore").select(SELECT).limit(limit);
 
   if (mine && myProfileId) {
     query = query.eq("author_id", myProfileId);
   } else if (myProfileId) {
-    // Public hall + the traveler's own pending posts, so a fresh character
-    // shows up under Characters for them even before (or without) review.
     query = query.or(`status.eq.accepted,author_id.eq.${myProfileId}`);
   } else {
     query = query.eq("status", "accepted");
   }
 
   if (category) query = query.eq("category", category);
+  if (q) {
+    const safe = q.replace(/[%_,]/g, " ").trim();
+    if (safe) {
+      query = query.or(
+        `title.ilike.%${safe}%,summary.ilike.%${safe}%,body.ilike.%${safe}%`
+      );
+    }
+  }
 
   const { data, error } = await query;
 
@@ -121,65 +106,63 @@ export async function GET(req: Request) {
         sort,
         category,
       },
-      { status: error.message.includes("community_lore") ? 503 : 500 }
+      { status: 500 }
     );
   }
 
-  const rows = ((data || []) as LoreDbRow[]).filter((row) => {
-    if (row.status === "accepted") return true;
-    if (mine && myProfileId && row.author_id === myProfileId) return true;
-    // Own pending stays visible to the author in area lists / search.
-    if (
-      myProfileId &&
-      row.author_id === myProfileId &&
-      row.status === "pending"
-    ) {
-      return true;
-    }
-    return false;
-  });
-  const ids = rows.map((row) => row.id);
-
-  const voteCounts = new Map<string, number>();
-  const commentCounts = new Map<string, number>();
-  const myVotes = new Set<string>();
+  const rows = (data || []) as LoreDbRow[];
+  const ids = rows.map((r) => r.id);
+  const voteMap = new Map<string, number>();
+  const commentMap = new Map<string, number>();
+  const votedSet = new Set<string>();
 
   if (ids.length > 0) {
-    const [{ data: votes }, { data: comments }] = await Promise.all([
-      supabase
-        .from("community_lore_votes")
-        .select("lore_id, voter_id")
-        .in("lore_id", ids),
+    const [{ data: votes }, { data: comments }, myVotes] = await Promise.all([
+      supabase.from("community_lore_votes").select("lore_id").in("lore_id", ids),
       supabase
         .from("community_lore_comments")
         .select("lore_id")
         .in("lore_id", ids),
+      myProfileId
+        ? supabase
+            .from("community_lore_votes")
+            .select("lore_id")
+            .eq("voter_id", myProfileId)
+            .in("lore_id", ids)
+        : Promise.resolve({ data: [] as { lore_id: string }[] }),
     ]);
-
-    for (const vote of votes || []) {
-      voteCounts.set(vote.lore_id, (voteCounts.get(vote.lore_id) || 0) + 1);
-      if (myProfileId && vote.voter_id === myProfileId) myVotes.add(vote.lore_id);
+    for (const v of votes || []) {
+      voteMap.set(v.lore_id, (voteMap.get(v.lore_id) || 0) + 1);
     }
-    for (const comment of comments || []) {
-      commentCounts.set(
-        comment.lore_id,
-        (commentCounts.get(comment.lore_id) || 0) + 1
-      );
+    for (const c of comments || []) {
+      commentMap.set(c.lore_id, (commentMap.get(c.lore_id) || 0) + 1);
     }
+    for (const v of myVotes.data || []) votedSet.add(v.lore_id);
   }
 
-  const lore = sortLore(
-    rows.map((row) =>
-      mapLoreRow(row, {
-        voteCount: voteCounts.get(row.id) || 0,
-        commentCount: commentCounts.get(row.id) || 0,
-        votedByMe: myVotes.has(row.id),
-      })
-    ),
-    sort
+  let lore = rows.map((row) =>
+    mapLoreRow(row, {
+      voteCount: voteMap.get(row.id) || 0,
+      commentCount: commentMap.get(row.id) || 0,
+      votedByMe: votedSet.has(row.id),
+    })
   );
 
-  return NextResponse.json({ lore, sort, category });
+  if (!mine) {
+    lore = lore.filter(
+      (item) =>
+        item.status === "accepted" ||
+        item.isHub ||
+        (myProfileId && item.authorId === myProfileId)
+    );
+  }
+
+  return NextResponse.json({
+    lore: sortLore(lore, sort),
+    sort,
+    category,
+    q: q || null,
+  });
 }
 
 export async function POST(req: Request) {
@@ -199,71 +182,30 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Database unavailable." }, { status: 503 });
   }
 
-  const body = (await req.json().catch(() => null)) as {
-    title?: string;
-    body?: string;
-    summary?: string;
-    category?: string;
-    locationKey?: string;
-    tags?: unknown;
-    meta?: unknown;
-    links?: unknown;
-    imageUrl?: string;
-  } | null;
-
-  const title = (body?.title || "").trim();
-  const text = (body?.body || "").trim();
-  const summary = (body?.summary || "").trim().slice(0, LORE_SUMMARY_MAX);
-  const category: LoreCategoryId = normalizeLegacyCategory(body?.category);
-  const locationKey = (body?.locationKey || "").trim().slice(0, 80) || null;
-  const tags = parseTags(body?.tags);
-  const meta =
-    body?.meta && typeof body.meta === "object" && !Array.isArray(body.meta)
-      ? (body.meta as Record<string, unknown>)
-      : {};
-  const links = parseLinks(body?.links);
-  const imageUrl = (body?.imageUrl || "").trim() || null;
-
-  if (title.length < 3 || title.length > LORE_TITLE_MAX) {
-    return NextResponse.json(
-      { error: `Title needs 3–${LORE_TITLE_MAX} characters.` },
-      { status: 400 }
-    );
+  const body = (await req.json().catch(() => null)) as Parameters<
+    typeof parseLoreWriteBody
+  >[0];
+  const parsed = parseLoreWriteBody(body);
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
-  if (text.length < LORE_BODY_MIN || text.length > LORE_BODY_MAX) {
-    return NextResponse.json(
-      { error: `Entry needs ${LORE_BODY_MIN}–${LORE_BODY_MAX} characters.` },
-      { status: 400 }
-    );
-  }
-  if (!isLoreCategory(category)) {
-    return NextResponse.json({ error: "Unknown lore area." }, { status: 400 });
-  }
-  if (category === "art" && !imageUrl) {
-    return NextResponse.json(
-      { error: "Art submissions need an image." },
-      { status: 400 }
-    );
-  }
-
-  const slug = makeLoreSlug(title);
+  const fields = parsed.fields;
+  const slug = makeLoreSlug(fields.title);
 
   const { data, error } = await supabase
     .from("community_lore")
     .insert({
       author_id: profile.id,
-      category,
-      title,
-      body: text,
-      summary,
+      category: fields.category,
+      title: fields.title,
+      body: fields.body,
+      summary: fields.summary,
       slug,
-      location_key: locationKey,
-      tags,
-      meta,
-      image_url: imageUrl,
+      location_key: fields.locationKey,
+      tags: fields.tags,
+      meta: {},
+      image_url: fields.imageUrl,
       is_hub: false,
-      // Publish straight into the hall so Characters / Art / etc. show up for
-      // the author and everyone else without waiting on a review queue.
       status: "accepted",
       reviewed_at: new Date().toISOString(),
     })
@@ -277,40 +219,21 @@ export async function POST(req: Request) {
     );
   }
 
-  const edgeRows: Array<{
-    from_id: string;
-    to_id: string;
-    kind: LoreLinkKind;
-    note: string | null;
-  }> = [];
-
-  const linked = new Set<string>();
-  for (const link of links) {
-    if (link.toId === data.id || linked.has(`${link.toId}:${link.kind}`)) continue;
-    linked.add(`${link.toId}:${link.kind}`);
-    edgeRows.push({
-      from_id: data.id,
-      to_id: link.toId,
-      kind: link.kind,
-      note: link.note || null,
-    });
-  }
-
-  if (hub && !edgeRows.some((e) => e.to_id === hub.id)) {
-    edgeRows.push({
-      from_id: data.id,
-      to_id: hub.id,
-      kind: "related",
-      note: null,
-    });
-  }
-
-  if (edgeRows.length > 0) {
-    await supabase.from("community_lore_links").insert(edgeRows);
-  }
+  await replaceOutboundLinks(supabase, data.id, fields.links, hub?.id);
+  await ensureArtMirror(supabase, {
+    sourceId: data.id,
+    authorId: profile.id,
+    title: fields.title,
+    summary: fields.summary,
+    body: fields.body,
+    imageUrl: fields.imageUrl,
+    category: fields.category,
+    status: "accepted",
+    hubId: hub?.id,
+  });
 
   return NextResponse.json(
-    { id: data.id, slug, category, status: "pending" },
+    { id: data.id, slug, category: fields.category, status: "accepted" },
     { status: 201 }
   );
 }

@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import type { ComponentProps } from "react";
 
 type SiteLinkProps = ComponentProps<typeof Link>;
@@ -12,28 +11,19 @@ function hrefPath(href: SiteLinkProps["href"]): string {
 }
 
 /**
- * A link that only opens a new tab when there is something worth protecting.
+ * Internal site links stay in the same tab, except `/travel` — the 3D stage
+ * is heavy to spin up, so that route opens in a new tab and leaves whatever
+ * you were looking at intact.
  *
- * The homepage runs the 3D valley — a WebGL context, a terrain bake, a bard
- * partway through a journey. Navigating away tears all of that down and pays
- * for it again on the way back, so links *leaving the homepage* open in a new
- * tab and leave the stage running behind them.
- *
- * That reasoning does not survive the trip. Once you are on `/models` there is
- * no scene to keep alive, and spawning a tab for every link from there is just
- * litter — which is why this checks where you are, not only where you are
- * going.
+ * Social and merch links are plain anchors with `target="_blank"` elsewhere;
+ * they are not routed through this component.
  */
 export function SiteLink({ href, ...props }: SiteLinkProps) {
-  const pathname = usePathname();
   const target = hrefPath(href);
+  const isTravel =
+    target === "/travel" || target.startsWith("/travel?") || target.startsWith("/travel#");
 
-  const onHomepage = pathname === "/";
-  // Home itself and its own in-page anchors never open a tab: they would
-  // either do nothing or duplicate the page you are already looking at.
-  const staysHere = target === "/" || target.startsWith("/#") || target.startsWith("#");
-
-  if (!onHomepage || staysHere) {
+  if (!isTravel) {
     return <Link href={href} {...props} />;
   }
 

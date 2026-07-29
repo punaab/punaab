@@ -1,6 +1,7 @@
 import Image from "next/image";
 
 const LOGO = "/assets/images/pixlegrew.webp";
+const PIXELGREW_URL = "https://pixelgrew.com/";
 
 /**
  * Compact “POWERED BY PIXELGREW” mark — logo + label.
@@ -11,9 +12,12 @@ export function PoweredByPixelgrew({
   className?: string;
 }) {
   return (
-    <div
+    <a
+      href={PIXELGREW_URL}
       className={`pixelgrew-credit${className ? ` ${className}` : ""}`}
-      aria-label="Powered by Pixelgrew"
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label="Powered by Pixelgrew — visit pixelgrew.com"
     >
       <Image
         src={LOGO}
@@ -26,6 +30,6 @@ export function PoweredByPixelgrew({
         <span className="pixelgrew-credit-powered">Powered by</span>
         <span className="pixelgrew-credit-name">Pixelgrew</span>
       </span>
-    </div>
+    </a>
   );
 }

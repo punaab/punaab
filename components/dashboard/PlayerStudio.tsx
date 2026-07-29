@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { CoinWallet } from "@/components/dashboard/CoinWallet";
 
 type Character = {
   display_name: string;
@@ -30,6 +31,7 @@ export function PlayerStudio() {
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [walletLoading, setWalletLoading] = useState(true);
 
   useEffect(() => {
     void Promise.all([
@@ -53,12 +55,14 @@ export function PlayerStudio() {
           rates: goldData.rates ?? { upvote: 5, referral: 50 },
         });
       })
-      .catch(() => setStatus("Could not load your traveler."));
+      .catch(() => setStatus("Could not load your traveler."))
+      .finally(() => setWalletLoading(false));
   }, []);
 
   const inviteUrl =
     wallet?.inviteUrl ??
     (wallet?.invitePath ? `https://punaab.com${wallet.invitePath}` : null);
+
   async function save() {
     setBusy(true);
     setStatus(null);
@@ -92,24 +96,24 @@ export function PlayerStudio() {
 
   return (
     <div className="player-studio">
-      <article className="card player-wallet-card">
-        <p className="meta">gold wallet</p>
-        <h2 className="player-gold-balance">
-          {(wallet?.balance ?? 0).toLocaleString()}{" "}
-          <span className="player-gold-unit">gold</span>
-        </h2>
-        <p>
-          Earn {wallet?.rates.upvote ?? 5} gold when someone upvotes your World
-          posts. Earn {wallet?.rates.referral ?? 50} gold when a friend joins
-          with your invite.
-        </p>
-      </article>
+      <CoinWallet
+        balance={wallet?.balance ?? 0}
+        upvoteRate={wallet?.rates.upvote}
+        referralRate={wallet?.rates.referral}
+        loading={walletLoading}
+        footer={
+          <p className="coin-wallet-hint">
+            Coins land here from Archive upvotes and friends who join with your
+            invite.
+          </p>
+        }
+      />
 
-      <article className="card">
-        <h2>Your traveler</h2>
+      <article className="card player-traveler-card">
+        <p className="meta">Your traveler</p>
+        <h2>Name on the road</h2>
         <p className="player-studio-lead">
-          This is your character on Punaab — shown on the gold leaderboard when
-          you climb the ranks.
+          Shown on the World Earnings Board when you climb the ranks.
         </p>
         <div className="form-row">
           <label htmlFor="traveler-name">Name</label>
@@ -149,7 +153,7 @@ export function PlayerStudio() {
           />
         </div>
         <div className="form-row">
-          <label htmlFor="traveler-instrument">Weapon/Instrument (x1)</label>
+          <label htmlFor="traveler-instrument">Weapon / instrument</label>
           <input
             id="traveler-instrument"
             value={character.instrument}
@@ -171,8 +175,9 @@ export function PlayerStudio() {
         {status ? <p className="player-studio-status">{status}</p> : null}
       </article>
 
-      <article className="card">
-        <h2>Invite friends</h2>
+      <article className="card player-invite-card">
+        <p className="meta">Invite scroll</p>
+        <h2>Call friends to camp</h2>
         <p>
           Share your link. When they sign up, you earn gold — and the camp
           grows.

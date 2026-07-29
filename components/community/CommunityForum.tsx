@@ -268,13 +268,19 @@ export function CommunityForum({
 
   useEffect(() => {
     if (!composeOpen) return;
-    void fetch("/api/community/lore?sort=votes")
-      .then((r) => r.json())
-      .then((data: { lore?: CommunityLoreListItem[] }) => {
-        setLinkChoices((data.lore || []).filter((item) => !item.isHub));
-      })
-      .catch(() => setLinkChoices([]));
-  }, [composeOpen]);
+    const handle = window.setTimeout(() => {
+      const params = new URLSearchParams({ sort: "votes", limit: "80" });
+      if (linkQuery.trim()) params.set("q", linkQuery.trim());
+      if (linkFilter !== "all") params.set("category", linkFilter);
+      void fetch(`/api/community/lore?${params}`)
+        .then((r) => r.json())
+        .then((data: { lore?: CommunityLoreListItem[] }) => {
+          setLinkChoices((data.lore || []).filter((item) => !item.isHub));
+        })
+        .catch(() => setLinkChoices([]));
+    }, linkQuery.trim() ? 280 : 0);
+    return () => window.clearTimeout(handle);
+  }, [composeOpen, linkQuery, linkFilter]);
 
   const selectedIds = useMemo(
     () => new Set(links.map((link) => link.toId)),
@@ -580,30 +586,39 @@ export function CommunityForum({
               placeholder="One-line summary…"
             />
           </label>
-          {composeCategory === "art" && (
-            <label className="lore-field">
-              <span>Image (required)</span>
-              <div className="lore-file">
-                <input
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp,image/gif"
-                  onChange={(e) => onPickImage(e.target.files?.[0] || null)}
-                />
-              </div>
-              {uploading && <span className="meta">Uploading…</span>}
-              {imageUrl && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={imageUrl} alt="" className="lore-upload-preview" />
-              )}
-              {!imageUrl && !uploading && (
-                <span className="meta">
-                  Choose a JPEG, PNG, WebP, or GIF (max 4MB). Wait for the
-                  preview before publishing.
-                </span>
-              )}
-            </label>
-          )}
           <label className="lore-field">
+            <span>
+              Image{" "}
+              {composeCategory === "art" ? "(required)" : "(optional — also adds Art)"}
+            </span>
+            <div className="lore-file">
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                onChange={(e) => onPickImage(e.target.files?.[0] || null)}
+              />
+            </div>
+            {uploading && <span className="meta">Uploading…</span>}
+            {imageUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={imageUrl} alt="" className="lore-upload-preview" />
+            )}
+            {!imageUrl && !uploading && (
+              <span className="meta">
+                JPEG, PNG, WebP, or GIF (max 4MB). Non-art entries with an image
+                also create a searchable Art card you can link elsewhere.
+              </span>
+            )}
+            {imageUrl && (
+              <button
+                type="button"
+                className="btn soft"
+                onClick={() => setImageUrl(null)}
+              >
+                Remove image
+              </button>
+            )}
+          </label>          <label className="lore-field">
             <span>{composeCategory === "art" ? "Description" : "Entry"}</span>
             <textarea
               value={body}
@@ -636,7 +651,7 @@ export function CommunityForum({
 
           <div className="lore-links-block">
             <div className="lore-links-head">
-              <span>Tag related</span>
+              <span>Connect across the Archive</span>
               {links.length > 0 && (
                 <span className="meta">{links.length} selected</span>
               )}
@@ -645,8 +660,8 @@ export function CommunityForum({
               className="lore-link-search"
               value={linkQuery}
               onChange={(e) => setLinkQuery(e.target.value)}
-              placeholder="Search characters, places, items…"
-              aria-label="Search submissions to tag"
+              placeholder="Search art, characters, quests, items…"
+              aria-label="Search submissions to connect"
             />
             <div className="lore-link-filters" role="group" aria-label="Filter by area">
               <button

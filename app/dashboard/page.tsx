@@ -1,9 +1,67 @@
 import Link from "next/link";
 import { auth } from "@clerk/nextjs/server";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
+import { CoinWallet } from "@/components/dashboard/CoinWallet";
 import { ensureProfile } from "@/lib/profiles";
-import { getGoldBalance } from "@/lib/gold";
+import { getGoldBalance, GOLD_PER_REFERRAL, GOLD_PER_UPVOTE } from "@/lib/gold";
 import { isLoreAdmin } from "@/lib/lore-admin";
+
+const ROAD_ACTIONS = [
+  {
+    href: "/dashboard/character",
+    title: "Character & invites",
+    blurb: "Name your traveler, open the purse, share your referral.",
+    mark: "I",
+  },
+  {
+    href: "/world",
+    title: "World Archive",
+    blurb: "Publish lore, art, quests — earn gold when the camp upvotes you.",
+    mark: "II",
+  },
+  {
+    href: "/#leaderboard",
+    title: "Earnings board",
+    blurb: "See who leads the coffers across the valley.",
+    mark: "III",
+  },
+  {
+    href: "/models",
+    title: "Free models",
+    blurb: "Static GLBs, backpack, lute, and reference still.",
+    mark: "IV",
+  },
+  {
+    href: "/music",
+    title: "Road music",
+    blurb: "CC BY tracks for games, streams, and campfires.",
+    mark: "V",
+  },
+  {
+    href: "/dashboard/downloads",
+    title: "Downloads",
+    blurb: "Grab packs again from your dashboard shelf.",
+    mark: "VI",
+  },
+  {
+    href: "/dashboard/embeds",
+    title: "Embeds & stream",
+    blurb: "Drop Punaab on a site or OBS overlay.",
+    mark: "VII",
+  },
+  {
+    href: "/project",
+    title: "Project scroll",
+    blurb: "What this place is, and how to help it grow.",
+    mark: "VIII",
+  },
+  {
+    href: "/account",
+    title: "Account",
+    blurb: "Profile, billing, and camp settings.",
+    mark: "IX",
+  },
+] as const;
 
 export default async function DashboardPage() {
   const { userId } = await auth();
@@ -12,13 +70,14 @@ export default async function DashboardPage() {
   let gold = 0;
   let hasCharacter = false;
   let inviteCount = 0;
+  let travelerName: string | null = null;
 
   if (supabase && profile.id !== "local") {
     const [goldBalance, character, invites] = await Promise.all([
       getGoldBalance(supabase, profile.id),
       supabase
         .from("player_characters")
-        .select("profile_id")
+        .select("profile_id, display_name, title")
         .eq("profile_id", profile.id)
         .maybeSingle(),
       supabase
@@ -28,81 +87,109 @@ export default async function DashboardPage() {
     ]);
     gold = goldBalance;
     hasCharacter = Boolean(character.data);
+    travelerName = character.data?.display_name ?? null;
     inviteCount = invites.count ?? 0;
   }
 
+  const actions = loreAdmin
+    ? [
+        ...ROAD_ACTIONS.slice(0, 2),
+        {
+          href: "/world/review",
+          title: "Review queue",
+          blurb: "Approve pending lore before it enters the Archive.",
+          mark: "※",
+        },
+        ...ROAD_ACTIONS.slice(2),
+      ]
+    : ROAD_ACTIONS;
+
   return (
     <DashboardShell
-      title="Overview"
-      subtitle="Your traveler, gold wallet, invites, and worldbuilding."
+      title="Camp overview"
+      subtitle={
+        travelerName
+          ? `Welcome back, ${travelerName}. Your purse, road, and tools.`
+          : "Your traveler's purse, invites, and the roads ahead."
+      }
+      primaryAction={
+        hasCharacter
+          ? { href: "/dashboard/character", label: "Open character" }
+          : { href: "/dashboard/character", label: "Create character" }
+      }
     >
-      <div className="card-grid">
-        <article className="card">
-          <p className="meta">gold</p>
-          <h2>{gold.toLocaleString()}</h2>
-          <p>
-            From World upvotes and referrals.{" "}
-            <Link href="/dashboard/character">Open wallet</Link>
-          </p>
-        </article>
-        <article className="card">
-          <p className="meta">invites</p>
-          <h2>{inviteCount.toLocaleString()}</h2>
-          <p>
-            Friends who joined with your referral link.{" "}
-            <Link href="/dashboard/character">Copy invite</Link>
-          </p>
-        </article>
-        <article className="card">
-          <p className="meta">community</p>
-          <h2>Worldbuild</h2>
-          <p>
-            <Link href="/world">Contribute</Link> so the valley can grow.
-            {loreAdmin && (
-              <>
-                {" "}
-                · <Link href="/world/review">Review queue</Link>
-              </>
-            )}
-          </p>
-        </article>
+      <div className="dash-overview">
+        <CoinWallet
+          balance={gold}
+          upvoteRate={GOLD_PER_UPVOTE}
+          referralRate={GOLD_PER_REFERRAL}
+          inviteCount={inviteCount}
+          footer={
+            <Link className="btn soft coin-wallet-cta" href="/dashboard/character">
+              {hasCharacter ? "Open full wallet" : "Create character & wallet"}
+            </Link>
+          }
+        />
+
+        {!hasCharacter ? (
+          <article className="dash-callout">
+            <p className="dash-callout-mark">New to camp</p>
+            <h2>Forge your traveler</h2>
+            <p>
+              Name yourself, claim a title, and take an invite link. Gold from
+              World upvotes and friends who join with your code lands in this
+              purse.
+            </p>
+            <div className="dash-callout-actions">
+              <Link className="btn primary" href="/dashboard/character">
+                Create character
+              </Link>
+              <Link className="btn ghost" href="/world">
+                Browse the Archive
+              </Link>
+            </div>
+          </article>
+        ) : (
+          <article className="dash-callout is-ready">
+            <p className="dash-callout-mark">On the road</p>
+            <h2>Your ledger is open</h2>
+            <p>
+              Keep writing lore, share your invite, and climb the earnings
+              board. The valley grows with every scrap you leave.
+            </p>
+            <div className="dash-callout-actions">
+              <Link className="btn primary" href="/world">
+                Publish to Archive
+              </Link>
+              <Link className="btn soft" href="/#leaderboard">
+                View board
+              </Link>
+            </div>
+          </article>
+        )}
       </div>
 
-      {!hasCharacter ? (
-        <article className="card empty-state">
-          <h2>Create your character</h2>
-          <p>
-            Name your traveler, grab your invite link, and start earning gold on
-            the road.
-          </p>
-          <div className="hero-actions" style={{ justifyContent: "center" }}>
-            <Link className="btn primary" href="/dashboard/character">
-              Create character
-            </Link>
-            <Link className="btn ghost" href="/world">
-              Help us world-build
-            </Link>
-          </div>
-        </article>
-      ) : (
-        <article className="card">
-          <h2>What&apos;s next?</h2>
-          <ol>
-            <li>
-              <Link href="/dashboard/character">Invite friends for gold</Link>
+      <section className="dash-roadboard" aria-label="Camp tools">
+        <header className="dash-roadboard-head">
+          <h2>Traveler&apos;s desk</h2>
+          <p>Paths from this camp — pick one and walk it.</p>
+        </header>
+        <ul className="dash-roadboard-grid">
+          {actions.map((item) => (
+            <li key={item.href}>
+              <Link href={item.href} className="dash-road-card">
+                <span className="dash-road-mark" aria-hidden="true">
+                  {item.mark}
+                </span>
+                <span className="dash-road-copy">
+                  <strong>{item.title}</strong>
+                  <span>{item.blurb}</span>
+                </span>
+              </Link>
             </li>
-            <li>
-              <Link href="/world">Help us world-build</Link>
-            </li>
-            <li>
-              <Link href="/models">Download free models</Link>
-            </li>
-            <li>
-              <Link href="/music">Download free music</Link>
-            </li>
-          </ol>
-        </article>
-      )}
+          ))}
+        </ul>
+      </section>
     </DashboardShell>
   );
 }

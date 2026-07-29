@@ -30,22 +30,27 @@ export function GoldLeaderboard() {
   useEffect(() => {
     if (!authLoaded) return;
     if (!isSignedIn) {
+      // Guests still see the invite to create.
       setHasCharacter(false);
       return;
     }
 
     let cancelled = false;
-    void fetch("/api/v1/player-character", { cache: "no-store" })
+    void fetch("/api/v1/player-character", {
+      cache: "no-store",
+      credentials: "same-origin",
+    })
       .then(async (r) => {
-        if (!r.ok) return null;
-        const data = (await r.json()) as { character?: unknown };
-        return data.character ?? null;
-      })
-      .then((character) => {
-        if (!cancelled) setHasCharacter(Boolean(character));
+        // Only treat a successful empty payload as "no character".
+        // Auth/API errors must not resurface the create card for someone
+        // who already made a traveler in the dashboard.
+        if (!r.ok) return;
+        const data = (await r.json()) as { character?: { display_name?: string } | null };
+        if (cancelled) return;
+        setHasCharacter(Boolean(data.character?.display_name));
       })
       .catch(() => {
-        if (!cancelled) setHasCharacter(false);
+        /* leave null — hide create until we know */
       });
 
     return () => {
@@ -53,6 +58,8 @@ export function GoldLeaderboard() {
     };
   }, [authLoaded, isSignedIn]);
 
+  // Only when we know there is no character (guest, or signed-in with none).
+  // Loading / unknown → stay hidden so existing players never see a false invite.
   const showCreate = hasCharacter === false;
 
   return (
@@ -102,7 +109,7 @@ export function GoldLeaderboard() {
       )}
 
       <div className="gold-board-actions">
-        {hasCharacter && (
+        {hasCharacter === true && (
           <SiteLink className="btn soft" href="/dashboard/character">
             Open wallet &amp; invites
           </SiteLink>

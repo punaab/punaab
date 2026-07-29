@@ -23,6 +23,7 @@ export type LoreDbRow = {
   is_hub?: boolean | null;
   image_url?: string | null;
   status?: string | null;
+  pending_revision?: unknown;
   profiles?: ProfileJoin;
 };
 
@@ -66,5 +67,6 @@ export function mapLoreRow(
     commentCount: extras.commentCount ?? 0,
     votedByMe: extras.votedByMe ?? false,
     isHub: Boolean(row.is_hub) || row.slug === "punaab",
+    hasPendingRevision: Boolean(row.pending_revision),
   };
 }

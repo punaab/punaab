@@ -128,6 +128,8 @@ export type CommunityLoreListItem = {
   commentCount: number;
   votedByMe: boolean;
   isHub?: boolean;
+  /** Accepted entry has an edit waiting on the review queue. */
+  hasPendingRevision?: boolean;
 };
 
 export type CommunityLoreComment = {
@@ -153,6 +155,18 @@ export type CommunityLoreDetail = CommunityLoreListItem & {
   linksIn: Array<
     CommunityLoreEdge & { title: string; category: LoreCategoryId }
   >;
+  isOwner?: boolean;
+  pendingRevision?: {
+    title: string;
+    body: string;
+    summary: string;
+    category: LoreCategoryId;
+    locationKey: string | null;
+    tags: string[];
+    imageUrl: string | null;
+    links: Array<{ toId: string; kind: LoreLinkKind; note?: string }>;
+    submittedAt: string;
+  } | null;
 };
 
 export const LORE_TITLE_MAX = 120;

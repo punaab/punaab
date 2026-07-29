@@ -83,7 +83,9 @@ export function LoreReviewQueue() {
           {lore.map((item) => (
             <li key={item.id} className="lore-submission-card">
               <p className="lore-submission-label">
-                Submission · pending review
+                {item.hasPendingRevision
+                  ? "Edit · awaiting approval"
+                  : "Submission · pending review"}
               </p>
               {item.imageUrl && (
                 // eslint-disable-next-line @next/next/no-img-element

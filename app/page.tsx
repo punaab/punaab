@@ -1,7 +1,7 @@
 import { MarketingShell } from "@/components/marketing/MarketingShell";
-import { BardWorldLazy } from "@/components/marketing/BardWorldLazy";
 import { CommunityLinks } from "@/components/marketing/CommunityLinks";
 import { GoldLeaderboard } from "@/components/marketing/GoldLeaderboard";
+import { NotebookMerch } from "@/components/marketing/NotebookMerch";
 import { PoweredByPixelgrew } from "@/components/marketing/PoweredByPixelgrew";
 import { SiteLink } from "@/components/marketing/SiteLink";
 import { FEATURES } from "@/lib/nav";
@@ -17,7 +17,7 @@ export default function HomePage() {
           PUNAAB
         </div>
         <div className="hero-copy hero-copy-animate">
-          <p className="hero-kicker">Smart Traveling Bard</p>
+          <PoweredByPixelgrew className="pixelgrew-credit-hero" />
           <h1>
             Meet Punaab —
             <span className="hero-gradient-line"> the traveling bard</span>
@@ -32,21 +32,20 @@ export default function HomePage() {
             <span className="hero-inspiration-rule" />
           </p>
           <div className="hero-actions">
-            <SiteLink className="btn primary btn-glow btn-xl" href="/world">
-              Contribute
+            <SiteLink className="btn primary btn-glow btn-xl" href="/music">
+              Listen
             </SiteLink>
-            <SiteLink className="btn ghost" href="/models">
-              Free models
+            <SiteLink className="btn ghost" href="/world">
+              Contribute
             </SiteLink>
           </div>
         </div>
-        <div className="hero-stage hero-stage-3d">
-          <BardWorldLazy />
+        <div className="hero-stage hero-stage-merch">
+          <NotebookMerch className="notebook-merch-hero" />
         </div>
       </section>
 
       <section id="project" className="section project-band">
-        <PoweredByPixelgrew className="pixelgrew-credit-band" />
         <h2>Build Together. Yours to Use.</h2>
         <p className="section-lead">{HOME_PROJECT_PITCH}</p>
         <CommunityLinks />

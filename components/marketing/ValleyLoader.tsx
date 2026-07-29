@@ -1,21 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import {
   getValleyBootProgress,
   setValleyBootProgress,
-  VALLEY_BOOT_CEILING,
+  valleyBootProgressAt,
+  VALLEY_BOOT_ASYMPTOTE,
   VALLEY_BOOT_FINISH_RATE,
-  VALLEY_BOOT_RATE,
+  VALLEY_BOOT_TAU_SEC,
 } from "@/lib/bard/valley-boot";
-
-const LORE = [
-  "Unfurling the map…",
-  "Raising the pines…",
-  "Laying the roads…",
-  "Tuning the lute…",
-  "Summoning the valley…",
-];
 
 type ValleyLoaderProps = {
   /** Core scene is up — drain the last stretch to 100%. */
@@ -26,18 +19,17 @@ type ValleyLoaderProps = {
 };
 
 /**
- * Medieval parchment boot screen for the hero valley.
+ * Compact stage boot bar for the valley.
  *
- * Progress is a steady clock (constant %/s), not asset milestones — main-thread
- * stalls must not produce catch-up spurts. Width is written straight to the DOM
- * so React re-renders do not hitch the bar.
+ * Progress follows wall-clock time on a smooth asymptote so the bar never
+ * hard-stalls at a fake ceiling. When the scene signals ready, it finishes
+ * the last stretch at a steady rate.
  */
 export function ValleyLoader({
   ready = false,
   fading = false,
   onFinished,
 }: ValleyLoaderProps) {
-  const [line, setLine] = useState(0);
   const fillRef = useRef<HTMLDivElement>(null);
   const runnerRef = useRef<HTMLSpanElement>(null);
   const pctRef = useRef<HTMLSpanElement>(null);
@@ -50,18 +42,18 @@ export function ValleyLoader({
   onFinishedRef.current = onFinished;
 
   useEffect(() => {
-    const id = window.setInterval(
-      () => setLine((n) => (n + 1) % LORE.length),
-      1700
-    );
-    return () => window.clearInterval(id);
-  }, []);
-
-  useEffect(() => {
-    let last = performance.now();
-    // Fresh visit after a prior load finished — don't open at 100%.
     let value = getValleyBootProgress();
     if (value >= 100) value = 0;
+
+    // Resume the wall-clock curve from the shared percent so the lazy-chunk
+    // loader → BardWorld handoff does not jump backward.
+    let elapsedAtStart = 0;
+    if (value > 0.5 && value < VALLEY_BOOT_ASYMPTOTE) {
+      const ratio = Math.min(0.999, value / VALLEY_BOOT_ASYMPTOTE);
+      elapsedAtStart = -VALLEY_BOOT_TAU_SEC * Math.log(1 - ratio);
+    }
+    const start = performance.now() - elapsedAtStart * 1000;
+    let last = performance.now();
     let frame = 0;
 
     const paint = (pct: number) => {
@@ -80,19 +72,15 @@ export function ValleyLoader({
     paint(value);
 
     const tick = (now: number) => {
-      // Cap dt so a long stall cannot dump a burst of catch-up into one frame.
-      // We intentionally do *not* make up the missed wall time — that was the
-      // spurt. The bar just resumes at the same steady rate.
-      const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
+      const dt = Math.min(0.08, Math.max(0, (now - last) / 1000));
       last = now;
 
       if (readyRef.current) {
         value = Math.min(100, value + VALLEY_BOOT_FINISH_RATE * dt);
-      } else if (value < VALLEY_BOOT_CEILING) {
-        value = Math.min(VALLEY_BOOT_CEILING, value + VALLEY_BOOT_RATE * dt);
       } else {
-        // Past the expected window: creep so it never looks frozen at 92.
-        value = Math.min(96, value + 1.2 * dt);
+        // Wall-clock asymptote — after a main-thread hitch the bar lands where
+        // elapsed time says it should, then keeps easing forward.
+        value = valleyBootProgressAt((now - start) / 1000);
       }
 
       setValleyBootProgress(value);
@@ -118,33 +106,14 @@ export function ValleyLoader({
   return (
     <div
       ref={rootRef}
-      className={`valley-loader${fading ? " is-fading" : ""}`}
+      className={`valley-loader valley-loader-bar${fading ? " is-fading" : ""}`}
       role="status"
       aria-live="polite"
       aria-busy={!fading}
       aria-label={`Loading the valley, ${initialPct} percent`}
     >
       <div className="valley-loader-glow" aria-hidden="true" />
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src="/assets/backpack.svg"
-        alt=""
-        className="valley-loader-backpack"
-        width={120}
-        height={120}
-        draggable={false}
-      />
-      <div className="valley-loader-panel">
-        <span className="valley-loader-corner tl" aria-hidden="true" />
-        <span className="valley-loader-corner tr" aria-hidden="true" />
-        <span className="valley-loader-corner bl" aria-hidden="true" />
-        <span className="valley-loader-corner br" aria-hidden="true" />
-
-        <p className="valley-loader-title">The Open Road</p>
-        <p className="valley-loader-line" key={line}>
-          {LORE[line]}
-        </p>
-
+      <div className="valley-loader-bar-panel">
         <div className="valley-loader-track" aria-hidden="true">
           <span className="valley-loader-cap left" />
           <div className="valley-loader-trough">
@@ -163,14 +132,9 @@ export function ValleyLoader({
           </div>
           <span className="valley-loader-cap right" />
         </div>
-
-        <div className="valley-loader-meta">
-          <span className="valley-loader-rule" aria-hidden="true" />
-          <span ref={pctRef} className="valley-loader-pct">
-            {initialPct}%
-          </span>
-          <span className="valley-loader-rule" aria-hidden="true" />
-        </div>
+        <span ref={pctRef} className="valley-loader-pct">
+          {initialPct}%
+        </span>
       </div>
     </div>
   );

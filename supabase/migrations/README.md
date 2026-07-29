@@ -10,6 +10,7 @@ music and models are static files under `public/`.
 1. `001_profiles.sql` — Clerk users, referral codes
 2. `002_community_lore.sql` — World hall + graph hub seed
 3. `003_gold_players.sql` — gold balances/ledger, player characters
+4. `004_lore_edits.sql` — `pending_revision` for accepted-entry edits
 
 ## Apply
 

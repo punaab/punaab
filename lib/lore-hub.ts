@@ -23,16 +23,6 @@ export async function ensureLoreHub(
     .maybeSingle();
 
   if (existing.data) {
-    // Soft-open the hall: anything still stuck in "pending" from the old
-    // review-gated flow becomes visible in Characters / Art / etc.
-    await supabase
-      .from("community_lore")
-      .update({
-        status: "accepted",
-        reviewed_at: new Date().toISOString(),
-      })
-      .eq("status", "pending")
-      .eq("is_hub", false);
     return existing.data as LoreHubRow;
   }
 

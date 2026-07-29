@@ -7,10 +7,15 @@ export function DashboardShell({
   children,
   title,
   subtitle,
+  primaryAction = {
+    href: "/dashboard/character",
+    label: "Create character",
+  },
 }: {
   children: React.ReactNode;
   title: string;
   subtitle?: string;
+  primaryAction?: { href: string; label: string } | null;
 }) {
   return (
     <div className="dash-root">
@@ -43,9 +48,11 @@ export function DashboardShell({
             <h1>{title}</h1>
             {subtitle ? <p>{subtitle}</p> : null}
           </div>
-          <Link href="/dashboard/character" className="btn primary">
-            Create character
-          </Link>
+          {primaryAction ? (
+            <Link href={primaryAction.href} className="btn primary">
+              {primaryAction.label}
+            </Link>
+          ) : null}
         </header>
         <div className="dash-content">{children}</div>
       </div>

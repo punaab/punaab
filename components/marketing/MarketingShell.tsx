@@ -9,15 +9,23 @@ import { COMMUNITY } from "@/lib/community";
 
 const NAV = [
   { href: "/project", label: "Project" },
+  { href: "/travel", label: "Travel" },
   { href: "/world", label: "Archive" },
   { href: "/music", label: "Music" },
   { href: "/models", label: "Models" },
 ] as const;
 
-export function MarketingShell({ children }: { children: React.ReactNode }) {
+export function MarketingShell({
+  children,
+  showSiteLoader = true,
+}: {
+  children: React.ReactNode;
+  /** Full-page backpack boot. Off on /travel — the stage has its own bar. */
+  showSiteLoader?: boolean;
+}) {
   return (
     <div className="site-root">
-      <LoadingScreen />
+      {showSiteLoader ? <LoadingScreen /> : null}
       <ReferralCapture />
       <div className="mkt-top">
         <header className="mkt-header">
@@ -46,8 +54,8 @@ export function MarketingShell({ children }: { children: React.ReactNode }) {
           </nav>
           <div className="mkt-actions">
             <AuthNav />
-            <SiteLink href="/dashboard" className="btn primary btn-glow header-cta">
-              CREATE
+            <SiteLink href="/travel" className="btn primary btn-glow header-cta">
+              TRAVEL
             </SiteLink>
           </div>
         </header>
