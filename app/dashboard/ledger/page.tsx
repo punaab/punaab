@@ -9,7 +9,7 @@ export default function LedgerPage() {
   return (
     <DashboardShell
       title="Ledger"
-      subtitle="Check the gold in your wallet, update your passport, and earn."
+      subtitle="Check the gold in your purse, update your passport, and earn."
       primaryAction={null}
     >
       <PlayerStudio />

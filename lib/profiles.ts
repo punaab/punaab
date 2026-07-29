@@ -133,10 +133,15 @@ async function maybeClaimReferralFromCookie(
     if (!raw) return;
     const code = decodeURIComponent(raw).trim().toUpperCase();
     if (!code) return;
-    await claimReferral(supabase, {
+    const result = await claimReferral(supabase, {
       newProfileId: profile.id,
       referralCode: code,
     });
+    // Clear once claimed or already attached so we don't keep retrying a bad
+    // seal on every ensureProfile call.
+    if (result.claimed || result.reason === "already_referred") {
+      jar.delete("punaab_ref");
+    }
   } catch {
     // Cookie read can fail outside a request context.
   }

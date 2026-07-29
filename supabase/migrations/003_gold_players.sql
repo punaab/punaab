@@ -37,7 +37,9 @@ create table if not exists player_characters (
 );
 
 -- Useful ledger reason cheat-sheet (enforced only by app code):
---   signup_bonus      — first wallet open
+--   signup_bonus      — first purse open
 --   lore_upvote       — author paid when a post is upvoted
 --   lore_upvote_revoke — clawback when an upvote is removed
---   referral_invite   — inviter paid when a friend signs up with ?ref=
+--   referral_invite   — inviter paid when a friend signs up with ?ref= / code
+--
+-- gold_balances.lifetime_earned (008) tracks gross positive grants.

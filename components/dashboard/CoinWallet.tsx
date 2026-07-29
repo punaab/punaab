@@ -2,31 +2,35 @@ import type { ReactNode } from "react";
 
 type CoinWalletProps = {
   balance: number;
-  upvoteRate?: number;
-  referralRate?: number;
-  inviteCount?: number | null;
   loading?: boolean;
   /** Compact for grids; full for ledger page. */
   size?: "full" | "compact";
   footer?: ReactNode;
+  /**
+   * Ledger stats. Omit on overview — rates and invite tallies live on Ledger
+   * / Rewards, not the camp overview purse.
+   */
+  inviteCount?: number | null;
+  lifetimeEarned?: number | null;
 };
 
 /**
- * Shared medieval coin-purse / wallet used on Overview and Ledger.
+ * Shared medieval coin-purse used on Overview and Ledger.
  */
 export function CoinWallet({
   balance,
-  upvoteRate = 5,
-  referralRate = 50,
-  inviteCount = null,
   loading = false,
   size = "full",
   footer,
+  inviteCount = null,
+  lifetimeEarned = null,
 }: CoinWalletProps) {
+  const showLedgerStats = inviteCount != null || lifetimeEarned != null;
+
   return (
     <aside
       className={`coin-wallet${size === "compact" ? " is-compact" : ""}`}
-      aria-label="Gold wallet"
+      aria-label="Traveler's purse"
     >
       <div className="coin-wallet-flap" aria-hidden="true">
         <span className="coin-wallet-clasp" />
@@ -58,22 +62,26 @@ export function CoinWallet({
           </div>
         </div>
 
-        <ul className="coin-wallet-rates">
-          <li>
-            <strong>+{upvoteRate}</strong>
-            <span>per World upvote</span>
-          </li>
-          <li>
-            <strong>+{referralRate}</strong>
-            <span>per invite signup</span>
-          </li>
-          {inviteCount != null ? (
-            <li>
-              <strong>{inviteCount.toLocaleString()}</strong>
-              <span>friends joined</span>
-            </li>
-          ) : null}
-        </ul>
+        {showLedgerStats ? (
+          <ul className="coin-wallet-rates">
+            {lifetimeEarned != null ? (
+              <li>
+                <strong>
+                  {loading ? "…" : lifetimeEarned.toLocaleString()}
+                </strong>
+                <span>amount earned</span>
+              </li>
+            ) : null}
+            {inviteCount != null ? (
+              <li>
+                <strong>
+                  {loading ? "…" : inviteCount.toLocaleString()}
+                </strong>
+                <span>friends joined</span>
+              </li>
+            ) : null}
+          </ul>
+        ) : null}
 
         {footer ? <div className="coin-wallet-foot">{footer}</div> : null}
       </div>

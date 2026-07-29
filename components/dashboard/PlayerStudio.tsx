@@ -14,7 +14,9 @@ type Character = {
 
 type Wallet = {
   balance: number;
-  rates: { upvote: number; referral: number };
+  lifetimeEarned: number;
+  inviteCount: number;
+  referredBy: string | null;
 };
 
 export function PlayerStudio() {
@@ -29,6 +31,9 @@ export function PlayerStudio() {
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [walletLoading, setWalletLoading] = useState(true);
+  const [inviteCode, setInviteCode] = useState("");
+  const [claimBusy, setClaimBusy] = useState(false);
+  const [claimStatus, setClaimStatus] = useState<string | null>(null);
 
   useEffect(() => {
     void Promise.all([
@@ -46,7 +51,9 @@ export function PlayerStudio() {
         }
         setWallet({
           balance: Number(goldData.balance ?? 0),
-          rates: goldData.rates ?? { upvote: 5, referral: 50 },
+          lifetimeEarned: Number(goldData.lifetimeEarned ?? 0),
+          inviteCount: Number(goldData.inviteCount ?? 0),
+          referredBy: goldData.referredBy ?? null,
         });
       })
       .catch(() => setStatus("Could not load your ledger."))
@@ -73,12 +80,34 @@ export function PlayerStudio() {
     }
   }
 
+  async function claimInvite() {
+    setClaimBusy(true);
+    setClaimStatus(null);
+    try {
+      const res = await fetch("/api/v1/referrals/claim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: inviteCode }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not claim that seal");
+      setClaimStatus("Seal accepted. Your sponsor is named in the guild books.");
+      setInviteCode("");
+      setWallet((w) => (w ? { ...w, referredBy: data.referrerId ?? "claimed" } : w));
+      router.refresh();
+    } catch (err) {
+      setClaimStatus(err instanceof Error ? err.message : "Claim failed");
+    } finally {
+      setClaimBusy(false);
+    }
+  }
+
   return (
     <div className="player-studio">
       <CoinWallet
         balance={wallet?.balance ?? 0}
-        upvoteRate={wallet?.rates.upvote}
-        referralRate={wallet?.rates.referral}
+        lifetimeEarned={wallet?.lifetimeEarned ?? 0}
+        inviteCount={wallet?.inviteCount ?? 0}
         loading={walletLoading}
         footer={
           <p className="coin-wallet-hint">
@@ -87,6 +116,40 @@ export function PlayerStudio() {
           </p>
         }
       />
+
+      {!walletLoading && !wallet?.referredBy ? (
+        <article className="card player-invite-claim">
+          <p className="meta">Guild seal</p>
+          <h2>Enter an invite code</h2>
+          <p className="player-studio-lead">
+            Arrived without a link? Paste a friend&apos;s guild code so they
+            earn gold for calling you to the road.
+          </p>
+          <div className="form-row">
+            <label htmlFor="invite-code">Invite code</label>
+            <input
+              id="invite-code"
+              value={inviteCode}
+              onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
+              placeholder="ABCD2345"
+              maxLength={16}
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </div>
+          <button
+            type="button"
+            className="btn primary"
+            onClick={() => void claimInvite()}
+            disabled={claimBusy || inviteCode.trim().length < 4}
+          >
+            {claimBusy ? "Sealing…" : "Claim invite"}
+          </button>
+          {claimStatus ? (
+            <p className="player-studio-status">{claimStatus}</p>
+          ) : null}
+        </article>
+      ) : null}
 
       <article className="card player-traveler-card">
         <p className="meta">Guild passport</p>

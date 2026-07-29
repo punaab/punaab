@@ -3,14 +3,14 @@ import { auth } from "@clerk/nextjs/server";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { CoinWallet } from "@/components/dashboard/CoinWallet";
 import { ensureProfile } from "@/lib/profiles";
-import { getGoldBalance, GOLD_PER_REFERRAL, GOLD_PER_UPVOTE } from "@/lib/gold";
+import { getGoldBalance } from "@/lib/gold";
 import { isLoreAdmin } from "@/lib/lore-admin";
 
 const ROAD_ACTIONS = [
   {
     href: "/dashboard/ledger",
     title: "Ledger",
-    blurb: "Wallet, passport, guild tools.",
+    blurb: "Purse, passport, guild tools.",
     mark: "✦",
   },
   {
@@ -63,26 +63,20 @@ export default async function DashboardPage() {
   const loreAdmin = isLoreAdmin(userId);
   let gold = 0;
   let hasCharacter = false;
-  let inviteCount = 0;
   let travelerName: string | null = null;
 
   if (supabase && profile.id !== "local") {
-    const [goldBalance, character, invites] = await Promise.all([
+    const [goldBalance, character] = await Promise.all([
       getGoldBalance(supabase, profile.id),
       supabase
         .from("player_characters")
         .select("profile_id, display_name, title")
         .eq("profile_id", profile.id)
         .maybeSingle(),
-      supabase
-        .from("profiles")
-        .select("*", { count: "exact", head: true })
-        .eq("referred_by", profile.id),
     ]);
     gold = goldBalance;
     hasCharacter = Boolean(character.data);
     travelerName = character.data?.display_name ?? null;
-    inviteCount = invites.count ?? 0;
   }
 
   const actions = loreAdmin
@@ -111,9 +105,6 @@ export default async function DashboardPage() {
       <div className="dash-overview">
         <CoinWallet
           balance={gold}
-          upvoteRate={GOLD_PER_UPVOTE}
-          referralRate={GOLD_PER_REFERRAL}
-          inviteCount={inviteCount}
           footer={
             <Link className="btn soft coin-wallet-cta" href="/dashboard/ledger">
               {hasCharacter ? "Open full ledger" : "Open ledger & passport"}

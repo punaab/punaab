@@ -14,6 +14,8 @@ music and models are static files under `public/`.
 5. `005_leaderboard_seeds.sql` — unique traveler names + showcase gold board
 6. `006_lore_search.sql` — Postgres FTS (`search_vector` + GIN) for World search
 7. `007_rename_sean_to_punaab.sql` — map Clerk legal name credit → Punaab
+8. `008_gold_lifetime_earned.sql` — `lifetime_earned` on purses + ledger backfill
+9. `009_backfill_referral_codes.sql` — mint invite seals for profiles missing one
 
 Chart places from PIXELGREW are seeded into `community_lore` (category
 `places`) at runtime via `ensureMapPlaceLore` when `/archive/places` loads —
@@ -38,6 +40,6 @@ npx supabase db push
 | `community_lore_votes` | Upvotes (also drive author gold) |
 | `community_lore_comments` | Comments on lore |
 | `community_lore_links` | Lore graph edges |
-| `gold_balances` | Wallet + homepage leaderboard |
+| `gold_balances` | Purse balance + `lifetime_earned` + homepage leaderboard |
 | `gold_ledger` | Gold audit trail |
 | `player_characters` | Dashboard traveler sheet (unique `display_name`) |

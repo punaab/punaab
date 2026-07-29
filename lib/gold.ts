@@ -6,19 +6,46 @@ export const GOLD_PER_UPVOTE = 5;
 /** Gold paid to the inviter when a referred traveler creates an account. */
 export const GOLD_PER_REFERRAL = 50;
 
-/** Starter gold when a traveler first opens their wallet. */
+/** Starter gold when a traveler first opens their purse. */
 export const GOLD_SIGNUP_BONUS = 10;
+
+export type GoldSummary = {
+  balance: number;
+  lifetimeEarned: number;
+};
 
 export async function getGoldBalance(
   supabase: SupabaseClient,
   profileId: string
 ) {
+  const summary = await getGoldSummary(supabase, profileId);
+  return summary.balance;
+}
+
+export async function getGoldSummary(
+  supabase: SupabaseClient,
+  profileId: string
+): Promise<GoldSummary> {
   const { data } = await supabase
     .from("gold_balances")
-    .select("balance")
+    .select("balance, lifetime_earned")
     .eq("profile_id", profileId)
     .maybeSingle();
-  return Number(data?.balance ?? 0);
+  return {
+    balance: Number(data?.balance ?? 0),
+    lifetimeEarned: Number(data?.lifetime_earned ?? 0),
+  };
+}
+
+export async function countInvitees(
+  supabase: SupabaseClient,
+  profileId: string
+): Promise<number> {
+  const { count } = await supabase
+    .from("profiles")
+    .select("*", { count: "exact", head: true })
+    .eq("referred_by", profileId);
+  return count ?? 0;
 }
 
 export async function grantGold(
@@ -31,11 +58,11 @@ export async function grantGold(
     meta?: Record<string, unknown>;
   }
 ) {
-  const current = await getGoldBalance(supabase, params.profileId);
-  const next = current + params.delta;
+  const current = await getGoldSummary(supabase, params.profileId);
+  const next = current.balance + params.delta;
   if (next < 0) {
     // Soft-fail clawbacks that would go below zero (e.g. already spent).
-    if (params.delta < 0) return current;
+    if (params.delta < 0) return current.balance;
     throw new Error("Insufficient gold");
   }
 
@@ -47,13 +74,17 @@ export async function grantGold(
     meta: params.meta ?? {},
   });
   if (ledgerError) {
-    if (ledgerError.code === "23505") return current;
+    if (ledgerError.code === "23505") return current.balance;
     throw new Error(ledgerError.message);
   }
+
+  const lifetimeEarned =
+    current.lifetimeEarned + (params.delta > 0 ? params.delta : 0);
 
   await supabase.from("gold_balances").upsert({
     profile_id: params.profileId,
     balance: next,
+    lifetime_earned: lifetimeEarned,
     updated_at: new Date().toISOString(),
   });
 
@@ -64,12 +95,14 @@ export async function ensureGoldWallet(
   supabase: SupabaseClient,
   profileId: string
 ) {
-  const balance = await getGoldBalance(supabase, profileId);
-  if (balance > 0) return balance;
+  const summary = await getGoldSummary(supabase, profileId);
+  if (summary.balance > 0 || summary.lifetimeEarned > 0) {
+    return summary.balance;
+  }
 
   const { data } = await supabase
     .from("gold_balances")
-    .select("balance")
+    .select("balance, lifetime_earned")
     .eq("profile_id", profileId)
     .maybeSingle();
 

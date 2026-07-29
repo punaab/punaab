@@ -30,30 +30,45 @@ export async function ensureReferralCode(
 
   if (data?.referral_code) return data.referral_code as string;
 
-  let code = generateReferralCode(clerkUserId + profileId);
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const { error } = await supabase
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const code = generateReferralCode(
+      attempt === 0
+        ? clerkUserId + profileId
+        : `${clerkUserId}:${profileId}:${attempt}`
+    );
+
+    const { data: updated, error } = await supabase
       .from("profiles")
-      .update({ referral_code: code })
+      .update({
+        referral_code: code,
+        updated_at: new Date().toISOString(),
+      })
       .eq("id", profileId)
-      .is("referral_code", null);
+      .is("referral_code", null)
+      .select("referral_code")
+      .maybeSingle();
 
-    if (!error) return code;
+    if (updated?.referral_code) return updated.referral_code as string;
 
-    // Collision — twist the seed and retry.
-    code = generateReferralCode(`${clerkUserId}:${profileId}:${attempt}`);
+    // Unique collision on the code — try another seal.
+    if (error && error.code !== "23505") {
+      // Fall through to a re-read; a concurrent writer may have won.
+    }
+
+    const { data: again } = await supabase
+      .from("profiles")
+      .select("referral_code")
+      .eq("id", profileId)
+      .maybeSingle();
+    if (again?.referral_code) return again.referral_code as string;
   }
 
-  const { data: again } = await supabase
-    .from("profiles")
-    .select("referral_code")
-    .eq("id", profileId)
-    .maybeSingle();
-  return (again?.referral_code as string) || code;
+  throw new Error("Could not mint a guild invite code");
 }
 
 /**
  * Attach a new traveler to an inviter and pay the inviter gold once.
+ * Accepts either a ?ref= cookie code or a pasted guild seal.
  */
 export async function claimReferral(
   supabase: SupabaseClient,
@@ -61,9 +76,11 @@ export async function claimReferral(
     newProfileId: string;
     referralCode: string;
   }
-): Promise<{ claimed: boolean; referrerId?: string }> {
+): Promise<{ claimed: boolean; referrerId?: string; reason?: string }> {
   const code = params.referralCode.trim().toUpperCase();
-  if (!code) return { claimed: false };
+  if (!code || code.length < 4) {
+    return { claimed: false, reason: "invalid_code" };
+  }
 
   const { data: invitee } = await supabase
     .from("profiles")
@@ -71,7 +88,10 @@ export async function claimReferral(
     .eq("id", params.newProfileId)
     .maybeSingle();
 
-  if (!invitee || invitee.referred_by) return { claimed: false };
+  if (!invitee) return { claimed: false, reason: "missing_invitee" };
+  if (invitee.referred_by) {
+    return { claimed: false, reason: "already_referred" };
+  }
 
   const { data: referrer } = await supabase
     .from("profiles")
@@ -80,24 +100,35 @@ export async function claimReferral(
     .maybeSingle();
 
   if (!referrer || referrer.id === params.newProfileId) {
-    return { claimed: false };
+    return { claimed: false, reason: "unknown_code" };
   }
 
-  const { error } = await supabase
+  const { data: attached, error } = await supabase
     .from("profiles")
-    .update({ referred_by: referrer.id })
+    .update({
+      referred_by: referrer.id,
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", params.newProfileId)
-    .is("referred_by", null);
+    .is("referred_by", null)
+    .select("id")
+    .maybeSingle();
 
-  if (error) return { claimed: false };
+  if (error || !attached) {
+    return { claimed: false, reason: "attach_failed" };
+  }
 
-  await grantGold(supabase, {
-    profileId: referrer.id,
-    delta: GOLD_PER_REFERRAL,
-    reason: "referral_invite",
-    idempotencyKey: `referral:${referrer.id}:${params.newProfileId}`,
-    meta: { invitee_id: params.newProfileId, code },
-  });
+  try {
+    await grantGold(supabase, {
+      profileId: referrer.id,
+      delta: GOLD_PER_REFERRAL,
+      reason: "referral_invite",
+      idempotencyKey: `referral:${referrer.id}:${params.newProfileId}`,
+      meta: { invitee_id: params.newProfileId, code },
+    });
+  } catch {
+    // Link already stuck; idempotent ledger insert covers retries.
+  }
 
   return { claimed: true, referrerId: referrer.id };
 }

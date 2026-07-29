@@ -107,7 +107,7 @@ export default function ProjectPage() {
           </h2>
           <p>
             Sign in and open the dashboard to make your traveler — a name, a
-            title, and a short motto for the road. Your wallet tracks gold from
+            title, and a short motto for the road. Your purse tracks gold from
             world upvotes and from friends who join with your invite link.
           </p>
           <p>
@@ -227,7 +227,7 @@ export default function ProjectPage() {
             </li>
             <li>
               <strong>Earn gold.</strong> Upvotes on your World posts pay gold to
-              your wallet. Climb the homepage leaderboard.
+              your purse. Climb the homepage leaderboard.
             </li>
             <li>
               <strong>Spread the camp.</strong> Hold $PUNAAB if that is your
