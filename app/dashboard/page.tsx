@@ -14,7 +14,7 @@ const ROAD_ACTIONS = [
     mark: "I",
   },
   {
-    href: "/world",
+    href: "/archive",
     title: "World Archive",
     blurb: "Publish lore, art, quests — earn gold when the camp upvotes you.",
     mark: "II",
@@ -95,7 +95,7 @@ export default async function DashboardPage() {
     ? [
         ...ROAD_ACTIONS.slice(0, 2),
         {
-          href: "/world/review",
+          href: "/archive/review",
           title: "Review queue",
           blurb: "Approve pending lore before it enters the Archive.",
           mark: "※",
@@ -144,7 +144,7 @@ export default async function DashboardPage() {
               <Link className="btn primary" href="/dashboard/character">
                 Create character
               </Link>
-              <Link className="btn ghost" href="/world">
+              <Link className="btn ghost" href="/archive">
                 Browse the Archive
               </Link>
             </div>
@@ -158,7 +158,7 @@ export default async function DashboardPage() {
               board. The valley grows with every scrap you leave.
             </p>
             <div className="dash-callout-actions">
-              <Link className="btn primary" href="/world">
+              <Link className="btn primary" href="/archive">
                 Publish to Archive
               </Link>
               <Link className="btn soft" href="/#leaderboard">

@@ -9,7 +9,7 @@ import { COMMUNITY } from "@/lib/community";
 
 const NAV = [
   { href: "/project", label: "Project" },
-  { href: "/world", label: "Archive" },
+  { href: "/archive", label: "Archive" },
   { href: "/music", label: "Music" },
   { href: "/models", label: "Models" },
 ] as const;
@@ -19,7 +19,7 @@ export function MarketingShell({
   showSiteLoader = true,
 }: {
   children: React.ReactNode;
-  /** Full-page backpack boot. Off on /travel — the stage has its own bar. */
+  /** Full-page backpack boot. Off on /world — the stage has its own bar. */
   showSiteLoader?: boolean;
 }) {
   return (
@@ -53,7 +53,7 @@ export function MarketingShell({
           </nav>
           <div className="mkt-actions">
             <AuthNav />
-            <SiteLink href="/travel" className="btn primary btn-glow header-cta">
+            <SiteLink href="/world" className="btn primary btn-glow header-cta">
               WORLD
             </SiteLink>
           </div>

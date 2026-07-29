@@ -6,5 +6,5 @@ export default async function CommunityEntryRedirectPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  redirect(`/world/${id}`);
+  redirect(`/archive/${id}`);
 }

@@ -33,7 +33,7 @@ export function AuthNav() {
     return (
       <div className="account-cluster">
         {isLoreAdmin && (
-          <SiteLink href="/world/review" className="nav-pill">
+          <SiteLink href="/archive/review" className="nav-pill">
             Review
           </SiteLink>
         )}

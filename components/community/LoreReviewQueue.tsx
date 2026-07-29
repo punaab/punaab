@@ -65,7 +65,7 @@ export function LoreReviewQueue() {
   return (
     <>
       <p>
-        <Link className="btn ghost" href="/world">
+        <Link className="btn ghost" href="/archive">
           ← Back to lore
         </Link>
       </p>
@@ -123,7 +123,7 @@ export function LoreReviewQueue() {
                 >
                   Deny
                 </button>
-                <Link className="btn soft" href={`/world/${item.id}`}>
+                <Link className="btn soft" href={`/archive/${item.id}`}>
                   Open
                 </Link>
               </div>

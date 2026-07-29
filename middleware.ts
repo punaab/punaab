@@ -16,7 +16,7 @@ const isProtectedRoute = createRouteMatcher([
   "/api/v1/embed/bridges(.*)",
   "/api/stripe/checkout(.*)",
   "/api/stripe/portal(.*)",
-  "/world/review(.*)",
+  "/archive/review(.*)",
   "/api/community/lore/upload(.*)",
   "/api/community/lore/review(.*)",
   "/api/community/lore/(.*)/review(.*)",

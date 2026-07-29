@@ -4,9 +4,13 @@ import { SignInButton, useAuth } from "@clerk/nextjs";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LoreGraph } from "@/components/community/LoreGraph";
+import {
+  SquareImageCrop,
+  uploadLoreImage,
+} from "@/components/community/SquareImageCrop";
+import { LoreConnectionsEditor } from "@/components/community/LoreConnectionsEditor";
 import { CommunityLinks } from "@/components/marketing/CommunityLinks";
 import {
-  clipPreview,
   downloadLabelForCategory,
   LORE_BODY_MAX,
   LORE_BODY_MIN,
@@ -34,16 +38,6 @@ type HomeFeed = "trending" | "latest";
 /** Debounce for FTS round-trips — short enough to feel instant, long enough to coalesce keystrokes. */
 const SEARCH_DEBOUNCE_MS = 160;
 
-function formatWhen(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
 const SORT_LABELS: Record<LoreSort, string> = {
   votes: "Trending",
   newest: "Latest",
@@ -56,20 +50,42 @@ function SubmissionCard({
   item,
   isSignedIn,
   onVote,
+  statusBadge,
 }: {
   item: CommunityLoreListItem;
   isSignedIn: boolean;
   onVote: (id: string) => void;
+  /** Optional status chip under the title (e.g. My submissions). */
+  statusBadge?: string;
 }) {
   const meta = loreCategoryMeta(item.category);
   return (
-    <li className="lore-submission-card">
-      <div className="lore-submission-top">
-        <p className="lore-submission-label">Submission</p>
+    <li className="lore-tile">
+      <div className="lore-tile-media">
+        <Link
+          href={`/archive/${item.id}`}
+          className="lore-tile-hit"
+          aria-label={item.title}
+        >
+          {item.imageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={item.imageUrl} alt="" className="lore-tile-img" />
+          ) : (
+            <span className="lore-tile-placeholder" data-cat={item.category}>
+              <span className="lore-tile-placeholder-mark" aria-hidden="true">
+                {meta.label.slice(0, 1)}
+              </span>
+            </span>
+          )}
+        </Link>
         <button
           type="button"
-          className={`lore-vote${item.votedByMe ? " is-voted" : ""}`}
-          onClick={() => onVote(item.id)}
+          className={`lore-tile-vote${item.votedByMe ? " is-voted" : ""}`}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onVote(item.id);
+          }}
           disabled={!isSignedIn || item.isHub}
           title={
             item.isHub
@@ -78,39 +94,29 @@ function SubmissionCard({
                 ? "Upvote"
                 : "Sign in to upvote"
           }
+          aria-label={`Upvote ${item.title}, ${item.voteCount} votes`}
         >
           <span aria-hidden="true">▲</span>
           <strong>{item.voteCount}</strong>
         </button>
-      </div>
-      {item.imageUrl && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={item.imageUrl} alt="" className="lore-submission-thumb" />
-      )}
-      <div className="lore-card-topline">
-        <span className="lore-chip">{meta.label}</span>
-        {item.isHub && <span className="lore-chip">Hub</span>}
-        {item.status === "pending" && (
-          <span className="lore-chip lore-chip-pending">Pending</span>
+        {(item.isHub || item.status === "pending" || statusBadge) && (
+          <span className="lore-tile-flag">
+            {item.isHub
+              ? "Hub"
+              : statusBadge || (item.status === "pending" ? "Pending" : null)}
+          </span>
         )}
       </div>
-      <Link href={`/world/${item.id}`} className="lore-card-title">
-        {item.title}
-      </Link>
-      <p className="lore-card-preview">
-        {clipPreview(item.summary || item.body)}
-      </p>
-      <p className="lore-card-meta">
-        <span>{item.authorName}</span>
-        <span className="dot">•</span>
-        <span>{formatWhen(item.createdAt)}</span>
-        {item.tags.length > 0 && (
-          <>
-            <span className="dot">•</span>
-            <span>{item.tags.slice(0, 3).join(", ")}</span>
-          </>
-        )}
-      </p>
+      <div className="lore-tile-info">
+        <Link href={`/archive/${item.id}`} className="lore-tile-title">
+          {item.title}
+        </Link>
+        <p className="lore-tile-meta">
+          <span>{meta.label}</span>
+          <span className="dot">·</span>
+          <span>{item.authorName}</span>
+        </p>
+      </div>
     </li>
   );
 }
@@ -122,7 +128,7 @@ export function CommunityForum({
   /** null = world home (all areas). */
   initialCategory?: LoreCategoryId | null;
   /**
-   * Rendered above the forum. `/world/places` passes the chart in here, and
+   * Rendered above the forum. `/archive/places` passes the chart in here, and
    * hands back a location key when somebody picks a spot on it — which is why
    * this is a render prop rather than plain children: the map needs to reach
    * the compose form's `locationKey`, and that state lives in here.
@@ -148,24 +154,21 @@ export function CommunityForum({
   const [trending, setTrending] = useState<CommunityLoreListItem[]>(() =>
     initialCategory
       ? []
-      : (peekLoreList({ sort: "votes", limit: 12 }) ?? []).slice(0, 12)
+      : (peekLoreList({ sort: "votes", limit: 48 }) ?? []).slice(0, 48)
   );
   const [latest, setLatest] = useState<CommunityLoreListItem[]>(() =>
     initialCategory
       ? []
-      : (peekLoreList({ sort: "newest", limit: 12 }) ?? []).slice(0, 12)
+      : (peekLoreList({ sort: "newest", limit: 48 }) ?? []).slice(0, 48)
   );
   const [mine, setMine] = useState<CommunityLoreListItem[]>([]);
-  const [linkChoices, setLinkChoices] = useState<CommunityLoreListItem[]>([]);
-  const [linkQuery, setLinkQuery] = useState("");
-  const [linkFilter, setLinkFilter] = useState<LoreCategoryId | "all">("all");
   const [loading, setLoading] = useState(() => {
     if (initialCategory) {
       return !peekLoreList({ category: initialCategory, sort: "votes" });
     }
     return !(
-      peekLoreList({ sort: "votes", limit: 12 }) &&
-      peekLoreList({ sort: "newest", limit: 12 })
+      peekLoreList({ sort: "votes", limit: 48 }) &&
+      peekLoreList({ sort: "newest", limit: 48 })
     );
   });
   const [error, setError] = useState<string | null>(null);
@@ -176,6 +179,7 @@ export function CommunityForum({
   const [locationKey, setLocationKey] = useState("");
   const [tags, setTags] = useState("");
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [cropFile, setCropFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [links, setLinks] = useState<LinkDraft[]>([]);
   const [composeCategory, setComposeCategory] = useState<LoreCategoryId>(
@@ -275,13 +279,13 @@ export function CommunityForum({
         return;
       }
 
-      const trendQ = { sort: "votes" as const, limit: 12 };
-      const newQ = { sort: "newest" as const, limit: 12 };
+      const trendQ = { sort: "votes" as const, limit: 48 };
+      const newQ = { sort: "newest" as const, limit: 48 };
       const cachedTrend = peekLoreList(trendQ);
       const cachedNew = peekLoreList(newQ);
       if (cachedTrend || cachedNew) {
-        if (cachedTrend) setTrending(cachedTrend.slice(0, 12));
-        if (cachedNew) setLatest(cachedNew.slice(0, 12));
+        if (cachedTrend) setTrending(cachedTrend.slice(0, 48));
+        if (cachedNew) setLatest(cachedNew.slice(0, 48));
         setLore([]);
         setLoading(false);
       } else {
@@ -299,13 +303,13 @@ export function CommunityForum({
         }),
       ]);
       if (ac.signal.aborted) return;
-      setTrending(trend.lore.slice(0, 12));
-      setLatest(newest.lore.slice(0, 12));
+      setTrending(trend.lore.slice(0, 48));
+      setLatest(newest.lore.slice(0, 48));
       setLore([]);
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
       setError("Could not reach the world hall.");
-      if (!peekLoreList({ sort: "votes", limit: 12 })) {
+      if (!peekLoreList({ sort: "votes", limit: 48 })) {
         setTrending([]);
         setLatest([]);
         setLore([]);
@@ -350,10 +354,10 @@ export function CommunityForum({
         setLoading(false);
       }
     } else {
-      const trend = peekLoreList({ sort: "votes", limit: 12 });
-      const newest = peekLoreList({ sort: "newest", limit: 12 });
-      if (trend) setTrending(trend.slice(0, 12));
-      if (newest) setLatest(newest.slice(0, 12));
+      const trend = peekLoreList({ sort: "votes", limit: 48 });
+      const newest = peekLoreList({ sort: "newest", limit: 48 });
+      if (trend) setTrending(trend.slice(0, 48));
+      if (newest) setLatest(newest.slice(0, 48));
       setLore([]);
       if (trend || newest) setLoading(false);
     }
@@ -382,83 +386,25 @@ export function CommunityForum({
     prefetchAllWorldSections(sort);
   }, [sort]);
 
-  useEffect(() => {
-    if (!composeOpen) return;
-    const handle = window.setTimeout(() => {
-      const params = new URLSearchParams({ sort: "votes", limit: "80" });
-      if (linkQuery.trim()) params.set("q", linkQuery.trim());
-      if (linkFilter !== "all") params.set("category", linkFilter);
-      void fetch(`/api/community/lore?${params}`)
-        .then((r) => r.json())
-        .then((data: { lore?: CommunityLoreListItem[] }) => {
-          setLinkChoices((data.lore || []).filter((item) => !item.isHub));
-        })
-        .catch(() => setLinkChoices([]));
-    }, linkQuery.trim() ? 280 : 0);
-    return () => window.clearTimeout(handle);
-  }, [composeOpen, linkQuery, linkFilter]);
-
-  const selectedIds = useMemo(
-    () => new Set(links.map((link) => link.toId)),
-    [links]
-  );
-
-  const filteredChoices = useMemo(() => {
-    const q = linkQuery.trim().toLowerCase();
-    return linkChoices.filter((item) => {
-      if (linkFilter !== "all" && item.category !== linkFilter) return false;
-      if (!q) return true;
-      return (
-        item.title.toLowerCase().includes(q) ||
-        item.tags.some((tag) => tag.includes(q)) ||
-        loreCategoryMeta(item.category).label.toLowerCase().includes(q)
-      );
-    });
-  }, [linkChoices, linkFilter, linkQuery]);
-
-  const choicesByCategory = useMemo(() => {
-    const groups: Array<{
-      category: LoreCategoryId;
-      label: string;
-      items: CommunityLoreListItem[];
-    }> = [];
-    for (const area of LORE_CATEGORIES) {
-      const items = filteredChoices.filter((item) => item.category === area.id);
-      if (items.length === 0) continue;
-      groups.push({ category: area.id, label: area.label, items });
-    }
-    return groups;
-  }, [filteredChoices]);
-
-  function toggleLink(item: CommunityLoreListItem) {
-    setLinks((prev) => {
-      if (prev.some((row) => row.toId === item.id)) {
-        return prev.filter((row) => row.toId !== item.id);
-      }
-      return [...prev, { toId: item.id, kind: "related" }];
-    });
+  function onPickImage(file: File | null) {
+    if (!file) return;
+    setError(null);
+    setCropFile(file);
   }
 
-  async function onPickImage(file: File | null) {
-    if (!file) return;
-    setUploading(true);
+  async function onCropConfirm(cropped: File) {
     setError(null);
+    setUploading(true);
     try {
-      const form = new FormData();
-      form.set("file", file);
-      const res = await fetch("/api/community/lore/upload", {
-        method: "POST",
-        body: form,
-      });
-      const data = (await res.json()) as { url?: string; error?: string };
-      if (!res.ok || !data.url) {
-        setError(data.error || "Upload failed — try a smaller JPEG or PNG.");
-        setImageUrl(null);
-        return;
-      }
-      setImageUrl(data.url);
-    } catch {
-      setError("Could not upload that image.");
+      const url = await uploadLoreImage(cropped);
+      setImageUrl(url);
+      setCropFile(null);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Could not upload that image."
+      );
       setImageUrl(null);
     } finally {
       setUploading(false);
@@ -508,7 +454,6 @@ export function CommunityForum({
       setTags("");
       setImageUrl(null);
       setLinks([]);
-      setLinkQuery("");
       setComposeOpen(false);
       invalidateLoreListCache();
       await loadMine();
@@ -516,7 +461,7 @@ export function CommunityForum({
       else if (category) await loadCategory(category, sort, searchQuery);
       // Jump to the area they just published into so the new card is obvious.
       if (composeCategory && composeCategory !== category) {
-        window.location.href = `/world/${composeCategory}`;
+        window.location.href = `/archive/${composeCategory}`;
         return;
       }
     } finally {
@@ -559,11 +504,11 @@ export function CommunityForum({
       <div className="lore-hall-chrome">
         <nav className="lore-world-nav" aria-label="World areas">
           <Link
-            href="/world"
+            href="/archive"
             className={`lore-area-tab${isHome ? " is-active" : ""}`}
             onPointerEnter={() => {
-              prefetchLoreList({ sort: "votes", limit: 12 });
-              prefetchLoreList({ sort: "newest", limit: 12 });
+              prefetchLoreList({ sort: "votes", limit: 48 });
+              prefetchLoreList({ sort: "newest", limit: 48 });
             }}
           >
             World
@@ -571,7 +516,7 @@ export function CommunityForum({
           {LORE_CATEGORIES.map((area) => (
             <Link
               key={area.id}
-              href={`/world/${area.id}`}
+              href={`/archive/${area.id}`}
               className={`lore-area-tab${category === area.id ? " is-active" : ""}`}
               onPointerEnter={() => {
                 prefetchLoreList({ category: area.id, sort });
@@ -585,7 +530,7 @@ export function CommunityForum({
         {!isHome && activeMeta && (
           <div className="lore-area-banner">
             <div className="lore-area-banner-row">
-              <Link className="lore-back-world" href="/world">
+              <Link className="lore-back-world" href="/archive">
                 ← World home
               </Link>
             </div>
@@ -752,21 +697,29 @@ export function CommunityForum({
               <input
                 type="file"
                 accept="image/png,image/jpeg,image/webp,image/gif"
-                onChange={(e) => onPickImage(e.target.files?.[0] || null)}
+                onChange={(e) => {
+                  onPickImage(e.target.files?.[0] || null);
+                  e.target.value = "";
+                }}
               />
             </div>
-            {uploading && <span className="meta">Uploading…</span>}
-            {imageUrl && (
+            {uploading && !cropFile ? (
+              <div className="lore-upload-preview lore-upload-preview-busy" aria-busy="true">
+                <span className="lore-crop-spinner" aria-hidden="true" />
+              </div>
+            ) : null}
+            {imageUrl && !uploading && (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={imageUrl} alt="" className="lore-upload-preview" />
             )}
-            {!imageUrl && !uploading && (
+            {!imageUrl && !uploading && !cropFile && (
               <span className="meta">
-                JPEG, PNG, WebP, or GIF (max 4MB). Non-art entries with an image
-                also create a searchable Art card you can link elsewhere.
+                JPEG, PNG, WebP, or GIF (max 4MB). Drag a square crop before
+                upload so nothing gets cut off oddly. Non-art entries with an
+                image also create a searchable Art card you can link elsewhere.
               </span>
             )}
-            {imageUrl && (
+            {imageUrl && !uploading && (
               <button
                 type="button"
                 className="btn soft"
@@ -775,7 +728,15 @@ export function CommunityForum({
                 Remove image
               </button>
             )}
-          </label>          <label className="lore-field">
+          </label>
+          {cropFile && (
+            <SquareImageCrop
+              file={cropFile}
+              onCancel={() => setCropFile(null)}
+              onConfirm={onCropConfirm}
+            />
+          )}
+          <label className="lore-field">
             <span>{composeCategory === "art" ? "Description" : "Entry"}</span>
             <textarea
               value={body}
@@ -806,85 +767,11 @@ export function CommunityForum({
             </label>
           </div>
 
-          <div className="lore-links-block">
-            <div className="lore-links-head">
-              <span>Connect across the Archive</span>
-              {links.length > 0 && (
-                <span className="meta">{links.length} selected</span>
-              )}
-            </div>
-            <input
-              className="lore-link-search"
-              value={linkQuery}
-              onChange={(e) => setLinkQuery(e.target.value)}
-              placeholder="Search art, characters, quests, items…"
-              aria-label="Search submissions to connect"
-            />
-            <div className="lore-link-filters" role="group" aria-label="Filter by area">
-              <button
-                type="button"
-                className={`lore-chip-btn${linkFilter === "all" ? " is-active" : ""}`}
-                onClick={() => setLinkFilter("all")}
-              >
-                All
-              </button>
-              {LORE_CATEGORIES.map((area) => (
-                <button
-                  key={area.id}
-                  type="button"
-                  className={`lore-chip-btn${linkFilter === area.id ? " is-active" : ""}`}
-                  onClick={() => setLinkFilter(area.id)}
-                >
-                  {area.label}
-                </button>
-              ))}
-            </div>
-            {links.length > 0 && (
-              <div className="lore-link-selected">
-                {links.map((link) => {
-                  const item = linkChoices.find((c) => c.id === link.toId);
-                  if (!item) return null;
-                  return (
-                    <button
-                      key={link.toId}
-                      type="button"
-                      className="lore-link-pill is-on"
-                      onClick={() => toggleLink(item)}
-                    >
-                      {loreCategoryMeta(item.category).label}: {item.title} ×
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            <div className="lore-link-picker">
-              {choicesByCategory.length === 0 ? (
-                <p className="meta">No matching submissions.</p>
-              ) : (
-                choicesByCategory.map((group) => (
-                  <div key={group.category} className="lore-link-group">
-                    <p className="lore-link-group-label">{group.label}</p>
-                    <div className="lore-link-options">
-                      {group.items.map((item) => {
-                        const on = selectedIds.has(item.id);
-                        return (
-                          <button
-                            key={item.id}
-                            type="button"
-                            className={`lore-link-pill${on ? " is-on" : ""}`}
-                            onClick={() => toggleLink(item)}
-                            aria-pressed={on}
-                          >
-                            {item.title}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
+          <LoreConnectionsEditor
+            category={composeCategory}
+            links={links}
+            onChange={setLinks}
+          />
 
           <div className="lore-compose-actions">
             <p className="meta">
@@ -910,22 +797,15 @@ export function CommunityForum({
       {mine.length > 0 && (
         <section className="lore-mine">
           <h3>My submissions</h3>
-          <ul className="lore-submission-grid lore-submission-grid-compact">
+          <ul className="lore-submission-grid">
             {mine.map((item) => (
-              <li key={item.id} className="lore-submission-card">
-                <p className="lore-submission-label">
-                  Submission ·{" "}
-                  <span className={`lore-status is-${item.status}`}>
-                    {item.status}
-                  </span>
-                </p>
-                <Link href={`/world/${item.id}`} className="lore-card-title">
-                  {item.title}
-                </Link>
-                <p className="lore-card-meta">
-                  {loreCategoryMeta(item.category).label}
-                </p>
-              </li>
+              <SubmissionCard
+                key={item.id}
+                item={item}
+                isSignedIn={Boolean(isSignedIn)}
+                onVote={toggleVote}
+                statusBadge={item.status}
+              />
             ))}
           </ul>
         </section>
@@ -941,7 +821,7 @@ export function CommunityForum({
               <ul className="lore-area-cards">
                 {LORE_CATEGORIES.map((area) => (
                   <li key={area.id}>
-                    <Link href={`/world/${area.id}`} className="lore-area-card">
+                    <Link href={`/archive/${area.id}`} className="lore-area-card">
                       <strong>{area.label}</strong>
                       <span>{area.blurb}</span>
                     </Link>

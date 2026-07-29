@@ -143,8 +143,8 @@ export function prefetchLoreList(query: LoreListQuery): void {
 export function prefetchAllWorldSections(sort: LoreSort = "votes"): void {
   if (typeof window === "undefined") return;
   const run = () => {
-    prefetchLoreList({ sort: "votes", limit: 12 });
-    prefetchLoreList({ sort: "newest", limit: 12 });
+    prefetchLoreList({ sort: "votes", limit: 48 });
+    prefetchLoreList({ sort: "newest", limit: 48 });
     for (const area of [
       "characters",
       "art",

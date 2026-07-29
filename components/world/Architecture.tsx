@@ -156,6 +156,14 @@ function patchWindowMaterial(material: THREE.MeshStandardMaterial): void {
       }
     }
 
+    // Custom uniforms must be declared in GLSL — assigning them onto
+    // `shader.uniforms` only supplies values, it does not emit a declaration.
+    shader.fragmentShader = shader.fragmentShader.replace(
+      "#include <common>",
+      `#include <common>
+       uniform float uLamp;`
+    );
+
     // `vColor` is a `vec4` in three's chunks — the alpha slot is there for
     // `USE_COLOR_ALPHA` geometry this material never has. Assigning the `vec3`
     // attribute straight into it is a GLSL type error and would fail to compile
@@ -180,7 +188,7 @@ function patchWindowMaterial(material: THREE.MeshStandardMaterial): void {
       );
   };
 
-  material.customProgramCacheKey = () => "punaab-window-v1";
+  material.customProgramCacheKey = () => "punaab-window-v2";
 }
 
 // ---------------------------------------------------------------------------
@@ -1151,12 +1159,46 @@ function buildArchitecture(budget: QualityBudget): Assembly {
 
 const SMOKE_PUFFS = 7;
 
+/**
+ * How many chimneys smoke at once.
+ *
+ * These are *slots*, not a set of chosen chimneys — each one is re-pointed at
+ * whatever lit hearth is nearest as the bard walks, so the budget is spent on
+ * whatever is actually in shot rather than scattered across a valley he is
+ * nowhere near.
+ */
+const SMOKE_COLUMNS: Record<QualityBudget["tier"], number> = {
+  low: 5,
+  medium: 12,
+  high: 20,
+};
+
+/**
+ * How far a column must be before its slot may be re-pointed somewhere nearer.
+ *
+ * Swapping a column moves a live cycle of rising puffs from one rooftop to
+ * another, and there is no way to do that invisibly up close. Held until the
+ * column is this far out, the puffs are a few pixels of haze and the change
+ * cannot be seen.
+ */
+const SMOKE_RECYCLE_DISTANCE = 130;
+
+/** Seconds between reassignment passes. Nothing here moves fast enough to need more. */
+const SMOKE_REASSIGN_INTERVAL = 0.7;
+
 type Smoke = {
   mesh: THREE.InstancedMesh;
   geometry: THREE.BufferGeometry;
   material: THREE.MeshBasicMaterial;
   texture: THREE.Texture;
+  /** Live position of each slot. Mutated in place as slots are re-pointed. */
   columns: THREE.Vector3[];
+  /** Which hearth each slot currently sits on, as an index into `hearths`. */
+  assigned: number[];
+  /** The chimneys that are alight today — see `buildSmoke`. */
+  hearths: THREE.Vector3[];
+  /** Counts down to the next reassignment pass. */
+  sinceReassign: number;
   /** Per-puff drift and rate, so no two columns rise the same way. */
   seeds: Float32Array;
 };
@@ -1169,7 +1211,7 @@ type Smoke = {
  * colour through a two-line shader patch — which is the only way to fade
  * individual instances of a shared material without writing a whole material.
  */
-function makeSmoke(columns: THREE.Vector3[]): Smoke {
+function makeSmoke(columns: THREE.Vector3[], hearths: THREE.Vector3[]): Smoke {
   const texture = makeCloudTexture(96, 11);
   const material = new THREE.MeshBasicMaterial({
     color: 0xb9b4ab,
@@ -1213,7 +1255,57 @@ function makeSmoke(columns: THREE.Vector3[]): Smoke {
     seeds[i * 3 + 2] = hash2(i * 40503, 11);
   }
 
-  return { mesh, geometry, material, texture, columns, seeds };
+  return {
+    mesh,
+    geometry,
+    material,
+    texture,
+    columns,
+    hearths,
+    // −1 means "never placed", so the first pass fills every slot regardless of
+    // how far away the nearest hearth happens to be.
+    assigned: columns.map(() => -1),
+    sinceReassign: Infinity,
+    seeds,
+  };
+}
+
+/**
+ * Decides which chimneys are alight, and hands the smoke its slots.
+ *
+ * Two things were wrong with picking the smoking chimneys once, at build time,
+ * by striding through the list. The valley is six hundred and forty metres
+ * across and the bard stands in one spot of it, so sixteen columns scattered
+ * over the whole map are almost never *where he is* — the effect was built,
+ * correct, and essentially never on screen. And the stride walked a list that
+ * is grouped by building kind, so the ones it did pick clustered by kind rather
+ * than spreading.
+ *
+ * So the choice is split in two. Which hearths are lit at all stays a fixed
+ * property of the building — a deterministic hash, so a cottage that smokes
+ * still smokes when you walk back to it, and most houses are not cooking. Which
+ * of those get one of the handful of live columns is then decided by distance,
+ * every frame, exactly as the hearth lights and window lamps already are.
+ */
+function buildSmoke(
+  chimneys: THREE.Vector3[],
+  tier: QualityBudget["tier"]
+): Smoke | null {
+  if (chimneys.length === 0) return null;
+
+  const hearths: THREE.Vector3[] = [];
+  for (const chimney of chimneys) {
+    // Rounded to the metre so the draw is stable across rebuilds; a hash of raw
+    // floats would relight the whole valley on any placement tweak.
+    if (hash2(Math.round(chimney.x), Math.round(chimney.z)) < 0.55) {
+      hearths.push(chimney);
+    }
+  }
+  if (hearths.length === 0) return null;
+
+  const slots = Math.min(SMOKE_COLUMNS[tier], hearths.length);
+  const columns = Array.from({ length: slots }, () => new THREE.Vector3());
+  return makeSmoke(columns, hearths);
 }
 
 // ---------------------------------------------------------------------------
@@ -1243,6 +1335,9 @@ const WINDOW_LIGHTS: Record<QualityBudget["tier"], number> = {
 
 /** Slot assignments for the window pool. Module scope for the same reason as `claimed`. */
 const claimedWindows: number[] = [];
+
+/** Slot assignments for the smoke columns. Module scope, same reason as `claimed`. */
+const claimedSmoke: number[] = [];
 
 /**
  * Give each light slot the nearest unclaimed point, or −1 if there is nothing
@@ -1292,19 +1387,14 @@ export function Architecture({ budget }: { budget: QualityBudget }) {
   // busts the memo because the edit itself triggers a Fast Refresh remount.)
   const built = useMemo(() => buildArchitecture(budget), [budget]);
 
-  const smoke = useMemo(() => {
-    if (budget.tier === "low" || built.chimneys.length === 0) return null;
-    // Every chimney in the valley smoking at once is both expensive and wrong —
-    // most houses are not cooking. Taking a deterministic stride through the
-    // list keeps the ones that do smoke spread across the map.
-    const wanted = budget.tier === "high" ? 16 : 8;
-    const stride = Math.max(1, Math.floor(built.chimneys.length / wanted));
-    const columns: THREE.Vector3[] = [];
-    for (let i = 0; i < built.chimneys.length && columns.length < wanted; i += stride) {
-      columns.push(built.chimneys[i]);
-    }
-    return makeSmoke(columns);
-  }, [budget.tier, built.chimneys]);
+  // Low tier gets smoke too now. It was excluded as an economy, but five
+  // columns is thirty-five camera-facing quads sharing one draw call — next to
+  // nothing beside the meadow — and a village with no smoke over it is the
+  // difference between somewhere people live and a model of somewhere.
+  const smoke = useMemo(
+    () => buildSmoke(built.chimneys, budget.tier),
+    [budget.tier, built.chimneys]
+  );
 
   const lightCount = FIRE_LIGHTS[budget.tier];
   const lightRefs = useRef<Array<THREE.PointLight | null>>([]);
@@ -1333,7 +1423,7 @@ export function Architecture({ budget }: { budget: QualityBudget }) {
     };
   }, [built, smoke]);
 
-  useFrame((state) => {
+  useFrame((state, delta) => {
     const time = state.clock.elapsedTime;
 
     // --- windmill sails ---------------------------------------------------
@@ -1358,7 +1448,51 @@ export function Architecture({ budget }: { budget: QualityBudget }) {
 
     // --- smoke ------------------------------------------------------------
     if (smoke) {
-      const { mesh, columns, seeds } = smoke;
+      const { mesh, columns, seeds, hearths, assigned } = smoke;
+
+      // Re-point the slots at whatever lit hearths are nearest. Throttled,
+      // because nothing here moves fast enough to need it every frame and the
+      // scan is the one part of this that grows with the size of the village.
+      smoke.sinceReassign += delta;
+      if (smoke.sinceReassign >= SMOKE_REASSIGN_INTERVAL) {
+        smoke.sinceReassign = 0;
+        const camera = state.camera.position;
+        claimNearest(hearths, camera, columns.length, claimedSmoke, Infinity);
+
+        for (let slot = 0; slot < columns.length; slot++) {
+          const want = claimedSmoke[slot];
+          if (want < 0 || want === assigned[slot]) continue;
+
+          // `claimNearest` hands out distinct hearths within one pass, but a
+          // slot that declined to move still holds whatever it had — so the
+          // winner here can be a chimney another slot is already smoking from.
+          // Two columns on one roof is twice the density and reads as a fire.
+          let taken = false;
+          for (let other = 0; other < columns.length; other++) {
+            if (other !== slot && assigned[other] === want) {
+              taken = true;
+              break;
+            }
+          }
+          if (taken) continue;
+
+          // Hysteresis. A slot only lets go of its chimney once that chimney is
+          // far enough that a live column of puffs vanishing off one roof and
+          // appearing on another is a few pixels of haze rather than a pop.
+          // Without this, two hearths at similar range trade the slot back and
+          // forth every pass and both flicker.
+          if (assigned[slot] >= 0) {
+            const held = hearths[assigned[slot]];
+            if (held.distanceToSquared(camera) < SMOKE_RECYCLE_DISTANCE ** 2) {
+              continue;
+            }
+          }
+
+          assigned[slot] = want;
+          columns[slot].copy(hearths[want]);
+        }
+      }
+
       // One quaternion for every puff: screen-aligned billboards, which is what
       // stops them shearing into flat slabs as the camera swings round.
       state.camera.getWorldQuaternion(scratchQuaternion);

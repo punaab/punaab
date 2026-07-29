@@ -34,7 +34,7 @@ export default function ProjectPage() {
           <p className="project-doc-lede">{COMMUNITY_PITCH}</p>
           <CommunityLinks />
           <div className="project-doc-cta-row">
-            <SiteLink className="btn primary btn-glow" href="/world">
+            <SiteLink className="btn primary btn-glow" href="/archive">
               Help us world-build
             </SiteLink>
             <SiteLink className="btn soft" href="/models">
@@ -136,13 +136,13 @@ export default function ProjectPage() {
             everyone building games and stories with Punaab.
           </p>
           <div className="project-doc-cta-row">
-            <SiteLink className="btn primary btn-glow" href="/world">
+            <SiteLink className="btn primary btn-glow" href="/archive">
               Enter the World Archive
             </SiteLink>
-            <SiteLink className="btn soft" href="/world/characters">
+            <SiteLink className="btn soft" href="/archive/characters">
               Browse characters
             </SiteLink>
-            <SiteLink className="btn soft" href="/world/art">
+            <SiteLink className="btn soft" href="/archive/art">
               Browse art
             </SiteLink>
           </div>
@@ -252,7 +252,7 @@ export default function ProjectPage() {
             The valley is open. The hall is listening. The pack is packed.
           </p>
           <div className="project-doc-cta-row">
-            <SiteLink className="btn primary btn-glow btn-xl" href="/world">
+            <SiteLink className="btn primary btn-glow btn-xl" href="/archive">
               Contribute
             </SiteLink>
             <SiteLink className="btn ghost btn-xl" href="/models">

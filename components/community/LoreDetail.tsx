@@ -2,19 +2,23 @@
 
 import { SignInButton, useAuth } from "@clerk/nextjs";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import {
+  SquareImageCrop,
+  uploadLoreImage,
+} from "@/components/community/SquareImageCrop";
+import { LoreConnectionsEditor } from "@/components/community/LoreConnectionsEditor";
 import {
   downloadLabelForCategory,
   LORE_BODY_MAX,
   LORE_BODY_MIN,
   LORE_CATEGORIES,
   LORE_COMMENT_MAX,
-  LORE_LINK_KINDS,
   LORE_SUMMARY_MAX,
   LORE_TITLE_MAX,
   loreCategoryMeta,
+  loreLinkKindLabel,
   type CommunityLoreDetail,
-  type CommunityLoreListItem,
   type LoreCategoryId,
   type LoreLinkKind,
 } from "@/lib/community-lore";
@@ -44,6 +48,7 @@ export function LoreDetail({ id }: { id: string }) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [cropFile, setCropFile] = useState<File | null>(null);
 
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
@@ -53,10 +58,6 @@ export function LoreDetail({ id }: { id: string }) {
   const [tags, setTags] = useState("");
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [links, setLinks] = useState<LinkDraft[]>([]);
-  const [linkQuery, setLinkQuery] = useState("");
-  const [linkFilter, setLinkFilter] = useState<LoreCategoryId | "all">("all");
-  const [linkChoices, setLinkChoices] = useState<CommunityLoreListItem[]>([]);
-  const [linkKind, setLinkKind] = useState<LoreLinkKind>("related");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -104,57 +105,23 @@ export function LoreDetail({ id }: { id: string }) {
     setError(null);
   }
 
-  useEffect(() => {
-    if (!editing) return;
-    const handle = window.setTimeout(() => {
-      const params = new URLSearchParams({ sort: "votes", limit: "80" });
-      if (linkQuery.trim()) params.set("q", linkQuery.trim());
-      if (linkFilter !== "all") params.set("category", linkFilter);
-      void fetch(`/api/community/lore?${params}`)
-        .then((r) => r.json())
-        .then((data: { lore?: CommunityLoreListItem[] }) => {
-          setLinkChoices(
-            (data.lore || []).filter((item) => !item.isHub && item.id !== id)
-          );
-        })
-        .catch(() => setLinkChoices([]));
-    }, linkQuery.trim() ? 280 : 0);
-    return () => window.clearTimeout(handle);
-  }, [editing, linkQuery, linkFilter, id]);
-
-  const selectedIds = useMemo(
-    () => new Set(links.map((l) => l.toId)),
-    [links]
-  );
-
-  function toggleLink(item: CommunityLoreListItem) {
-    setLinks((prev) => {
-      if (prev.some((row) => row.toId === item.id)) {
-        return prev.filter((row) => row.toId !== item.id);
-      }
-      return [...prev, { toId: item.id, kind: linkKind }];
-    });
+  function onPickImage(file: File | null) {
+    if (!file) return;
+    setError(null);
+    setCropFile(file);
   }
 
-  async function onPickImage(file: File | null) {
-    if (!file) return;
-    setUploading(true);
+  async function onCropConfirm(cropped: File) {
     setError(null);
+    setUploading(true);
     try {
-      const form = new FormData();
-      form.set("file", file);
-      const res = await fetch("/api/community/lore/upload", {
-        method: "POST",
-        body: form,
-      });
-      const data = (await res.json()) as { url?: string; error?: string };
-      if (!res.ok || !data.url) {
-        setError(data.error || "Upload failed.");
-        return;
-      }
-      setImageUrl(data.url);
-    } catch {
-      setError("Could not upload that image.");
+      const url = await uploadLoreImage(cropped);
+      setImageUrl(url);
+      setCropFile(null);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Could not upload that image."
+      );
     } finally {
       setUploading(false);
     }
@@ -268,7 +235,7 @@ export function LoreDetail({ id }: { id: string }) {
       <div className="lore-empty-card">
         <h3>Lost on the road</h3>
         <p>{error || "This lore could not be found."}</p>
-        <Link className="btn ghost" href="/world">
+        <Link className="btn ghost" href="/archive">
           Back to lore
         </Link>
       </div>
@@ -339,15 +306,22 @@ export function LoreDetail({ id }: { id: string }) {
               <input
                 type="file"
                 accept="image/png,image/jpeg,image/webp,image/gif"
-                onChange={(e) => onPickImage(e.target.files?.[0] || null)}
+                onChange={(e) => {
+                  onPickImage(e.target.files?.[0] || null);
+                  e.target.value = "";
+                }}
               />
             </div>
-            {uploading && <span className="meta">Uploading…</span>}
-            {imageUrl && (
+            {uploading && !cropFile ? (
+              <div className="lore-upload-preview lore-upload-preview-busy" aria-busy="true">
+                <span className="lore-crop-spinner" aria-hidden="true" />
+              </div>
+            ) : null}
+            {imageUrl && !uploading && (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={imageUrl} alt="" className="lore-upload-preview" />
             )}
-            {imageUrl && (
+            {imageUrl && !uploading && (
               <button
                 type="button"
                 className="btn soft"
@@ -357,6 +331,13 @@ export function LoreDetail({ id }: { id: string }) {
               </button>
             )}
           </label>
+          {cropFile && (
+            <SquareImageCrop
+              file={cropFile}
+              onCancel={() => setCropFile(null)}
+              onConfirm={onCropConfirm}
+            />
+          )}
           <label className="lore-field">
             <span>Entry</span>
             <textarea
@@ -386,68 +367,24 @@ export function LoreDetail({ id }: { id: string }) {
             </label>
           </div>
 
-          <div className="lore-links-block">
-            <div className="lore-links-head">
-              <span>Connections</span>
-              <label className="lore-field lore-link-kind">
-                <span className="meta">Link kind</span>
-                <select
-                  value={linkKind}
-                  onChange={(e) => setLinkKind(e.target.value as LoreLinkKind)}
-                >
-                  {LORE_LINK_KINDS.map((kind) => (
-                    <option key={kind} value={kind}>
-                      {kind.replace(/_/g, " ")}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <input
-              className="lore-link-search"
-              value={linkQuery}
-              onChange={(e) => setLinkQuery(e.target.value)}
-              placeholder="Search art, characters, quests…"
-            />
-            <div className="lore-link-filters">
-              <button
-                type="button"
-                className={`lore-chip-btn${linkFilter === "all" ? " is-active" : ""}`}
-                onClick={() => setLinkFilter("all")}
-              >
-                All
-              </button>
-              {LORE_CATEGORIES.map((area) => (
-                <button
-                  key={area.id}
-                  type="button"
-                  className={`lore-chip-btn${linkFilter === area.id ? " is-active" : ""}`}
-                  onClick={() => setLinkFilter(area.id)}
-                >
-                  {area.label}
-                </button>
-              ))}
-            </div>
-            <ul className="lore-link-results">
-              {linkChoices.slice(0, 40).map((item) => (
-                <li key={item.id}>
-                  <button
-                    type="button"
-                    className={`lore-link-pick${selectedIds.has(item.id) ? " is-on" : ""}`}
-                    onClick={() => toggleLink(item)}
-                  >
-                    <span className="meta">
-                      {loreCategoryMeta(item.category).label}
-                    </span>
-                    <strong>{item.title}</strong>
-                  </button>
-                </li>
-              ))}
-            </ul>
-            {links.length > 0 && (
-              <p className="meta">{links.length} connection(s) selected</p>
-            )}
-          </div>
+          <LoreConnectionsEditor
+            category={category}
+            links={links}
+            onChange={setLinks}
+            excludeId={id}
+            known={[
+              ...lore.linksOut.map((e) => ({
+                id: e.to,
+                title: e.title,
+                category: e.category,
+              })),
+              ...lore.linksIn.map((e) => ({
+                id: e.from,
+                title: e.title,
+                category: e.category,
+              })),
+            ]}
+          />
 
           <div className="lore-compose-actions">
             <button
@@ -483,10 +420,10 @@ export function LoreDetail({ id }: { id: string }) {
   return (
     <article className="lore-detail">
       <div className="lore-detail-nav">
-        <Link className="lore-back" href="/world">
+        <Link className="lore-back" href="/archive">
           ← World home
         </Link>
-        <Link className="lore-back" href={`/world/${lore.category}`}>
+        <Link className="lore-back" href={`/archive/${lore.category}`}>
           {meta.label}
         </Link>
       </div>
@@ -556,14 +493,16 @@ export function LoreDetail({ id }: { id: string }) {
           <ul>
             {lore.linksOut.map((edge) => (
               <li key={`out-${edge.to}-${edge.kind}`}>
-                <span className="meta">{edge.kind.replace(/_/g, " ")}</span>{" "}
-                <Link href={`/world/${edge.to}`}>{edge.title}</Link>
+                <span className="meta">{loreLinkKindLabel(edge.kind)}</span>{" "}
+                <Link href={`/archive/${edge.to}`}>{edge.title}</Link>
               </li>
             ))}
             {lore.linksIn.map((edge) => (
               <li key={`in-${edge.from}-${edge.kind}`}>
-                <span className="meta">from {edge.kind.replace(/_/g, " ")}</span>{" "}
-                <Link href={`/world/${edge.from}`}>{edge.title}</Link>
+                <span className="meta">
+                  Linked here as {loreLinkKindLabel(edge.kind).toLowerCase()}
+                </span>{" "}
+                <Link href={`/archive/${edge.from}`}>{edge.title}</Link>
               </li>
             ))}
           </ul>

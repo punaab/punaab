@@ -99,6 +99,17 @@ export async function GET(req: Request) {
 
     if (category) query = query.eq("category", category);
 
+    // Order in SQL before limit — otherwise Postgres returns an arbitrary page and
+    // vote/alpha sorting in JS only reshuffles that slice (characters vanish
+    // behind seeded places when filtering All).
+    if (sort === "oldest") {
+      query = query.order("created_at", { ascending: true });
+    } else if (sort === "alpha") {
+      query = query.order("title", { ascending: true });
+    } else {
+      query = query.order("created_at", { ascending: false });
+    }
+
     if (q) {
       const safe = q.replace(/[%_,()]/g, " ").replace(/\s+/g, " ").trim();
       if (!safe) {

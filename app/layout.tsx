@@ -37,7 +37,7 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
-const BOOT_GATE = `(function(){try{var p=location.pathname;if(p==="/travel")||p.indexOf("/travel/")===0)return;if(!sessionStorage.getItem("punaab-loader-done"))document.documentElement.classList.add("punaab-booting");}catch(e){document.documentElement.classList.add("punaab-booting");}})();`;
+const BOOT_GATE = `(function(){try{var p=location.pathname;if(p==="/world")return;if(!sessionStorage.getItem("punaab-loader-done"))document.documentElement.classList.add("punaab-booting");}catch(e){document.documentElement.classList.add("punaab-booting");}})();`;
 
 export default function RootLayout({
   children,
@@ -46,7 +46,12 @@ export default function RootLayout({
 }>) {
   return (
     <ClerkProvider>
-      <html lang="en" className={`${display.variable} ${body.variable} h-full`}>
+      <html
+        lang="en"
+        className={`${display.variable} ${body.variable} h-full`}
+        // Boot gate may add `punaab-booting` before hydrate — expected mismatch.
+        suppressHydrationWarning
+      >
         <body className="min-h-full antialiased">
           <Script id="punaab-boot-gate" strategy="beforeInteractive">
             {BOOT_GATE}

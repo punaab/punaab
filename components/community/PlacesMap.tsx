@@ -11,7 +11,7 @@ import {
 import { regionAt } from "@/lib/world/regions";
 
 /**
- * The big chart on `/world/places`.
+ * The big chart on `/archive/places`.
  *
  * Two jobs, and they are deliberately different from the one the hero map has.
  * There, clicking a mark sends the bard walking. Here, the map is a *submission

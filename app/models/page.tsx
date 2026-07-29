@@ -32,7 +32,7 @@ export default function ModelsPage() {
         </p>
         <CommunityLinks />
         <div className="hero-actions" style={{ justifyContent: "center", marginTop: "1.25rem" }}>
-          <SiteLink className="btn primary btn-glow" href="/world">
+          <SiteLink className="btn primary btn-glow" href="/archive">
             Help us world-build
           </SiteLink>
         </div>

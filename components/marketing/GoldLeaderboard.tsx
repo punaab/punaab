@@ -122,7 +122,7 @@ export function GoldLeaderboard() {
             Open wallet &amp; invites
           </SiteLink>
         )}
-        <SiteLink className="btn soft" href="/world">
+        <SiteLink className="btn soft" href="/archive">
           Earn gold in World
         </SiteLink>
       </div>

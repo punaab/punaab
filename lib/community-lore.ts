@@ -184,6 +184,27 @@ export function isLoreLinkKind(value: string): value is LoreLinkKind {
   return (LORE_LINK_KINDS as readonly string[]).includes(value);
 }
 
+/** Human label for a link edge kind (compose UI + detail pages). */
+export function loreLinkKindLabel(kind: LoreLinkKind): string {
+  switch (kind) {
+    case "given_by":
+      return "Quest giver";
+    case "involves":
+      return "Involves";
+    case "found_in":
+      return "Found in";
+    case "leads_to":
+      return "Leads to";
+    case "mentions":
+      return "Mentions";
+    case "about":
+      return "About";
+    case "related":
+    default:
+      return "Related";
+  }
+}
+
 export function isLoreSort(value: string): value is LoreSort {
   return (LORE_SORTS as readonly string[]).includes(value);
 }

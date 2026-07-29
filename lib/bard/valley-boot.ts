@@ -2,14 +2,23 @@
  * Shared boot clock for the valley loader.
  *
  * The lazy chunk paints one loader, then BardWorld mounts another. A shared
- * start time lets the CSS animation resume mid-flight instead of restarting.
+ * start time lets progress resume mid-flight instead of restarting at 0%.
  */
 
-/** Seconds for the CSS fill to ease from 0 → soft ceiling while waiting. */
-export const VALLEY_BOOT_DURATION_SEC = 7;
-
 /** Soft ceiling until the scene signals ready (then we finish to 100). */
-export const VALLEY_BOOT_CEILING = 90;
+export const VALLEY_BOOT_CEILING = 92;
+
+/**
+ * Asymptotic time constant in seconds.
+ *
+ * Progress = ceiling * (1 - e^(-t/τ)). Longer loads keep the bar creeping
+ * toward the ceiling instead of slamming into 90% and sitting there.
+ * At τ: ~63% of the ceiling; at 2τ: ~86%; at 3τ: ~95% of the ceiling.
+ */
+export const VALLEY_BOOT_TAU_SEC = 14;
+
+/** How long the final drain from current → 100% takes once the scene is up. */
+export const VALLEY_BOOT_FINISH_MS = 700;
 
 let bootStartedAt = 0;
 let finished = false;
@@ -32,8 +41,11 @@ export function isValleyBootFinished(): boolean {
   return finished;
 }
 
-/** Display percent while waiting — linear with the CSS animation. */
+/**
+ * Display percent while waiting — one shared curve for fill, diamond, and label.
+ * Creeps toward the soft ceiling; never arrives until `ready` finishes it.
+ */
 export function valleyBootWaitPercent(elapsedSec: number): number {
-  const t = Math.max(0, elapsedSec) / VALLEY_BOOT_DURATION_SEC;
-  return Math.min(VALLEY_BOOT_CEILING, VALLEY_BOOT_CEILING * Math.min(1, t));
+  const t = Math.max(0, elapsedSec);
+  return VALLEY_BOOT_CEILING * (1 - Math.exp(-t / VALLEY_BOOT_TAU_SEC));
 }

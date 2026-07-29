@@ -15,7 +15,7 @@ music and models are static files under `public/`.
 6. `006_lore_search.sql` — Postgres FTS (`search_vector` + GIN) for World search
 
 Chart places from PIXELGREW are seeded into `community_lore` (category
-`places`) at runtime via `ensureMapPlaceLore` when `/world/places` loads —
+`places`) at runtime via `ensureMapPlaceLore` when `/archive/places` loads —
 no separate SQL file required.
 
 ## Apply

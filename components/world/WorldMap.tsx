@@ -110,7 +110,7 @@ const MAP_TEXTURE_SIZE = 1400;
 const MAP_TEXTURE_INLINE = 720;
 const MAP_TEXTURE_MOBILE = 512;
 
-/** Survives remounts so /world/places doesn't rebake the parchment every visit. */
+/** Survives remounts so /archive/places doesn't rebake the parchment every visit. */
 const parchmentCache = new Map<number, string>();
 
 function parchmentSize(inline: boolean): number {
@@ -162,7 +162,7 @@ export function WorldMap({
   selectedPlaceId,
   /** Live world metres — when set, a Punaab token tracks him on the chart. */
   getBardPosition,
-  /** Fills its container instead of sitting in a modal. Used by /world. */
+  /** Fills its container instead of sitting in a modal. Used by /archive/places. */
   inline = false,
   /** Called when a pin is chosen in inline mode, instead of travelling. */
   onSelect,

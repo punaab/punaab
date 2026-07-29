@@ -16,17 +16,16 @@ const CAMERA_CLEARANCE = 0.7;
  */
 const STRUCTURE_LIFT = 5.2;
 /**
- * Ceiling on how far the obstacle sweep may lift the lens *above the bard*, so
- * a pile of stacked hits cannot send it into orbit.
+ * Closest the boom may pull in, in metres from his eyes.
  *
- * Relative to him, not to sea level. As an absolute world height this was a
- * bug with a very confusing symptom: the valley floor sits at 6 metres but the
- * snow line is at 96, so the moment he climbed anything the clamp was *below*
- * the ridge the sweep had just calculated it needed to clear. The camera was
- * dutifully pushed up and then yanked back down inside the mountain, which
- * reads as the lens falling through the world rather than as a clamp.
+ * Roughly arm's length. Any nearer and the camera is inside his shoulders and
+ * the near plane starts slicing him open, which looks far worse than briefly
+ * seeing a corner of wall.
  */
-const MAX_CAMERA_LIFT = 22;
+const MIN_BOOM = 1.9;
+
+/** Air the lens keeps above whatever ground it ends up over. */
+const GROUND_CLEARANCE = 1.15;
 /** Samples along bard → camera for terrain / structure clearance. */
 const LOS_STEPS = 12;
 
@@ -41,9 +40,13 @@ const LOS_STEPS = 12;
  *  2. **It changes shot for what he's doing.** Walking gets a trailing
  *     over-the-shoulder; performing gets a slow arc round to his face, so you
  *     see him sing. A single fixed angle for eight minutes is a screensaver.
- *  3. **It never clips through the world.** Ridges and buildings push it *up*
- *     over the obstacle — never sideways into a forced dolly that leaves the
- *     mountain between the lens and the bard.
+ *  3. **It never clips through the world.** When a ridge or a wall gets between
+ *     the lens and the bard, the boom *shortens* — the camera slides in along
+ *     the line towards him until it is in front of the obstruction. This is how
+ *     third-person cameras have always solved it, and it is much calmer than
+ *     the alternative this used to do, which was to hoist the whole camera up
+ *     over the obstacle. Lifting works, but it swings the framing wildly every
+ *     time he walks past a cottage, and on a mountainside it never settles.
  */
 
 type Shot = {
@@ -67,8 +70,14 @@ const SHOTS: Record<"travelling" | "performing" | "close", Shot> = {
     distance: 6.4,
     height: 3.1,
     side: 1.5,
-    stiffness: 1.5,
-    orbitSpeed: 0.015,
+    // Lazier than it was. The spring is what turns his walk cycle and every
+    // correction the boom makes into camera movement, so softening it is the
+    // single biggest thing that makes the shot feel held rather than driven.
+    stiffness: 1.1,
+    // Effectively parked. Orbiting while travelling meant the valley slid
+    // sideways for the entire length of a road, which is the drift that reads
+    // as the camera never settling.
+    orbitSpeed: 0,
     lookHeight: 1.45,
   },
   // Singing or resting: closer, lower, arcing slowly round to his face.
@@ -76,8 +85,10 @@ const SHOTS: Record<"travelling" | "performing" | "close", Shot> = {
     distance: 4.2,
     height: 2.0,
     side: -2.1,
-    stiffness: 0.85,
-    orbitSpeed: 0.11,
+    stiffness: 0.7,
+    // Kept, but halved. Coming round to his face while he sings is the one
+    // place the movement is the point — it just does not need to be brisk.
+    orbitSpeed: 0.055,
     lookHeight: 1.5,
   },
   // Trading or talking: conversational two-shot distance.
@@ -85,8 +96,8 @@ const SHOTS: Record<"travelling" | "performing" | "close", Shot> = {
     distance: 4.6,
     height: 2.3,
     side: 1.9,
-    stiffness: 1.1,
-    orbitSpeed: 0.05,
+    stiffness: 0.9,
+    orbitSpeed: 0.018,
     lookHeight: 1.52,
   },
 };
@@ -100,9 +111,24 @@ function shotFor(activity: Activity): Shot {
 }
 
 /**
- * Raise `desired.y` until the look-line from the bard's eyes clears terrain
- * and structures. Prefer going *over* an obstacle to dollying in behind it —
- * a forced pull-in leaves the mountain between the lens and the subject.
+ * Shorten the boom until the lens has a clear view of him.
+ *
+ * Walks the line from the bard's eyes out to where the camera wants to be and
+ * finds the first point blocked by ground or a building. The camera is then
+ * placed just short of it, still on that line — so the shot keeps its angle and
+ * only its length changes.
+ *
+ * This replaces lifting the camera up over obstacles. Lifting is correct in the
+ * narrow sense that it clears the obstruction, but it moves the camera on the
+ * axis the eye is most sensitive to, and it has to move *far*: clearing a
+ * cottage from six metres back means climbing most of the cottage's height in
+ * the fraction of a second it takes to walk past. Every wall he passes throws
+ * the framing. Pulling in travels a much shorter distance for the same result,
+ * along an axis that reads as the camera closing on him rather than as the
+ * world tilting.
+ *
+ * The near clamp is the important safety rail: never so close that the lens
+ * ends up inside his head.
  */
 function clearLineOfSight(
   focusX: number,
@@ -115,39 +141,43 @@ function clearLineOfSight(
   const dy = desired.y - eyeY;
   const dz = desired.z - focusZ;
 
-  let minCamY = desired.y;
+  // How far along the boom we can get before something is in the way.
+  let clear = 1;
 
   for (let i = 1; i <= LOS_STEPS; i++) {
     const t = i / LOS_STEPS;
     const sx = focusX + dx * t;
     const sz = focusZ + dz * t;
-    const losY = eyeY + dy * t;
+    const sy = eyeY + dy * t;
 
-    const ground = heightAt(sx, sz) + CAMERA_CLEARANCE;
-    if (ground > losY && t > 1e-4) {
-      // Solve for camera Y so the ray at this t sits on the ridge.
-      // eyeY + t * (camY - eyeY) >= ground  →  camY >= eyeY + (ground - eyeY) / t
-      minCamY = Math.max(minCamY, eyeY + (ground - eyeY) / t);
-    }
+    const blocked =
+      heightAt(sx, sz) + CAMERA_CLEARANCE > sy ||
+      // Footprints carry no roof height, so anything inside one counts as solid
+      // up to eaves height — enough that the lens does not slip through a wall
+      // and sit inside somebody's kitchen.
+      (isBlocked(sx, sz, CAMERA_CLEARANCE) &&
+        heightAt(sx, sz) + STRUCTURE_LIFT > sy);
 
-    // Buildings: footprints have no roof, so treat a hit as a cottage roof and
-    // lift the whole camera above it rather than sliding closer into the alley.
-    if (isBlocked(sx, sz, CAMERA_CLEARANCE)) {
-      const roof = heightAt(sx, sz) + STRUCTURE_LIFT;
-      if (roof > losY && t > 1e-4) {
-        minCamY = Math.max(minCamY, eyeY + (roof - eyeY) / t);
-      }
+    if (blocked) {
+      // Stop one step short of the hit rather than at it, so the lens sits in
+      // front of the obstruction with a little air rather than touching it.
+      clear = Math.max(0, (i - 1) / LOS_STEPS);
+      break;
     }
   }
 
-  // Also keep the lens itself above local ground (and any footprint it sits in).
-  const here = heightAt(desired.x, desired.z);
-  minCamY = Math.max(minCamY, here + 1.15);
-  if (isBlocked(desired.x, desired.z, CAMERA_CLEARANCE)) {
-    minCamY = Math.max(minCamY, here + STRUCTURE_LIFT);
+  if (clear < 1) {
+    const boom = Math.hypot(dx, dy, dz);
+    // Below this the camera is inside him. Better to accept a clipped frame for
+    // a moment than to put the lens in his skull.
+    const shortest = boom > 1e-3 ? Math.min(MIN_BOOM / boom, 1) : 1;
+    const scale = Math.max(shortest, clear);
+    desired.set(focusX + dx * scale, eyeY + dy * scale, focusZ + dz * scale);
   }
 
-  desired.y = Math.min(focusY + MAX_CAMERA_LIFT, Math.max(desired.y, minCamY));
+  // Whatever the boom did, the lens still has to be out of the dirt.
+  const here = heightAt(desired.x, desired.z) + GROUND_CLEARANCE;
+  if (desired.y < here) desired.y = here;
 }
 
 export function FollowCamera({
@@ -342,11 +372,18 @@ export function FollowCamera({
     // lift and otherwise dip into a ridge for a frame.
     const liveFloor = heightAt(camera.position.x, camera.position.z) + 1.05;
     if (camera.position.y < liveFloor) camera.position.y = liveFloor;
-    camera.position.x += Math.sin(time * 0.37) * 0.016;
-    camera.position.y += Math.sin(time * 0.53 + 1.2) * 0.012;
+
+    // A breath of handheld drift, so the rig is not mathematically still. Kept
+    // well under a centimetre: at the old amplitude it was a slow wobble you
+    // could follow with your eye, which is the opposite of what it is for.
+    camera.position.x += Math.sin(time * 0.31) * 0.006;
+    camera.position.y += Math.sin(time * 0.43 + 1.2) * 0.004;
 
     // --- Aim ---------------------------------------------------------------
-    lookAt.lerp(scratch, 1 - Math.exp(-3.2 * delta));
+    // Slower than the body. The lens catching up a beat after the camera has
+    // moved is most of what separates a camera operator from a rig, and it
+    // absorbs the last of the jitter the spring passes through.
+    lookAt.lerp(scratch, 1 - Math.exp(-2.4 * delta));
     camera.lookAt(lookAt);
   });
 

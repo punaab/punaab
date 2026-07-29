@@ -837,7 +837,7 @@ export function LoreGraph() {
             <span>{selected.authorName}</span>
           </p>
           <div className="hero-actions" style={{ marginTop: "0.75rem" }}>
-            <Link className="btn primary" href={`/world/${selected.id}`}>
+            <Link className="btn primary" href={`/archive/${selected.id}`}>
               Open entry
             </Link>
             <a

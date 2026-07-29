@@ -11,7 +11,7 @@ function hrefPath(href: SiteLinkProps["href"]): string {
 }
 
 /**
- * Internal site links stay in the same tab, except `/travel` — the 3D stage
+ * Internal site links stay in the same tab, except `/world` — the 3D stage
  * is heavy to spin up, so that route opens in a new tab and leaves whatever
  * you were looking at intact.
  *
@@ -20,10 +20,10 @@ function hrefPath(href: SiteLinkProps["href"]): string {
  */
 export function SiteLink({ href, ...props }: SiteLinkProps) {
   const target = hrefPath(href);
-  const isTravel =
-    target === "/travel" || target.startsWith("/travel?") || target.startsWith("/travel#");
+  const isWorldStage =
+    target === "/world" || target.startsWith("/world?") || target.startsWith("/world#");
 
-  if (!isTravel) {
+  if (!isWorldStage) {
     return <Link href={href} {...props} />;
   }
 

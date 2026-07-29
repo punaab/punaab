@@ -13,17 +13,17 @@ export async function generateMetadata({
   if (isLoreCategory(id)) {
     const meta = loreCategoryMeta(id);
     return {
-      title: `${meta.label} — World — Punaab`,
+      title: `${meta.label} — Archive — Punaab`,
       description: meta.blurb,
     };
   }
   return {
-    title: "World entry — Punaab",
+    title: "Archive entry — Punaab",
     description: "A community worldbuilding entry for Punaab.",
   };
 }
 
-export default async function WorldSegmentPage({
+export default async function ArchiveSegmentPage({
   params,
 }: {
   params: Promise<{ id: string }>;
@@ -34,7 +34,7 @@ export default async function WorldSegmentPage({
     return (
       <MarketingShell>
         <section className="section lore-hero">
-          <p className="section-num">World</p>
+          <p className="section-num">Archive</p>
           <h2>{loreCategoryMeta(id).label}</h2>
         </section>
         <section className="section lore-section">

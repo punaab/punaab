@@ -32,10 +32,10 @@ export default function HomePage() {
             <span className="hero-inspiration-rule" />
           </p>
           <div className="hero-actions">
-            <SiteLink className="btn primary btn-glow btn-xl" href="/travel">
+            <SiteLink className="btn primary btn-glow btn-xl" href="/world">
               World
             </SiteLink>
-            <SiteLink className="btn ghost" href="/world">
+            <SiteLink className="btn ghost" href="/archive">
               Contribute
             </SiteLink>
           </div>
@@ -71,7 +71,7 @@ export default function HomePage() {
           Characters, quests, dialogue, places — sign in, publish an entry, and
           let the community upvote and refine it.
         </p>
-        <SiteLink className="btn primary btn-glow btn-xl" href="/world">
+        <SiteLink className="btn primary btn-glow btn-xl" href="/archive">
           Help us world-build
         </SiteLink>
       </section>
