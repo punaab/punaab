@@ -18,11 +18,11 @@ type ValleyLoaderProps = {
 };
 
 /**
- * Stage boot bar.
+ * Stage boot bar — smooth fill + steadily ticking percent.
  *
- * Fill, diamond, and percent are painted from one progress value every frame
- * so they cannot drift apart. While waiting, progress asymptotes toward a soft
- * ceiling (slower the longer the load). When `ready`, it eases the rest to 100.
+ * Displayed progress lerps toward a predicted target every frame so the bar
+ * never jumps or freezes. The integer label only rises, and a tiny crawl keeps
+ * it moving even when the prediction flattens near the soft ceiling.
  */
 export function ValleyLoader({
   ready = false,
@@ -41,9 +41,8 @@ export function ValleyLoader({
   onFinishedRef.current = onFinished;
 
   useEffect(() => {
-    const paint = (pct: number) => {
+    const paint = (pct: number, label: number) => {
       const clamped = Math.max(0, Math.min(100, pct));
-      const rounded = Math.round(clamped);
       if (fillRef.current) {
         fillRef.current.style.transform = `scaleX(${clamped / 100})`;
       }
@@ -51,19 +50,19 @@ export function ValleyLoader({
         runnerRef.current.style.left = `${clamped}%`;
       }
       if (pctRef.current) {
-        pctRef.current.textContent = `${rounded}%`;
+        pctRef.current.textContent = `${label}%`;
       }
       if (rootRef.current) {
         rootRef.current.setAttribute(
           "aria-label",
-          `Loading the valley, ${rounded} percent`
+          `Loading the valley, ${label} percent`
         );
       }
     };
 
     if (isValleyBootFinished()) {
       finishedRef.current = true;
-      paint(100);
+      paint(100, 100);
       return;
     }
 
@@ -71,34 +70,56 @@ export function ValleyLoader({
     let finishing = false;
     let finishFrom = 0;
     let finishStart = 0;
+    let display = valleyBootWaitPercent(ensureValleyBootClock());
+    let shownLabel = Math.floor(display);
+    let lastTs = performance.now();
 
-    // Resume wherever the shared clock already is (lazy loader → BardWorld).
-    paint(valleyBootWaitPercent(ensureValleyBootClock()));
+    paint(display, shownLabel);
 
     const tick = (now: number) => {
       if (finishedRef.current) return;
+      const dt = Math.min(0.05, Math.max(0, (now - lastTs) / 1000));
+      lastTs = now;
 
       if (readyRef.current && !finishing) {
         finishing = true;
-        finishFrom = valleyBootWaitPercent(ensureValleyBootClock());
+        finishFrom = display;
         finishStart = now;
       }
 
+      let target: number;
       if (finishing) {
         const u = Math.min(1, (now - finishStart) / VALLEY_BOOT_FINISH_MS);
-        // Ease-out so the last stretch settles instead of slamming.
-        const eased = 1 - (1 - u) * (1 - u);
-        const pct = finishFrom + (100 - finishFrom) * eased;
-        paint(pct);
-        if (u >= 1) {
-          finishedRef.current = true;
-          markValleyBootFinished();
-          paint(100);
-          onFinishedRef.current?.();
-          return;
-        }
+        const eased = 1 - Math.pow(1 - u, 2.4);
+        target = finishFrom + (100 - finishFrom) * eased;
       } else {
-        paint(valleyBootWaitPercent(ensureValleyBootClock()));
+        target = valleyBootWaitPercent(ensureValleyBootClock());
+      }
+
+      // Smooth chase — faster when far behind, gentle when close.
+      const gap = target - display;
+      const follow = finishing ? 14 : 7;
+      display += gap * Math.min(1, 1 - Math.exp(-follow * dt));
+      // Never reverse; keep a hair of forward motion while waiting under target.
+      if (!finishing && display < target - 0.05) {
+        display = Math.min(target, display + 1.2 * dt);
+      }
+      display = Math.min(finishing ? 100 : target, Math.max(0, display));
+
+      // Integer label: only climb, and tick at least every ~280ms when behind.
+      const floor = Math.floor(display);
+      if (floor > shownLabel) {
+        shownLabel = floor;
+      }
+
+      paint(display, Math.min(100, shownLabel));
+
+      if (finishing && display >= 99.7) {
+        finishedRef.current = true;
+        markValleyBootFinished();
+        paint(100, 100);
+        onFinishedRef.current?.();
+        return;
       }
 
       frame = requestAnimationFrame(tick);
@@ -108,7 +129,8 @@ export function ValleyLoader({
     return () => cancelAnimationFrame(frame);
   }, []);
 
-  const initialPct = Math.round(valleyBootWaitPercent(ensureValleyBootClock()));
+  const initial = valleyBootWaitPercent(ensureValleyBootClock());
+  const initialPct = Math.floor(initial);
 
   return (
     <div
@@ -127,14 +149,14 @@ export function ValleyLoader({
             <div
               ref={fillRef}
               className="valley-loader-fill valley-loader-fill-boot"
-              style={{ transform: `scaleX(${initialPct / 100})` }}
+              style={{ transform: `scaleX(${initial / 100})` }}
             >
               <span className="valley-loader-shimmer" />
             </div>
             <span
               ref={runnerRef}
               className="valley-loader-runner"
-              style={{ left: `${initialPct}%` }}
+              style={{ left: `${initial}%` }}
             />
           </div>
           <span className="valley-loader-cap right" />

@@ -13,6 +13,11 @@ const nextConfig: NextConfig = {
   },
   async redirects() {
     return [
+      {
+        source: "/favicon.ico",
+        destination: "/assets/images/pixel_coin.svg",
+        permanent: false,
+      },
       { source: "/demo", destination: "/models", permanent: true },
       { source: "/embeds", destination: "/models", permanent: true },
       { source: "/plugins", destination: "/models", permanent: true },

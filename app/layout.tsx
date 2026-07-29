@@ -52,7 +52,12 @@ export default function RootLayout({
         // Boot gate may add `punaab-booting` before hydrate — expected mismatch.
         suppressHydrationWarning
       >
-        <body className="min-h-full antialiased">
+        <body
+          className="min-h-full antialiased"
+          // Extensions (Dark Reader, etc.) often rewrite body class before
+          // hydrate — that mismatch cascades into removeChild / Clerk UI failures.
+          suppressHydrationWarning
+        >
           <Script id="punaab-boot-gate" strategy="beforeInteractive">
             {BOOT_GATE}
           </Script>

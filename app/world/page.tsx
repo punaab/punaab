@@ -1,6 +1,7 @@
 import { MarketingShell } from "@/components/marketing/MarketingShell";
 import { BardWorldLazy } from "@/components/marketing/BardWorldLazy";
 import { SiteLink } from "@/components/marketing/SiteLink";
+import { TravelPageTitle } from "@/components/marketing/TravelPageTitle";
 import { WorldStageFocus } from "@/components/marketing/WorldStageFocus";
 
 export const metadata = {
@@ -15,7 +16,7 @@ export default function WorldPage() {
       <section className="travel-page">
         <header className="travel-page-head">
           <p className="section-num">World</p>
-          <h1 className="travel-page-title">PIXELGREW CONCEPT WORLD</h1>
+          <TravelPageTitle>LAND OF PIXELGREW</TravelPageTitle>
           <p className="section-lead">
             Drag to look around. Play a song. Open the map and set him on the
             road.

@@ -110,7 +110,24 @@ export type GrassQualityTier = {
 };
 
 export const GRASS_QUALITY: readonly GrassQualityTier[] = [
-  { grass: [0.55, 0.48, 0.4, 0.32], blades: [3, 2, 1, 1] }, // low
+  /**
+   * Low — phones.
+   *
+   * The meadow is by far the heaviest thing in the world on a phone, and it is
+   * heavy in the one way a phone minds most: vertices. The fragment side is
+   * nearly free here (the blade shader lights per-vertex and the fragment stage
+   * is one assignment plus fog), so what costs is blade count times segments
+   * per blade, and both are in this row.
+   *
+   * The cuts are weighted towards the far rings on purpose. Halving the density
+   * of grass sixty metries away is close to invisible — at that range a blade is
+   * a fifth of a pixel and the sward reads as ground colour — whereas the near
+   * ring is the one the camera is actually sitting in, so it keeps most of what
+   * it had. Segments come down too: a two-segment blade still curves, a
+   * one-segment blade is a straight quad, and past the first ring nothing is
+   * wide enough on screen for the difference to show.
+   */
+  { grass: [0.4, 0.3, 0.2, 0.12], blades: [2, 1, 1, 1] }, // low
   { grass: [0.85, 0.75, 0.65, 0.55], blades: [4, 2, 1, 1] }, // medium
   { grass: [1.25, 1.15, 1.05, 0.95], blades: [5, 3, 2, 1] }, // high
   { grass: [1.55, 1.4, 1.3, 1.15], blades: [6, 3, 2, 1] }, // ultra

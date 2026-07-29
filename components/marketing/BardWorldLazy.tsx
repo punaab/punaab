@@ -3,7 +3,10 @@
 import dynamic from "next/dynamic";
 import { useEffect, useRef } from "react";
 import { ValleyLoader } from "@/components/marketing/ValleyLoader";
-import { resetValleyBootClock } from "@/lib/bard/valley-boot";
+import {
+  bumpValleyBoot,
+  resetValleyBootClock,
+} from "@/lib/bard/valley-boot";
 
 /**
  * The hero world is three.js plus a scene that generates its own terrain,
@@ -30,6 +33,8 @@ export function BardWorldLazy() {
     resetValleyBootClock();
   }
   useEffect(() => {
+    // JS chunk for BardWorld is loading / about to mount — credit real progress.
+    bumpValleyBoot(10);
     return () => {
       started.current = false;
     };

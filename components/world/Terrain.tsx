@@ -967,7 +967,20 @@ function buildApronGeometry(detailTile: number): THREE.BufferGeometry {
  *    centimetre bump is far smaller than a pixel, and all it can do there is
  *    alias into a shimmer as the camera moves.
  */
-function makeTerrainMaterial(surfaces: TerrainSurfaces): THREE.MeshStandardMaterial {
+function makeTerrainMaterial(
+  surfaces: TerrainSurfaces,
+  /**
+   * Whether to pay for tile breaking.
+   *
+   * It costs three extra texture reads on every terrain fragment — one colour,
+   * two normal — which is cheap on a desktop GPU and is not cheap on a phone,
+   * where terrain is a large share of the fill and bandwidth is the scarce
+   * thing. Phones also show the artefact least: a small screen at low pixel
+   * ratio, with the draw distance already pulled in to 145 metres, does not
+   * give a tiling normal map much room to march across a mountainside.
+   */
+  breakTiling: boolean
+): THREE.MeshStandardMaterial {
   surfaces.map.wrapS = surfaces.map.wrapT = THREE.RepeatWrapping;
   surfaces.map.repeat.set(1, 1);
   surfaces.normalMap.repeat.set(1, 1);
@@ -1113,12 +1126,16 @@ function makeTerrainMaterial(surfaces: TerrainSurfaces): THREE.MeshStandardMater
         `#ifdef USE_MAP
            float surfaceFade = 1.0 - smoothstep( uDetailFade.x, uDetailFade.y, length( vViewPosition ) );
 
-           float tileBlend = detailBlend( vWorldPos.xz );
-           vec3 detailTexel = mix(
-             texture2D( map, vMapUv ).rgb,
-             texture2D( map, detailTurn * vMapUv * DETAIL_PITCH + 0.29 ).rgb,
-             tileBlend
-           ) * 1.06;
+           #ifdef PUNAAB_TILE_BREAK
+             float tileBlend = detailBlend( vWorldPos.xz );
+             vec3 detailTexel = mix(
+               texture2D( map, vMapUv ).rgb,
+               texture2D( map, detailTurn * vMapUv * DETAIL_PITCH + 0.29 ).rgb,
+               tileBlend
+             ) * 1.06;
+           #else
+             vec3 detailTexel = texture2D( map, vMapUv ).rgb * 1.06;
+           #endif
 
            // --- Large-scale variation -------------------------------------
            //
@@ -1195,19 +1212,24 @@ function makeTerrainMaterial(surfaces: TerrainSurfaces): THREE.MeshStandardMater
            // mountain: a slope is mostly rock, so vSplat.x is high there and
            // the rock normal — the fastest-repeating layer of the three, at
            // under two metres — is what dominates that surface.
-           float nBlend = detailBlend( vWorldPos.xz );
-           vec2 turnedNormalUv = detailTurn * vNormalMapUv * DETAIL_PITCH + 0.29;
+           #ifdef PUNAAB_TILE_BREAK
+             float nBlend = detailBlend( vWorldPos.xz );
+             vec2 turnedNormalUv = detailTurn * vNormalMapUv * DETAIL_PITCH + 0.29;
 
-           vec3 soilA = texture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;
-           vec3 soilB = texture2D( normalMap, turnedNormalUv ).xyz * 2.0 - 1.0;
-           soilB.xy = detailUnturn * soilB.xy;
+             vec3 soilA = texture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;
+             vec3 soilB = texture2D( normalMap, turnedNormalUv ).xyz * 2.0 - 1.0;
+             soilB.xy = detailUnturn * soilB.xy;
 
-           vec3 rockA = texture2D( uRockNormal, vNormalMapUv * uRockScale ).xyz * 2.0 - 1.0;
-           vec3 rockB = texture2D( uRockNormal, turnedNormalUv * uRockScale ).xyz * 2.0 - 1.0;
-           rockB.xy = detailUnturn * rockB.xy;
+             vec3 rockA = texture2D( uRockNormal, vNormalMapUv * uRockScale ).xyz * 2.0 - 1.0;
+             vec3 rockB = texture2D( uRockNormal, turnedNormalUv * uRockScale ).xyz * 2.0 - 1.0;
+             rockB.xy = detailUnturn * rockB.xy;
 
-           vec3 mapN = mix( soilA, soilB, nBlend );
-           vec3 rockN = mix( rockA, rockB, nBlend );
+             vec3 mapN = mix( soilA, soilB, nBlend );
+             vec3 rockN = mix( rockA, rockB, nBlend );
+           #else
+             vec3 mapN = texture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;
+             vec3 rockN = texture2D( uRockNormal, vNormalMapUv * uRockScale ).xyz * 2.0 - 1.0;
+           #endif
            mapN = mix( mapN, rockN, vSplat.x );
            float relief = reliefFade
              * mix( 1.0, 0.4, vSplat.y )
@@ -1278,7 +1300,13 @@ function makeTerrainMaterial(surfaces: TerrainSurfaces): THREE.MeshStandardMater
 
   // Every chunk shares this material instance, but three keys its program cache
   // on the compiled source; a stable key keeps the whole terrain on one program.
-  material.customProgramCacheKey = () => "punaab-terrain-v5-tilebreak";
+  if (breakTiling) material.defines = { PUNAAB_TILE_BREAK: "" };
+
+  // The cache key has to carry the define. Without it the two variants share a
+  // compiled program and whichever tier compiled first silently decides what
+  // the other one draws.
+  material.customProgramCacheKey = () =>
+    breakTiling ? "punaab-terrain-v5-tilebreak" : "punaab-terrain-v5-plain";
 
   return material;
 }
@@ -1307,7 +1335,7 @@ export function Terrain({
   );
 
   const built = useMemo(() => {
-    const material = makeTerrainMaterial(surfaces);
+    const material = makeTerrainMaterial(surfaces, plan.tier !== "low");
     const group = new THREE.Group();
     group.name = "TerrainChunks";
 

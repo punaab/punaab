@@ -1035,6 +1035,8 @@ html.punaab-booting::before {
 /* /world — big centered valley stage */
 .travel-page {
   max-width: 1200px;
+  width: 100%;
+  box-sizing: border-box;
   margin: 0 auto;
   padding: 1.25rem 1.25rem 2.5rem;
   display: flex;
@@ -1044,24 +1046,29 @@ html.punaab-booting::before {
 }
 .travel-page-head {
   text-align: center;
-  max-width: min(100%, 40rem);
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  padding-inline: 0.15rem;
+  box-sizing: border-box;
 }
 .travel-page-head h1,
 .travel-page-title {
   margin: 0.2rem 0 0.45rem;
   font-family: var(--font-display);
-  /* Fit “PIXELGREW CONCEPT WORLD” on one line from phone → desktop. */
-  font-size: clamp(0.72rem, calc((100vw - 2.5rem) / 14.2), 2.75rem);
-  line-height: 1.1;
-  letter-spacing: 0.02em;
+  font-weight: 700;
+  /* Fallback before JS fit; TravelPageTitle then sizes exactly to the row. */
+  font-size: clamp(0.75rem, 5.2vw, 2.75rem);
+  line-height: 1.15;
+  letter-spacing: 0.03em;
   white-space: nowrap;
   max-width: 100%;
   overflow: hidden;
-  text-overflow: ellipsis;
+  text-align: center;
 }
 .travel-page-head .section-lead {
   margin: 0 auto;
+  max-width: 36rem;
 }
 .travel-stage-frame {
   width: 100%;

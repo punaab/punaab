@@ -44,6 +44,7 @@ import {
   type MusicLevels,
 } from "@/lib/bard/performance";
 import { walkAmbience } from "@/lib/bard/walk-ambience";
+import { bumpValleyBoot } from "@/lib/bard/valley-boot";
 import { budgetFor, detectQuality, type QualityBudget } from "@/lib/world/quality";
 import { WorldMap } from "./WorldMap";
 import { Terrain } from "./Terrain";
@@ -369,7 +370,10 @@ export function BardWorld() {
     let outer = 0;
     let inner = 0;
     outer = requestAnimationFrame(() => {
-      inner = requestAnimationFrame(() => setBootScene(true));
+      inner = requestAnimationFrame(() => {
+        bumpValleyBoot(6);
+        setBootScene(true);
+      });
     });
     return () => {
       cancelAnimationFrame(outer);
@@ -378,6 +382,7 @@ export function BardWorld() {
   }, []);
 
   const handleSceneReady = useCallback(() => {
+    bumpValleyBoot(4);
     setSceneReady(true);
   }, []);
 
