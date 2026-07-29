@@ -1992,6 +1992,13 @@ function placeClump(
   if (distanceToRoad(cx, cz) < options.minRoadDistance) return;
   if (distanceToWater(cx, cz) < options.minWaterDistance) return;
 
+  // Clump centres clear the road by `minRoadDistance`, but members can still
+  // drift onto the carriageway. Keep every footprint off the graded surface.
+  const memberRoadClear = Math.min(
+    options.minRoadDistance,
+    ROAD_HALF_WIDTH + 0.85
+  );
+
   for (let k = 0; k < options.clump; k++) {
     const key = index * 31 + k;
     const angle = hash2(options.seed + key * 3, key) * Math.PI * 2;
@@ -1999,6 +2006,7 @@ function placeClump(
     const radius = Math.sqrt(hash2(key * 5, options.seed + key)) * options.clumpRadius;
     const ox = Math.cos(angle) * radius;
     const oz = Math.sin(angle) * radius;
+    if (distanceToRoad(cx + ox, cz + oz) < memberRoadClear) continue;
 
     results.push({
       x: cx + ox,
@@ -2890,7 +2898,7 @@ function buildMeadow(budget: QualityBudget, clock: WindClock): Meadow {
 
   const group = new THREE.Group();
   group.name = "Grass";
-  const grid = new GrassChunkGrid(ground, tier);
+  const grid = new GrassChunkGrid(ground, tier, budget.grassRadius);
   const rings: MeadowRing[] = [];
   const templates: THREE.BufferGeometry[] = [];
 
@@ -3539,17 +3547,23 @@ export function Flora({
       rocksGroup.name = "Rocks";
       group.add(rocksGroup);
 
+      // Half-width + clump reach + boulder body, so a clump centred near the
+      // verge cannot still drop a member on the carriageway. Keep in sync with
+      // `flora-obstacles.ts`.
+      const rockClumpRadius = 3.2;
+      const rockMinRoad = ROAD_HALF_WIDTH + rockClumpRadius + 1.4;
+
       for (let v = 0; v < 3; v++) {
         const items = scatterBiome({
           seed: 909 + v * 173,
           count: Math.round(budget.rocks / 3),
           weights: ROCK_WEIGHTS,
           clump: 2,
-          clumpRadius: 3.2,
+          clumpRadius: rockClumpRadius,
           maxSlope: 0.72,
           minHeight: WATER_LEVEL - 0.3,
           maxHeight: 200,
-          minRoadDistance: 2.6,
+          minRoadDistance: rockMinRoad,
           minWaterDistance: -1,
           scale: [0.3, 1.7],
           // Boulders sit *in* the hill, not on top of it.

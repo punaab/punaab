@@ -40,8 +40,10 @@ import { findClearPath } from "@/lib/world/pathfind";
 import { REGIONS, regionAt, type Region } from "@/lib/world/regions";
 import {
   ROADS,
+  ROAD_HALF_WIDTH,
   WATER_LEVEL,
   WORLD_SIZE,
+  distanceToRoad,
   heightAt,
   slopeAt,
 } from "@/lib/world/terrain";
@@ -120,6 +122,8 @@ const STALL_PATIENCE = 0.85;
 
 /** How far ahead he peeks for trunks and walls before committing a step. */
 const LOOK_AHEAD = 4.4;
+/** Extra probe lengths when the far look-ahead is blocked — rocks beside the path. */
+const LOOK_AHEAD_NEAR = [2.2, 3.2, 4.4] as const;
 
 /** Hard cap on un-stick snaps — anything farther is a re-route, not a teleport. */
 const MAX_UNSTICK_JUMP = 2.35;
@@ -670,13 +674,13 @@ export class AdventureDirector {
     this.z = opening ? opening.z : 0;
 
     this.state = {
-      activity: "travelling",
+    activity: "travelling",
       position: new THREE.Vector3(this.x, 0, this.z),
       heading: 0,
-      speed: 0,
+    speed: 0,
       destination: null,
-      stop: null,
-      dwellRemaining: 0,
+    stop: null,
+    dwellRemaining: 0,
       region: regionAt(this.x, this.z),
       blocked: false,
     };
@@ -1007,27 +1011,41 @@ export class AdventureDirector {
    * stops him locking onto a cottage wall and walking into it forever.
    */
   private clearHeading(desired: number): number {
-    const probe = LOOK_AHEAD;
     const radius = BARD_RADIUS * 1.05;
-    const aheadX = this.x + Math.sin(desired) * probe;
-    const aheadZ = this.z + Math.cos(desired) * probe;
-    if (!isBlocked(aheadX, aheadZ, radius)) return desired;
+    if (this.headingOpen(desired, LOOK_AHEAD, radius)) return desired;
 
     let best = desired;
     let bestScore = -Infinity;
-    for (const offset of [0.45, -0.45, 0.9, -0.9, 1.35, -1.35, 1.85, -1.85]) {
-      const heading = wrapAngle(desired + offset);
-      const x = this.x + Math.sin(heading) * probe;
-      const z = this.z + Math.cos(heading) * probe;
-      if (isBlocked(x, z, radius)) continue;
-      // Prefer openings that stay aimed at the goal over wild pivots.
-      const score = Math.cos(offset) * 2 + (1 - Math.abs(offset));
-      if (score > bestScore) {
-        bestScore = score;
-        best = heading;
+    for (const probe of LOOK_AHEAD_NEAR) {
+      for (const offset of [0.35, -0.35, 0.7, -0.7, 1.1, -1.1, 1.55, -1.55, 2.1, -2.1]) {
+        const heading = wrapAngle(desired + offset);
+        if (!this.headingOpen(heading, probe, radius)) continue;
+        // Prefer openings that stay aimed at the goal over wild pivots, and
+        // nearer clearances that dodge a rock without abandoning the road.
+        const score =
+          Math.cos(offset) * 2 +
+          (1 - Math.abs(offset)) +
+          (LOOK_AHEAD - probe) * 0.08;
+        if (score > bestScore) {
+          bestScore = score;
+          best = heading;
+        }
       }
+      if (bestScore > -Infinity) return best;
     }
     return best;
+  }
+
+  /** True when a short probe along `heading` stays clear of solids. */
+  private headingOpen(heading: number, probe: number, radius: number): boolean {
+    const steps = Math.max(2, Math.ceil(probe / 1.1));
+    for (let i = 1; i <= steps; i++) {
+      const t = (probe * i) / steps;
+      const x = this.x + Math.sin(heading) * t;
+      const z = this.z + Math.cos(heading) * t;
+      if (isBlocked(x, z, radius)) return false;
+    }
+    return true;
   }
 
   /**
@@ -1065,8 +1083,27 @@ export class AdventureDirector {
   private sidestep(): void {
     const forwardX = Math.sin(this.heading);
     const forwardZ = Math.cos(this.heading);
-    const reaches = [3.2, 5.0, 7.2];
-    const angles = [0.7, -0.7, 1.2, -1.2, 1.8, -1.8, Math.PI * 0.9];
+    const reaches = [3.2, 5.0, 7.2, 9.5];
+    const angles = [0.55, -0.55, 0.95, -0.95, 1.4, -1.4, 1.9, -1.9, Math.PI * 0.9];
+
+    // Prefer a short A* hop past whatever is in front — smarter than a blind
+    // flank when a rock sits on the graded road.
+    const ahead = {
+      x: this.x + forwardX * 8,
+      z: this.z + forwardZ * 8,
+    };
+    const clearAhead = nearestClearPoint(ahead.x, ahead.z, BARD_RADIUS);
+    const hop = findClearPath(
+      this.x,
+      this.z,
+      clearAhead.x,
+      clearAhead.z,
+      BARD_RADIUS
+    );
+    if (hop && hop.length >= 1) {
+      this.route.splice(this.routeIndex, 0, ...hop.slice(0, 4));
+      return;
+    }
 
     for (const reach of reaches) {
       for (const angle of angles) {
@@ -1393,7 +1430,7 @@ export class AdventureDirector {
         roll -= weights[i];
         if (roll <= 0) {
           chosen = candidates[i];
-          break;
+        break;
         }
       }
     }
@@ -1557,8 +1594,33 @@ export class AdventureDirector {
             );
           }
           if (length < direct * detourLimit) {
+            // Road nodes sit on the centreline. If a rock still overlaps one,
+            // nudge onto clear ground beside the path, then A*-stitch any leg
+            // that still cuts through a solid.
+            const roadWaypoints: Waypoint[] = [];
             for (const node of nodes) {
-              route.push({ x: graph.x[node], z: graph.z[node] });
+              roadWaypoints.push(
+                this.clearBesideRoad(graph.x[node], graph.z[node])
+              );
+            }
+            let prev: Waypoint = { x: this.x, z: this.z };
+            for (const next of roadWaypoints) {
+              if (this.segmentBlocked(prev.x, prev.z, next.x, next.z)) {
+                const detour = findClearPath(
+                  prev.x,
+                  prev.z,
+                  next.x,
+                  next.z,
+                  BARD_RADIUS
+                );
+                if (detour && detour.length) {
+                  for (const point of detour) route.push(point);
+                  prev = route[route.length - 1] ?? next;
+                  continue;
+                }
+              }
+              route.push(next);
+              prev = next;
             }
           }
         }
@@ -1567,6 +1629,54 @@ export class AdventureDirector {
 
     route.push({ x: goal.x, z: goal.z });
     return this.trimRouteHead(route);
+  }
+
+  /**
+   * Keep a road-graph sample walkable. Prefers the nearest clear point that is
+   * still near the graded surface so a rock on the crown becomes a shoulder
+   * detour rather than a cross-country hop.
+   */
+  private clearBesideRoad(x: number, z: number): Waypoint {
+    if (!isBlocked(x, z, BARD_RADIUS)) return { x, z };
+    const clear = nearestClearPoint(x, z, BARD_RADIUS);
+    if (distanceToRoad(clear.x, clear.z) <= ROAD_HALF_WIDTH + 5) {
+      return { x: clear.x, z: clear.z };
+    }
+    // Fall back to a lateral shoulder probe from the blocked node.
+    for (const side of [1, -1]) {
+      for (const reach of [2.4, 3.6, 5.0]) {
+        for (const [px, pz] of [
+          [x + side * reach, z],
+          [x, z + side * reach],
+          [x + side * reach * 0.7, z + side * reach * 0.7],
+          [x + side * reach * 0.7, z - side * reach * 0.7],
+        ] as const) {
+          if (isBlocked(px, pz, BARD_RADIUS)) continue;
+          if (distanceToRoad(px, pz) > ROAD_HALF_WIDTH + 5) continue;
+          return { x: px, z: pz };
+        }
+      }
+    }
+    return { x: clear.x, z: clear.z };
+  }
+
+  /** True when the straight segment between two points hits a solid. */
+  private segmentBlocked(
+    ax: number,
+    az: number,
+    bx: number,
+    bz: number
+  ): boolean {
+    const dx = bx - ax;
+    const dz = bz - az;
+    const dist = Math.hypot(dx, dz);
+    if (dist < 0.01) return isBlocked(ax, az, BARD_RADIUS);
+    const steps = Math.max(2, Math.ceil(dist / 1.5));
+    for (let i = 1; i < steps; i++) {
+      const t = i / steps;
+      if (isBlocked(ax + dx * t, az + dz * t, BARD_RADIUS)) return true;
+    }
+    return false;
   }
 
   /**

@@ -1,6 +1,6 @@
 "use client";
 
-import { useFrame } from "@react-three/fiber";
+import { useFrame, useLoader } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 
@@ -841,6 +841,15 @@ function buildStoneRun(members: Member[], lod: number): RunPiece[] {
 // Build
 // ---------------------------------------------------------------------------
 
+type BannerEmblem = {
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+  /** World size of the square emblem plane. */
+  size: number;
+};
+
 type Assembly = {
   group: THREE.Group;
   meshes: THREE.InstancedMesh[];
@@ -863,7 +872,29 @@ type Assembly = {
    * the only ones worth spending a slot on.
    */
   windows: THREE.Vector3[];
+  /** Hanging-banner centres that carry the Pixelgrew emblem. */
+  banners: BannerEmblem[];
 };
+
+/** Square emblem size on each kind of hanging banner. */
+const BANNER_EMBLEM_SIZE: Partial<Record<StructureKind, number>> = {
+  gate: 0.72,
+  inn: 0.42,
+  watchtower: 0.58,
+  chapel: 0.55,
+};
+
+/**
+ * Chance a marked banner gets the Pixelgrew stamp.
+ *
+ * Gates always carry it — there are only a few and they are the valley's
+ * front doors. Everything else is a coin flip so the mark reads as deliberate
+ * rather than wallpapered onto every cloth scrap.
+ */
+function bannerGetsEmblem(kind: StructureKind, index: number): boolean {
+  if (kind === "gate") return true;
+  return hash2(index * 8191, 41) < 0.58;
+}
 
 /**
  * Which fire each light slot took this frame. Module scope rather than a ref
@@ -912,6 +943,7 @@ function buildArchitecture(budget: QualityBudget): Assembly {
   const chimneys: THREE.Vector3[] = [];
   const fires: THREE.Vector3[] = [];
   const windows: THREE.Vector3[] = [];
+  const banners: BannerEmblem[] = [];
   const sailHubs: Assembly["sails"]["hubs"] = [];
 
   /** Every instanced mesh in this component is hung the same way. */
@@ -1064,6 +1096,27 @@ function buildArchitecture(budget: QualityBudget): Assembly {
       collect("fire", fires);
       collect("window", windows);
 
+      const bannerMarks = builder.marks.get("banner");
+      const emblemSize = BANNER_EMBLEM_SIZE[kind];
+      if (bannerMarks && emblemSize) {
+        for (let i = 0; i < members.length; i++) {
+          if (!bannerGetsEmblem(kind, members[i].index)) continue;
+          const structure = members[i].structure;
+          for (const mark of bannerMarks) {
+            const point = new THREE.Vector3(mark[0], mark[1], mark[2]).applyMatrix4(
+              matrices[i]
+            );
+            banners.push({
+              x: point.x,
+              y: point.y,
+              z: point.z,
+              yaw: structure.rotation,
+              size: emblemSize * structure.scale,
+            });
+          }
+        }
+      }
+
       if (kind === "windmill") {
         const hubs = builder.marks.get("sailHub");
         if (hubs) {
@@ -1150,6 +1203,7 @@ function buildArchitecture(budget: QualityBudget): Assembly {
     chimneys,
     fires,
     windows,
+    banners,
   };
 }
 
@@ -1379,6 +1433,59 @@ function claimNearest(
   }
 }
 
+const PIXELGREW_BANNER = "/assets/images/pixlegrew.webp";
+
+/**
+ * Instanced Pixelgrew stamps for hanging banners.
+ *
+ * Kept off the architecture buckets on purpose: those geometries have no UVs,
+ * and putting a map on cloth would wallpaper every awning strip in the valley.
+ */
+function makeBannerEmblems(
+  banners: BannerEmblem[],
+  texture: THREE.Texture
+): {
+  mesh: THREE.InstancedMesh;
+  geometry: THREE.BufferGeometry;
+  material: THREE.MeshStandardMaterial;
+} | null {
+  if (banners.length === 0) return null;
+
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 4;
+  texture.needsUpdate = true;
+
+  const geometry = new THREE.PlaneGeometry(1, 1);
+  const material = new THREE.MeshStandardMaterial({
+    map: texture,
+    roughness: 0.92,
+    metalness: 0,
+    // Readable from the road and from behind the gate arch.
+    side: THREE.DoubleSide,
+    // Keep the black field; it frames the mark on cloth and timber alike.
+    transparent: false,
+  });
+
+  const mesh = new THREE.InstancedMesh(geometry, material, banners.length);
+  mesh.name = "BannerEmblems";
+  mesh.castShadow = false;
+  mesh.receiveShadow = true;
+  mesh.frustumCulled = false;
+
+  for (let i = 0; i < banners.length; i++) {
+    const banner = banners[i];
+    scratchPosition.set(banner.x, banner.y, banner.z);
+    scratchEuler.set(0, banner.yaw, 0);
+    scratchQuaternion.setFromEuler(scratchEuler);
+    scratchScale.set(banner.size, banner.size, 1);
+    scratchMatrix.compose(scratchPosition, scratchQuaternion, scratchScale);
+    mesh.setMatrixAt(i, scratchMatrix);
+  }
+  mesh.instanceMatrix.needsUpdate = true;
+
+  return { mesh, geometry, material };
+}
+
 export function Architecture({ budget }: { budget: QualityBudget }) {
   // Structure Y is sampled at build time, so this memo holds geometry that
   // encodes where the ground was. `budget` is the only thing that can change
@@ -1386,6 +1493,7 @@ export function Architecture({ budget }: { budget: QualityBudget }) {
   // constant, so React compares it equal on every render; editing it only
   // busts the memo because the edit itself triggers a Fast Refresh remount.)
   const built = useMemo(() => buildArchitecture(budget), [budget]);
+  const pixelgrewMap = useLoader(THREE.TextureLoader, PIXELGREW_BANNER);
 
   // Low tier gets smoke too now. It was excluded as an economy, but five
   // columns is thirty-five camera-facing quads sharing one draw call — next to
@@ -1394,6 +1502,11 @@ export function Architecture({ budget }: { budget: QualityBudget }) {
   const smoke = useMemo(
     () => buildSmoke(built.chimneys, budget.tier),
     [budget.tier, built.chimneys]
+  );
+
+  const emblems = useMemo(
+    () => makeBannerEmblems(built.banners, pixelgrewMap),
+    [built.banners, pixelgrewMap]
   );
 
   const lightCount = FIRE_LIGHTS[budget.tier];
@@ -1420,8 +1533,12 @@ export function Architecture({ budget }: { budget: QualityBudget }) {
         smoke.material.dispose();
         smoke.texture.dispose();
       }
+      if (emblems) {
+        emblems.geometry.dispose();
+        emblems.material.dispose();
+      }
     };
-  }, [built, smoke]);
+  }, [built, smoke, emblems]);
 
   useFrame((state, delta) => {
     const time = state.clock.elapsedTime;
@@ -1598,6 +1715,7 @@ export function Architecture({ budget }: { budget: QualityBudget }) {
     <group name="ArchitectureRoot">
       <primitive object={built.group} />
       {smoke && <primitive object={smoke.mesh} />}
+      {emblems && <primitive object={emblems.mesh} />}
       {Array.from({ length: lightCount }, (_, i) => (
         <pointLight
           key={i}

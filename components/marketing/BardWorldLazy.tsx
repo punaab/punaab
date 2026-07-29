@@ -34,7 +34,7 @@ export function BardWorldLazy() {
   }
   useEffect(() => {
     // JS chunk for BardWorld is loading / about to mount — credit real progress.
-    bumpValleyBoot(10);
+    bumpValleyBoot(3);
     return () => {
       started.current = false;
     };

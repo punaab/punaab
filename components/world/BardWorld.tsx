@@ -371,7 +371,7 @@ export function BardWorld() {
     let inner = 0;
     outer = requestAnimationFrame(() => {
       inner = requestAnimationFrame(() => {
-        bumpValleyBoot(6);
+        bumpValleyBoot(2);
         setBootScene(true);
       });
     });
@@ -382,7 +382,7 @@ export function BardWorld() {
   }, []);
 
   const handleSceneReady = useCallback(() => {
-    bumpValleyBoot(4);
+    bumpValleyBoot(2);
     setSceneReady(true);
   }, []);
 
@@ -817,22 +817,10 @@ export function BardWorld() {
                     </div>
                   </div>
                 ) : immersive ? (
-                  <div className="bard-world-hint">Esc or Exit to leave</div>
+                  <div className="bard-world-hint">Esc to leave</div>
                 ) : null}
               </div>
               <div className="bard-world-footer-actions">
-                {immersive && (
-                  <button
-                    type="button"
-                    className="bard-fs-toggle is-exit bard-fs-toggle-dock"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      void exitImmersive();
-                    }}
-                  >
-                    Exit full screen
-                  </button>
-                )}
                 <button
                   type="button"
                   className={`bard-sound-toggle${audioOn ? " is-on" : ""}`}

@@ -1,36 +1,23 @@
 /**
  * Shared boot clock for the valley loader.
  *
- * Design goals:
- * - Feel responsive at the start (visible movement in the first second)
- * - Keep crawling the whole time — no long plateaus where the % looks stuck
- * - Soft-cap below 100 until the scene signals ready, then finish smoothly
- *
- * The lazy chunk paints one loader, then BardWorld mounts another. A shared
- * start time lets progress resume mid-flight instead of restarting at 0%.
+ * Progress is a slow asymptotic climb that never quite reaches the soft
+ * ceiling — so the bar and % keep inching forward on long loads instead of
+ * parking at 93% until the scene is ready.
  */
 
-/** Soft ceiling until the scene signals ready. */
-export const VALLEY_BOOT_CEILING = 94;
+/** Soft ceiling until the scene signals ready (never quite arrives). */
+export const VALLEY_BOOT_CEILING = 97;
 
-/**
- * Expected load time (seconds) for the main climb.
- * Typical valley boots land near here; slower machines keep crawling after.
- */
-export const VALLEY_BOOT_EXPECTED_SEC = 11;
+/** Time constant (seconds) for the main climb — larger = slower, steadier. */
+export const VALLEY_BOOT_TAU_SEC = 24;
 
 /** How long the final drain from current → 100% takes once the scene is up. */
-export const VALLEY_BOOT_FINISH_MS = 900;
-
-/**
- * After the expected window, keep gaining this many percent per second
- * until the soft ceiling — so the label never feels frozen on a long load.
- */
-export const VALLEY_BOOT_CRAWL_PER_SEC = 0.45;
+export const VALLEY_BOOT_FINISH_MS = 1100;
 
 let bootStartedAt = 0;
 let finished = false;
-/** Extra target bump from real milestones (chunk mount, etc.). */
+/** Extra target from real milestones — kept small so we don't slam the ceiling. */
 let milestoneBoost = 0;
 
 export function ensureValleyBootClock(): number {
@@ -44,12 +31,9 @@ export function resetValleyBootClock(): void {
   milestoneBoost = 0;
 }
 
-/** Nudge the predicted bar forward when something real happens (e.g. chunk mounted). */
-export function bumpValleyBoot(amount = 6): void {
-  milestoneBoost = Math.min(
-    18,
-    milestoneBoost + Math.max(0, amount)
-  );
+/** Nudge the predicted bar when something real happens (chunk / WebGL up). */
+export function bumpValleyBoot(amount = 3): void {
+  milestoneBoost = Math.min(7, milestoneBoost + Math.max(0, amount));
 }
 
 export function markValleyBootFinished(): void {
@@ -61,26 +45,21 @@ export function isValleyBootFinished(): boolean {
 }
 
 /**
- * Predicted wait percent from elapsed time — always increasing until the ceiling.
+ * Predicted wait percent — always increasing, never hard-stops at one number.
  *
- * Uses an ease-out climb over EXPECTED_SEC (fast enough to feel alive, slow
- * enough to look deliberate), then a constant crawl so long loads never stall.
+ * Asymptotic toward CEILING with a little early pep so the first seconds still
+ * feel alive. Derivative stays positive for the whole wait.
  */
 export function valleyBootWaitPercent(elapsedSec: number): number {
   const t = Math.max(0, elapsedSec);
   const ceil = VALLEY_BOOT_CEILING;
-  const expected = VALLEY_BOOT_EXPECTED_SEC;
+  const tau = VALLEY_BOOT_TAU_SEC;
 
-  let base: number;
-  if (t <= expected) {
-    const u = t / expected;
-    // Ease-out: strong early motion, still ~1%/s near the end of the window.
-    const eased = 1 - Math.pow(1 - u, 1.55);
-    base = (ceil - 4) * eased; // ~90% at expected time
-  } else {
-    const atExpected = ceil - 4;
-    base = atExpected + (t - expected) * VALLEY_BOOT_CRAWL_PER_SEC;
-  }
+  // Main climb: ~37% of ceiling at τ, ~63% at 1.6τ, ~86% at 3τ, …
+  const climb = ceil * (1 - Math.exp(-t / tau));
+  // Brief early lift that fades — readable motion without racing to 90%.
+  const pep = 10 * (1 - Math.exp(-t / 2.2)) * Math.exp(-t / 16);
 
-  return Math.min(ceil, base + milestoneBoost);
+  // Leave a hair under the ceiling so crawl never "arrives" and freezes.
+  return Math.min(ceil - 0.45, climb + pep + milestoneBoost);
 }

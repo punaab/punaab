@@ -18,8 +18,8 @@ export default function MusicPage() {
           <aside className="music-license" aria-label="Open license">
             <span className="music-license-mark">CC BY</span>
             <p>
-              Punaab&apos;s music is open license — use, arrange &amp; perform
-              with credit: <code>SongTitle - Punaab</code>
+              Open license — use with credit:
+              <code>SongTitle - Punaab</code>
             </p>
           </aside>
         </div>

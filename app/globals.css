@@ -3258,6 +3258,11 @@ body:has(.punaab-overlay-root) {
 .music-license p {
   margin: 0 !important;
   max-width: none !important;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 0.35rem;
+  row-gap: 0;
   font-family: var(--font-display);
   font-size: 0.75rem !important;
   font-weight: 600;
@@ -3272,10 +3277,10 @@ body:has(.punaab-overlay-root) {
   font-weight: 700;
   letter-spacing: 0;
   color: var(--ink);
-  background: rgba(255, 201, 60, 0.22);
+  background: rgba(255, 201, 60, 0.28);
   border: 1.5px solid var(--ink);
   border-radius: 2px;
-  padding: 0.08rem 0.35rem;
+  padding: 0.05rem 0.35rem;
 }
 .music-lute-banner {
   display: flex;
@@ -3432,8 +3437,19 @@ body:has(.punaab-overlay-root) {
 }
 
 @media (max-width: 720px) {
+  .music-license {
+    align-items: flex-start;
+    width: 100%;
+    max-width: 100%;
+    padding: 0.4rem 0.65rem 0.45rem 0.35rem;
+  }
   .music-license p {
     white-space: normal;
+    row-gap: 0.45rem;
+  }
+  .music-license code {
+    flex: 1 1 100%;
+    margin-top: 0.1rem;
   }
   .music-headline {
     align-items: stretch;

@@ -19,6 +19,7 @@ import type { BardPalette } from "@/lib/bard/build-bard";
 import {
   PUNAAB_HEIGHT,
   PUNAAB_IDLE_URL,
+  PUNAAB_STATIC_2K_URL,
   PUNAAB_STATIC_8K_URL,
   PUNAAB_WALK_URL,
 } from "@/lib/bard/punaab-model";
@@ -96,34 +97,34 @@ function FitCamera({ frame }: { frame: Frame }) {
   return null;
 }
 
-function Model({
+function applyMeshFlags(root: THREE.Object3D) {
+  root.traverse((object) => {
+    const mesh = object as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.frustumCulled = false;
+  });
+}
+
+function AnimatedModel({
+  url,
   mode,
   onFrame,
   turntable,
 }: {
-  mode: PreviewMode;
+  url: string;
+  mode: "idle" | "walk";
   onFrame: (frame: Frame) => void;
   turntable: Turntable;
 }) {
-  const url =
-    mode === "static"
-      ? PUNAAB_STATIC_8K_URL
-      : mode === "walk"
-        ? PUNAAB_WALK_URL
-        : PUNAAB_IDLE_URL;
   const gltf = useGLTF(url);
   const groupRef = useRef<THREE.Group>(null);
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
 
   const model = useMemo(() => {
     const clone = cloneSkinned(gltf.scene);
-    clone.traverse((object) => {
-      const mesh = object as THREE.Mesh;
-      if (!mesh.isMesh) return;
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      mesh.frustumCulled = false;
-    });
+    applyMeshFlags(clone);
     return clone;
   }, [gltf.scene]);
 
@@ -134,10 +135,6 @@ function Model({
   }, [frame, onFrame]);
 
   useEffect(() => {
-    if (mode === "static") {
-      mixerRef.current = null;
-      return;
-    }
     const clip = pickClip(gltf.animations);
     if (!clip) return;
 
@@ -174,6 +171,84 @@ function Model({
         <primitive object={model} />
       </group>
     </group>
+  );
+}
+
+/**
+ * Static shelf preview: show the light 2K pack immediately, then quietly swap
+ * to 8K once that file is in the GLTF cache — no blank stage in between.
+ */
+function ProgressiveStaticModel({
+  onFrame,
+  turntable,
+}: {
+  onFrame: (frame: Frame) => void;
+  turntable: Turntable;
+}) {
+  const [url, setUrl] = useState(PUNAAB_STATIC_2K_URL);
+  const gltf = useGLTF(url);
+  const groupRef = useRef<THREE.Group>(null);
+
+  useEffect(() => {
+    if (url !== PUNAAB_STATIC_2K_URL) return;
+    let cancelled = false;
+    void Promise.resolve(useGLTF.preload(PUNAAB_STATIC_8K_URL)).then(() => {
+      if (!cancelled) setUrl(PUNAAB_STATIC_8K_URL);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [url]);
+
+  const model = useMemo(() => {
+    const clone = cloneSkinned(gltf.scene);
+    applyMeshFlags(clone);
+    return clone;
+  }, [gltf.scene]);
+
+  const frame = useMemo(() => measureFrame(model), [model]);
+
+  useLayoutEffect(() => {
+    onFrame(frame);
+  }, [frame, onFrame]);
+
+  useFrame((_, delta) => {
+    if (!turntable.dragging.current) {
+      turntable.yaw.current += delta * IDLE_SPIN;
+    }
+    const group = groupRef.current;
+    if (group) group.rotation.y = turntable.yaw.current;
+  });
+
+  return (
+    <group ref={groupRef}>
+      <group position={frame.offset}>
+        <primitive object={model} />
+      </group>
+    </group>
+  );
+}
+
+function Model({
+  mode,
+  onFrame,
+  turntable,
+}: {
+  mode: PreviewMode;
+  onFrame: (frame: Frame) => void;
+  turntable: Turntable;
+}) {
+  if (mode === "static") {
+    return <ProgressiveStaticModel onFrame={onFrame} turntable={turntable} />;
+  }
+  const url = mode === "walk" ? PUNAAB_WALK_URL : PUNAAB_IDLE_URL;
+  return (
+    <AnimatedModel
+      url={url}
+      mode={mode}
+      onFrame={onFrame}
+      turntable={turntable}
+    />
   );
 }
 
@@ -305,6 +380,5 @@ export function BardPreview({
   );
 }
 
-useGLTF.preload(PUNAAB_STATIC_8K_URL);
-useGLTF.preload(PUNAAB_IDLE_URL);
-useGLTF.preload(PUNAAB_WALK_URL);
+// Warm the light pack only — 8K rides in after first paint.
+useGLTF.preload(PUNAAB_STATIC_2K_URL);

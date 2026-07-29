@@ -396,9 +396,14 @@ function inn(b: Build): void {
   // the first thing anybody looks for.
   b.box("metal", PALETTE.iron, [1.5, 0.07, 0.07], [width * 0.4, lower - 0.2, depth / 2 + 0.3]);
   b.box("metal", PALETTE.iron, [0.07, 0.5, 0.06], [width * 0.4 - 0.7, lower - 0.45, depth / 2 + 0.3]);
-  b.box("plank", b.shade(PALETTE.plankPale), [0.9, 0.72, 0.07], [width * 0.4 + 0.42, lower - 0.62, depth / 2 + 0.3], [0, 0, b.wobble(0.05)]);
+  const signX = width * 0.4 + 0.42;
+  const signY = lower - 0.62;
+  const signZ = depth / 2 + 0.3;
+  b.box("plank", b.shade(PALETTE.plankPale), [0.9, 0.72, 0.07], [signX, signY, signZ], [0, 0, b.wobble(0.05)]);
   b.box("metal", PALETTE.iron, [0.04, 0.24, 0.04], [width * 0.4 + 0.22, lower - 0.28, depth / 2 + 0.3]);
   b.box("metal", PALETTE.iron, [0.04, 0.24, 0.04], [width * 0.4 + 0.62, lower - 0.28, depth / 2 + 0.3]);
+  // Emblem sits on the face of the board (Architecture stamps Pixelgrew here).
+  b.mark("banner", [signX, signY, signZ + 0.05]);
 
   // Barrels and a bench by the door.
   for (let i = 0; i < 3; i++) {
@@ -516,6 +521,8 @@ function chapel(b: Build): void {
     [0, 2.55, length / 2 + 0.2],
     [Math.PI / 2, 0, 0]
   );
+  // A hanging banner beside the west door.
+  hangingBanner(b, 0.9, 1.55, 1.55, wallHeight * 0.52, length / 2 + 0.42);
   b.pop();
   b.pop();
 
@@ -774,6 +781,8 @@ function watchtower(b: Build, variant: number): void {
   }
 
   door(b, 0.9, 1.9, 2.16);
+  // Banner over the approach — the tower's claim on the road below.
+  hangingBanner(b, 0.95, 1.55, 0, 3.35, 2.55);
   for (let i = 0; i < 4; i++) {
     b.push([0, 0, 0], [0, i * 1.9, 0]);
     b.box("dirt", PALETTE.soil, [0.16, 0.8, 0.16], [0, 2.6 + (i % 2) * 2.2, 2.1]);
@@ -1372,6 +1381,25 @@ export function bridgeFor(b: Build, s: Structure): void {
   }
 }
 
+/**
+ * A hanging cloth banner facing local +Z, with a mark for the Pixelgrew emblem.
+ *
+ * Architecture stamps `pixlegrew.webp` onto a subset of these marks so the
+ * valley can carry the mark without putting UVs on every building part.
+ */
+function hangingBanner(
+  b: Build,
+  width: number,
+  height: number,
+  x: number,
+  y: number,
+  z: number
+): void {
+  b.box("cloth", b.shade(PALETTE.clothRed, 0.1), [width, height, 0.03], [x, y, z]);
+  // Slightly proud of the cloth so the emblem never z-fights the banner face.
+  b.mark("banner", [x, y, z + 0.04]);
+}
+
 /** A palisade gate. Local +X spans the road; the arch opens along +Z. */
 /** How deep a gate tower is founded below the road surface it straddles. */
 const GATE_FOOTING = 3.4;
@@ -1434,7 +1462,7 @@ function gate(b: Build, roadHalfWidth: number): void {
     b.box("metal", PALETTE.iron, [1.7, 0.11, 0.05], [-side * 0.85, 3.6, 0.08]);
     b.pop();
   }
-  b.box("cloth", b.shade(PALETTE.clothRed, 0.1), [1.1, 1.9, 0.03], [0, height - 1.9, 0.62]);
+  hangingBanner(b, 1.1, 1.9, 0, height - 1.9, 0.62);
 }
 
 // ---------------------------------------------------------------------------

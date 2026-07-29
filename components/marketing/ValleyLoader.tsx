@@ -20,9 +20,9 @@ type ValleyLoaderProps = {
 /**
  * Stage boot bar — smooth fill + steadily ticking percent.
  *
- * Displayed progress lerps toward a predicted target every frame so the bar
- * never jumps or freezes. The integer label only rises, and a tiny crawl keeps
- * it moving even when the prediction flattens near the soft ceiling.
+ * Displayed progress lerps toward a slow predicted target every frame.
+ * The integer label only rises, and an anti-stall tick keeps it from parking
+ * on one number while the float is still creeping up.
  */
 export function ValleyLoader({
   ready = false,
@@ -73,6 +73,7 @@ export function ValleyLoader({
     let display = valleyBootWaitPercent(ensureValleyBootClock());
     let shownLabel = Math.floor(display);
     let lastTs = performance.now();
+    let lastLabelAt = lastTs;
 
     paint(display, shownLabel);
 
@@ -90,29 +91,37 @@ export function ValleyLoader({
       let target: number;
       if (finishing) {
         const u = Math.min(1, (now - finishStart) / VALLEY_BOOT_FINISH_MS);
-        const eased = 1 - Math.pow(1 - u, 2.4);
+        const eased = 1 - Math.pow(1 - u, 2.6);
         target = finishFrom + (100 - finishFrom) * eased;
       } else {
         target = valleyBootWaitPercent(ensureValleyBootClock());
       }
 
-      // Smooth chase — faster when far behind, gentle when close.
-      const gap = target - display;
-      const follow = finishing ? 14 : 7;
-      display += gap * Math.min(1, 1 - Math.exp(-follow * dt));
-      // Never reverse; keep a hair of forward motion while waiting under target.
-      if (!finishing && display < target - 0.05) {
-        display = Math.min(target, display + 1.2 * dt);
+      // Smooth chase — patient while waiting, snappier on the final stretch.
+      const follow = finishing ? 12 : 4.5;
+      display += (target - display) * Math.min(1, 1 - Math.exp(-follow * dt));
+      if (!finishing && display < target) {
+        // Guaranteed crawl so float (and bar) never sit still under target.
+        display = Math.min(target, display + 0.55 * dt);
       }
       display = Math.min(finishing ? 100 : target, Math.max(0, display));
 
-      // Integer label: only climb, and tick at least every ~280ms when behind.
       const floor = Math.floor(display);
       if (floor > shownLabel) {
         shownLabel = floor;
+        lastLabelAt = now;
+      } else if (
+        !finishing &&
+        shownLabel < 96 &&
+        display >= shownLabel + 0.55 &&
+        now - lastLabelAt > 700
+      ) {
+        // Anti-stall: if we've been on one integer too long but float moved, tick.
+        shownLabel += 1;
+        lastLabelAt = now;
       }
 
-      paint(display, Math.min(100, shownLabel));
+      paint(display, Math.min(finishing ? 100 : 97, shownLabel));
 
       if (finishing && display >= 99.7) {
         finishedRef.current = true;

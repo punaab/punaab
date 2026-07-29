@@ -109,6 +109,14 @@ export type GrassQualityTier = {
   blades: readonly number[];
 };
 
+/**
+ * Where the radius taper begins, as a fraction of the radius itself.
+ *
+ * The last quarter is enough to read as the sward thinning out and short
+ * enough that the tier still gets most of the saving it asked for.
+ */
+export const GRASS_RADIUS_FADE = 0.75;
+
 export const GRASS_QUALITY: readonly GrassQualityTier[] = [
   /**
    * Low — phones.
@@ -680,11 +688,13 @@ export class GrassChunkGrid {
 
   private readonly ground: GrassGround;
   private readonly density: number[];
+  private readonly radius: number;
 
-  constructor(ground: GrassGround, tierIndex: number) {
+  constructor(ground: GrassGround, tierIndex: number, radius = Infinity) {
     this.ground = ground;
     const quality = GRASS_QUALITY[tierIndex] ?? GRASS_QUALITY[2];
     this.density = [...quality.grass];
+    this.radius = radius > 0 ? radius : Infinity;
 
     for (let r = 0; r < GRASS_RINGS.length; r++) {
       const side = ringGridPerSide(r);
@@ -853,7 +863,32 @@ export class GrassChunkGrid {
 
           const nearest = Math.sqrt(nearestSq);
           const ratio = nearest <= ring.dn ? 1 : ring.dn / nearest;
-          const keep = quality * Math.pow(ratio, GRASS_DENSITY_POW) * slot.cover;
+          let keep = quality * Math.pow(ratio, GRASS_DENSITY_POW) * slot.cover;
+
+          // --- The tier's grass radius -----------------------------------
+          //
+          // The rings carry the reference's own extents, which run to 1250
+          // metres — tuned for a world nearly four times the size of this one.
+          // A phone drawing blades a kilometre out is spending its whole vertex
+          // budget on ground it has already fogged to nothing.
+          //
+          // Tapered rather than cut. A hard edge at the radius is a line across
+          // the meadow where grass simply stops, and at these distances there is
+          // almost no fog to hide it — which is exactly why this knob sat unused
+          // rather than being wired up as its name suggests. Fading the density
+          // out over the last stretch lets the sward thin into bare ground the
+          // way it would anyway, and the eye reads it as the field ending rather
+          // than as a clipping plane.
+          if (nearest >= this.radius) {
+            slot.count = 0;
+            continue;
+          }
+          const fadeFrom = this.radius * GRASS_RADIUS_FADE;
+          if (nearest > fadeFrom) {
+            const t = (nearest - fadeFrom) / (this.radius - fadeFrom);
+            keep *= 1 - t * t * (3 - 2 * t);
+          }
+
           const count = Math.min(ring.blades, Math.ceil(ring.blades * keep));
           slot.count = count;
           if (count > 0) {
