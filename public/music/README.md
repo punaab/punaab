@@ -4,6 +4,7 @@ Place `.mp3` files here. Currently shipping:
 
 - until-it-leads-me-home.mp3
 - the-grass-grows-green.mp3
+- i-once-had-been-a-cat.mp3
 
 Served at `/music/<filename>` and listed from `/music` via `lib/music.ts`.
 Only tracks with a file in this folder should be registered in code.

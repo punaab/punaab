@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
 import { Cinzel, Lora } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 
 const display = Cinzel({
@@ -36,6 +37,8 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
+const BOOT_GATE = `(function(){try{var p=location.pathname;if(p==="/travel")||p.indexOf("/travel/")===0)return;if(!sessionStorage.getItem("punaab-loader-done"))document.documentElement.classList.add("punaab-booting");}catch(e){document.documentElement.classList.add("punaab-booting");}})();`;
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -44,7 +47,12 @@ export default function RootLayout({
   return (
     <ClerkProvider>
       <html lang="en" className={`${display.variable} ${body.variable} h-full`}>
-        <body className="min-h-full antialiased">{children}</body>
+        <body className="min-h-full antialiased">
+          <Script id="punaab-boot-gate" strategy="beforeInteractive">
+            {BOOT_GATE}
+          </Script>
+          {children}
+        </body>
       </html>
     </ClerkProvider>
   );

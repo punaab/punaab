@@ -3,43 +3,80 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 
+const BOOT_FLAG = "punaab-loader-done";
+const BOOT_CLASS = "punaab-booting";
+
+function isBooting(): boolean {
+  if (typeof document === "undefined") return false;
+  return document.documentElement.classList.contains(BOOT_CLASS);
+}
+
+function clearBootClass() {
+  if (typeof document === "undefined") return;
+  document.documentElement.classList.remove(BOOT_CLASS);
+}
+
+/**
+ * First-visit full-page boot. A blocking layout script adds `punaab-booting`
+ * before paint so the page never flashes underneath — this component then
+ * owns the animated bar and clears the class when finished.
+ */
 export function LoadingScreen() {
+  // Always start inactive so SSR and hydration match. The pre-paint
+  // `punaab-booting` veil covers the page until this mounts the real loader.
+  const [active, setActive] = useState(false);
   const [percent, setPercent] = useState(0);
-  const [hidden, setHidden] = useState(true);
-  const [mounted, setMounted] = useState(false);
+  const [fading, setFading] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
-    const seen = sessionStorage.getItem("punaab-loader-done");
-    if (seen) {
-      setHidden(true);
+    if (!isBooting()) {
+      clearBootClass();
+      setActive(false);
       return;
     }
 
-    setHidden(false);
+    setActive(true);
     const start = performance.now();
     const duration = 2000;
     let frame = 0;
+    let fadeTimer = 0;
 
     const tick = (now: number) => {
       const t = Math.min(1, (now - start) / duration);
       setPercent(Math.round(t * 100));
       if (t < 1) {
         frame = requestAnimationFrame(tick);
-      } else {
-        sessionStorage.setItem("punaab-loader-done", "1");
-        window.setTimeout(() => setHidden(true), 280);
+        return;
       }
+      try {
+        sessionStorage.setItem(BOOT_FLAG, "1");
+      } catch {
+        /* private mode */
+      }
+      setFading(true);
+      fadeTimer = window.setTimeout(() => {
+        clearBootClass();
+        setActive(false);
+      }, 450);
     };
 
     frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.clearTimeout(fadeTimer);
+    };
   }, []);
 
-  if (!mounted || hidden) return null;
+  if (!active) return null;
 
   return (
-    <div className={`loader-screen${percent >= 100 ? " loader-fade" : ""}`}>
+    <div
+      className={`loader-screen${fading ? " loader-fade" : ""}`}
+      role="status"
+      aria-live="polite"
+      aria-busy={!fading}
+      aria-label={`Loading, ${percent} percent`}
+    >
       <div className="loader-content">
         <Image
           src="/assets/backpack.svg"

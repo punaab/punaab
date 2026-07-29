@@ -30,6 +30,14 @@ export const MUSIC_TRACKS: MusicTrack[] = [
     durationHint: "~4:00",
     tags: ["meadow", "ballad", "travel"],
   },
+  {
+    id: "i-once-had-been-a-cat",
+    title: "I Once Had Been a Cat",
+    blurb: "A wry little tale for fireside grins and soft-footed mischief.",
+    file: "i-once-had-been-a-cat.mp3",
+    durationHint: "~4:00",
+    tags: ["tale", "ballad", "whimsy"],
+  },
 ];
 
 export function musicUrl(file: string) {

@@ -27,6 +27,12 @@ export const SONGS: Song[] = [
     blurb: "A soft meadow air — green shoulders of the road, and light on the verge.",
     audioFile: "the-grass-grows-green.mp3",
   },
+  {
+    id: "i-once-had-been-a-cat",
+    title: "I Once Had Been a Cat",
+    blurb: "A wry fireside tale — soft paws, sharp grins, and a life half-remembered.",
+    audioFile: "i-once-had-been-a-cat.mp3",
+  },
 ];
 
 /** Every stop / quest that asks for a song resolves here. */

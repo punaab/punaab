@@ -17,7 +17,7 @@ export const COMMUNITY = {
 } as const;
 
 export const COMMUNITY_PITCH =
-  "Punaab is free to download. Use him in your own story or game, change him, and monetize what you make. Share lore in the hall — this is a community project.";
+  "The Traveling Bard is free to download. Use him in your own story or game, change him, and monetize what you make. Share lore in the hall — this is a community project.";
 
 /** Lore line that scrolls in the Pump.fun ticker. */
 export const PUMP_TICKER_LORE =

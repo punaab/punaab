@@ -14,7 +14,7 @@ export default function TravelPage() {
       <section className="travel-page">
         <header className="travel-page-head">
           <p className="section-num">Travel</p>
-          <h1>Walk the valley with Punaab</h1>
+          <h1>Walk with the Bard</h1>
           <p className="section-lead">
             Drag to look around. Play a song. Open the map and set him on the
             road.

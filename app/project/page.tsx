@@ -30,7 +30,7 @@ export default function ProjectPage() {
           <p className="project-doc-seal" aria-hidden="true">
             ✦ The Open Scroll ✦
           </p>
-          <h1>Punaab — Build Together. Yours to Use.</h1>
+          <h1>Build Together. Yours to Use.</h1>
           <p className="project-doc-lede">{COMMUNITY_PITCH}</p>
           <CommunityLinks />
           <div className="project-doc-cta-row">
