@@ -31,6 +31,7 @@ import {
   gabledRoof,
   gableEnd,
   infillPanel,
+  lampPane,
   shutteredWindow,
   stoneCourse,
   stoneWall,
@@ -497,7 +498,11 @@ function chapel(b: Build): void {
       b.pop();
     }
   }
-  b.box("glow", PALETTE.lamp, [1.5, 2.3, 0.1], [0, wallHeight * 0.58, -length / 2 - 0.2]);
+  // The east window. Lit first and brightest of anything in the valley — the
+  // chapel is the one building that is *supposed* to be showing off at dusk —
+  // and unmarked, because the lancets down the flanks already gave the light
+  // pool a spill for this building.
+  b.box("window", lampPane(0.14, 1.3), [1.5, 2.3, 0.1], [0, wallHeight * 0.58, -length / 2 - 0.2]);
 
   // West door, arched.
   door(b, 1.35, 2.4, length / 2 + 0.24, { open: false });
@@ -1671,10 +1676,23 @@ export function buildSails(seed: number, lod: number): Build {
   return b;
 }
 
-/** Base colour per part, so the shared materials stay white and multiply. */
+/**
+ * Base colour per part, so the shared materials stay white and multiply.
+ *
+ * `color` is the exception and only "window" sets it. That bucket's vertex
+ * attribute carries a *lighting schedule* rather than a colour (see `lampPane`
+ * in `architecture-parts.ts`), so there is nothing there to multiply and the
+ * material has to supply its own base instead.
+ */
 export const PART_MATERIAL: Record<
   string,
-  { roughness: number; metalness: number; flat: boolean; emissive?: THREE.Color }
+  {
+    roughness: number;
+    metalness: number;
+    flat: boolean;
+    emissive?: THREE.Color;
+    color?: THREE.Color;
+  }
 > = {
   stone: { roughness: 0.96, metalness: 0, flat: true },
   plaster: { roughness: 0.98, metalness: 0, flat: false },
@@ -1685,6 +1703,15 @@ export const PART_MATERIAL: Record<
   cloth: { roughness: 0.95, metalness: 0, flat: false },
   metal: { roughness: 0.52, metalness: 0.6, flat: false },
   glow: { roughness: 0.7, metalness: 0, flat: false, emissive: new THREE.Color("#ff9a3c") },
+  // Warmer and paler than a hearth: tallow and rushlight seen through horn or
+  // oiled cloth, not the fire itself.
+  window: {
+    roughness: 0.62,
+    metalness: 0,
+    flat: false,
+    emissive: new THREE.Color("#ffb45c"),
+    color: PALETTE.glass,
+  },
   hay: { roughness: 1, metalness: 0, flat: true },
   dirt: { roughness: 1, metalness: 0, flat: true },
 };

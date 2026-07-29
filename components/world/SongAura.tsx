@@ -7,10 +7,64 @@ import {
   EMPTY_MUSIC_LEVELS,
   type MusicLevels,
 } from "@/lib/bard/performance";
+import { daylight } from "@/lib/world/daylight";
+import type { QualityBudget } from "@/lib/world/quality";
 
 const COUNT = 56;
 const TRAIL_LEN = 5;
 const TRAIL_SEGS = COUNT * (TRAIL_LEN - 1);
+
+// ---------------------------------------------------------------------------
+// The note lights
+// ---------------------------------------------------------------------------
+
+/**
+ * How many of the fifty-six motes are allowed to be actual light sources.
+ *
+ * A point light costs every lit fragment in the frame, whether or not it
+ * reaches them, so this is the one number in the file that has to be a budget
+ * rather than a taste call. Three is enough for the effect: the eye reads "the
+ * notes are glowing" off the two or three brightest ones and invents the rest,
+ * because the additive sprites are already selling the same idea for free.
+ *
+ * The count is fixed for the lifetime of the component on purpose. Adding or
+ * removing a light — or hiding one, which amounts to the same thing, since the
+ * renderer skips invisible objects when it collects lights — changes the shader
+ * program every material in the scene is compiled against, and recompiling two
+ * hundred thousand grass tufts' worth of shaders mid-song is a visible hitch.
+ * That is why silence is `intensity = 0` rather than `visible = false`.
+ */
+const SONG_LIGHTS: Record<QualityBudget["tier"], number> = {
+  low: 1,
+  medium: 2,
+  high: 3,
+};
+
+/** Peak candela for one note at full song, full dark. */
+const SONG_LIGHT_PEAK = 1.25;
+/**
+ * Fraction of that left in broad daylight.
+ *
+ * Not zero — a mote passing a shaded jaw still owes the face a touch of warmth
+ * at noon — but small enough that nobody could point at it, because a daylight
+ * scene lit at 2.15 has no room for a candle and the effect would only read as
+ * the bard's chin going slightly greasy.
+ */
+const SONG_LIGHT_DAY = 0.06;
+/** Beyond this the note is not worth lighting; well short of the aura's reach. */
+const SONG_LIGHT_RANGE = 7;
+const SONG_LIGHT_DECAY = 2;
+/** Warm, and a shade deeper than the sprite so the lit surfaces read as amber. */
+const SONG_LIGHT_COLOR = "#ffcf92";
+/**
+ * A note dimmer than this is not worth a light slot.
+ *
+ * Doubles as the hand-off threshold: a slot holds its note until the note fades
+ * past here, then takes the best unclaimed one. Re-picking every frame instead
+ * would strobe, because the brightest particle changes constantly and the light
+ * would teleport between them several times a second.
+ */
+const SONG_LIGHT_MIN_ALPHA = 0.06;
 
 type Particle = {
   x: number;
@@ -32,6 +86,15 @@ type Particle = {
   driftZ: number;
   seed: number;
   size: number;
+  /**
+   * Alpha the sprite was drawn at this frame, 0 when dead.
+   *
+   * Cached on the particle rather than recomputed by the light pass because it
+   * already folds in fade, band energy and the play-weight — everything that
+   * makes one mote brighter than another — so the lights and the sprites can
+   * never disagree about which note is the brightest one in the air.
+   */
+  alpha: number;
   /** Ring of recent positions for the trail. */
   hx: Float32Array;
   hy: Float32Array;
@@ -215,6 +278,7 @@ function spawn(p: Particle, kind: number, energy: number) {
   p.driftX = (Math.random() - 0.5) * 0.05;
   p.driftZ = (Math.random() - 0.5) * 0.05;
   p.seed = Math.random() * 40;
+  p.alpha = 0;
   // Tiny heads — notes a hair larger than dust.
   p.size = kind === 0 ? 0.55 + Math.random() * 0.4 : 0.75 + Math.random() * 0.5;
 }
@@ -222,13 +286,19 @@ function spawn(p: Particle, kind: number, energy: number) {
 /**
  * Tiny dust / note visualizer with short light trails — clearer, smaller,
  * driven by the live track.
+ *
+ * The sprites are additive and cost nothing but fill; the handful of point
+ * lights that ride the brightest of them are the expensive part, and the reason
+ * the aura affects the world after dark instead of merely floating over it.
  */
 export function SongAura({
   intensity,
   sampleMusic,
+  budget,
 }: {
   intensity: RefObject<number>;
   sampleMusic: RefObject<() => MusicLevels>;
+  budget: QualityBudget;
 }) {
   const pointsRef = useRef<THREE.Points>(null);
   const trailsRef = useRef<THREE.LineSegments>(null);
@@ -236,6 +306,14 @@ export function SongAura({
   const spawnAcc = useRef(0);
   const trailTick = useRef(0);
   const smoothed = useRef({ ...EMPTY_MUSIC_LEVELS });
+
+  const lightCount = SONG_LIGHTS[budget.tier];
+  const lightRefs = useRef<Array<THREE.PointLight | null>>([]);
+  /** Particle index each light slot is riding, -1 for a slot with no note. */
+  const lightOwner = useMemo(
+    () => new Int32Array(lightCount).fill(-1),
+    [lightCount]
+  );
 
   const assets = useMemo(() => {
     const positions = new Float32Array(COUNT * 3);
@@ -296,6 +374,7 @@ export function SongAura({
         driftZ: 0,
         seed: 0,
         size: 1,
+        alpha: 0,
         hx: new Float32Array(TRAIL_LEN),
         hy: new Float32Array(TRAIL_LEN),
         hz: new Float32Array(TRAIL_LEN),
@@ -329,7 +408,17 @@ export function SongAura({
     const visible = amount > 0.05;
     if (pointsRef.current) pointsRef.current.visible = visible;
     if (trailsRef.current) trailsRef.current.visible = visible;
-    if (!visible) return;
+    if (!visible) {
+      // Silence has to be *dark*, and it has to be dark without unmounting
+      // anything: the lights stay in the scene at zero so the song can start
+      // again without every shader in the valley being rebuilt for it.
+      for (let slot = 0; slot < lightCount; slot++) {
+        const light = lightRefs.current[slot];
+        if (light) light.intensity = 0;
+        lightOwner[slot] = -1;
+      }
+      return;
+    }
 
     const pos = assets.geo.attributes.position as THREE.BufferAttribute;
     const col = assets.geo.attributes.color as THREE.BufferAttribute;
@@ -363,6 +452,7 @@ export function SongAura({
       const trailBase = i * (TRAIL_LEN - 1);
 
       if (p.life <= 0) {
+        p.alpha = 0;
         pos.setXYZ(i, 0, -20, 0);
         col.setXYZ(i, 0, 0, 0);
         kindAttr.setX(i, 0);
@@ -407,6 +497,7 @@ export function SongAura({
           : 0.65 + smooth.mid * 0.35 + smooth.treble * 0.25;
       // Soft enough to sit in the scene without looking chalky.
       const alpha = Math.min(1, fade * amount * band * 0.72);
+      p.alpha = alpha;
 
       pos.setXYZ(i, p.x, p.y, p.z);
       col.setXYZ(i, 1.0, 0.9, 0.62);
@@ -435,6 +526,81 @@ export function SongAura({
     alphaAttr.needsUpdate = true;
     trailPos.needsUpdate = true;
     trailCol.needsUpdate = true;
+
+    // --- note lights --------------------------------------------------------
+    //
+    // The sprites are additive, which means that until now the aura has been
+    // painted *over* the valley rather than into it: bright at noon, and at
+    // midnight a fistful of glowing confetti floating in front of a bard who is
+    // still lit by nothing but the moon. These few point lights are what close
+    // that gap — the notes stop being a decal and start being the reason his
+    // face and the dirt under him are warm.
+    //
+    // So the night term is not a polish pass, it is the point. At noon the
+    // lights are all but off because the sun has already spent the whole
+    // dynamic range; after dusk they are the brightest thing near him.
+    const night = SONG_LIGHT_DAY + daylight.nightFactor * (1 - SONG_LIGHT_DAY);
+    // Loudness, not just "a song is playing" — a quiet passage should dim the
+    // meadow it is lighting. Capped because a mastered track's energy and mid
+    // peak together, and an uncapped product turns every chorus into a flare.
+    const drive = Math.min(
+      1.15,
+      amount * (0.3 + smooth.energy * 0.85 + smooth.mid * 0.4 + smooth.treble * 0.25)
+    );
+
+    for (let slot = 0; slot < lightCount; slot++) {
+      const light = lightRefs.current[slot];
+      if (!light) continue;
+
+      let owner = lightOwner[slot];
+      if (owner >= 0 && list[owner].alpha < SONG_LIGHT_MIN_ALPHA) owner = -1;
+
+      if (owner < 0) {
+        // Brightest note in the air, tie-broken towards the youngest — a mote
+        // on the way up carries its light further than one about to wink out,
+        // so the pool spends its slots on notes with some life left in them.
+        let best = -1;
+        let bestScore = SONG_LIGHT_MIN_ALPHA;
+        for (let i = 0; i < COUNT; i++) {
+          const p = list[i];
+          if (p.life <= 0) continue;
+          let taken = false;
+          for (let j = 0; j < lightCount; j++) {
+            if (j !== slot && lightOwner[j] === i) {
+              taken = true;
+              break;
+            }
+          }
+          if (taken) continue;
+          const score = p.alpha * (0.6 + 0.4 * (p.life / p.maxLife));
+          if (score > bestScore) {
+            bestScore = score;
+            best = i;
+          }
+        }
+        owner = best;
+        lightOwner[slot] = owner;
+        // Land on the new note before it is lit, never drag a live light
+        // across the intervening half metre.
+        if (owner >= 0) {
+          light.position.set(list[owner].x, list[owner].y, list[owner].z);
+          light.intensity = 0;
+        }
+      }
+
+      if (owner < 0) {
+        light.intensity = 0;
+        continue;
+      }
+
+      const p = list[owner];
+      light.position.set(p.x, p.y, p.z);
+      // Ease rather than snap: the hand-off from a spent note to a fresh one is
+      // a step change in brightness, and a step change in a light reads as a
+      // flashbulb even when the two notes are inches apart.
+      const target = SONG_LIGHT_PEAK * p.alpha * drive * night;
+      light.intensity += (target - light.intensity) * Math.min(1, delta * 10);
+    }
   });
 
   return (
@@ -451,6 +617,25 @@ export function SongAura({
         material={assets.mat}
         frustumCulled={false}
       />
+      {/*
+        Mounted for the lifetime of the scene and driven to zero when he is not
+        playing. The count comes from the budget, which is fixed at boot, so the
+        renderer's light state — and every shader compiled against it — never
+        changes after the first frame.
+      */}
+      {Array.from({ length: lightCount }, (_, i) => (
+        <pointLight
+          key={i}
+          ref={(light: THREE.PointLight | null) => {
+            lightRefs.current[i] = light;
+          }}
+          color={SONG_LIGHT_COLOR}
+          intensity={0}
+          distance={SONG_LIGHT_RANGE}
+          decay={SONG_LIGHT_DECAY}
+          castShadow={false}
+        />
+      ))}
     </group>
   );
 }

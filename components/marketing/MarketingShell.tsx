@@ -9,7 +9,6 @@ import { COMMUNITY } from "@/lib/community";
 
 const NAV = [
   { href: "/project", label: "Project" },
-  { href: "/travel", label: "Travel" },
   { href: "/world", label: "Archive" },
   { href: "/music", label: "Music" },
   { href: "/models", label: "Models" },

@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
+import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
+import { daylight } from "@/lib/world/daylight";
 import {
   WORLD_SIZE,
   WATER_LEVEL,
@@ -1000,11 +1002,20 @@ function makeTerrainMaterial(surfaces: TerrainSurfaces): THREE.MeshStandardMater
     // most of what the camera looks at.
     uDetailFade: { value: new THREE.Vector2(95, 300) },
     // Aerial perspective. See the fog injection below for why these exist.
+    // Seeded from the palette, then driven by the day/night cycle every frame —
+    // see `AerialPerspective` below. The initial values are the ones the fog
+    // was tuned against, and they are what the very first frame draws with.
     uSunDir: { value: new THREE.Vector3(...ghibliSunDirection()).normalize() },
     uHaze: { value: new THREE.Color(GHIBLI.haze).convertSRGBToLinear() },
     uHazeSun: { value: new THREE.Color(GHIBLI.skyHorizonSun).convertSRGBToLinear() },
     uMist: { value: new THREE.Color(GHIBLI.mist).convertSRGBToLinear() },
   };
+
+  // `onBeforeCompile` assigns these uniform objects into the compiled shader by
+  // reference, so whoever holds `extra` holds the live uniforms. Parking it on
+  // the material is how the cycle reaches them without this function having to
+  // return a second value that every caller would then have to thread through.
+  material.userData.aerial = extra;
 
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, extra);
@@ -1272,5 +1283,43 @@ export function Terrain({
     return () => surfaces.dispose();
   }, [surfaces]);
 
-  return <primitive object={built.group} name="Terrain" />;
+  return (
+    <>
+      <AerialPerspective material={built.material} />
+      <primitive object={built.group} name="Terrain" />
+    </>
+  );
+}
+
+/**
+ * Keeps the terrain's aerial-perspective haze on the same clock as the sky.
+ *
+ * The mountains are hazed by this shader rather than by scene fog, so if these
+ * uniforms stay fixed the ridgelines keep their late-afternoon warmth straight
+ * through midnight — a fault that is invisible on any single frame and glaring
+ * once the sky above them has gone dark blue.
+ *
+ * `uSunDir` follows the *key* direction rather than the sun's, so after sunset
+ * the bright side of the haze is wherever the moon is, which is what actually
+ * happens to a valley under moonlight.
+ */
+function AerialPerspective({ material }: { material: THREE.MeshStandardMaterial }) {
+  const aerial = material.userData.aerial as
+    | {
+        uSunDir: { value: THREE.Vector3 };
+        uHaze: { value: THREE.Color };
+        uHazeSun: { value: THREE.Color };
+        uMist: { value: THREE.Color };
+      }
+    | undefined;
+
+  useFrame(() => {
+    if (!aerial) return;
+    aerial.uSunDir.value.copy(daylight.keyDir);
+    aerial.uHaze.value.copy(daylight.hazeColor);
+    aerial.uHazeSun.value.copy(daylight.hazeSunColor);
+    aerial.uMist.value.copy(daylight.mistColor);
+  });
+
+  return null;
 }

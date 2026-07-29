@@ -4,6 +4,7 @@ import { useGLTF } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
 import { AdventureDirector, type Activity } from "@/lib/bard/adventure";
 import {
@@ -18,6 +19,8 @@ import { surfaceAt } from "@/lib/world/surfaces";
 import { SongAura } from "@/components/world/SongAura";
 import type { MusicLevels } from "@/lib/bard/performance";
 import { walkAmbience } from "@/lib/bard/walk-ambience";
+import { daylight } from "@/lib/world/daylight";
+import { detectQuality, type QualityBudget } from "@/lib/world/quality";
 
 /** Idle / strum-idle play at half speed — unhurried. */
 const IDLE_RATE = 0.5;
@@ -74,6 +77,209 @@ const BACKPACK_STEPS_PER_METRE = 1.7;
 const BACKPACK_BOB_CM = 1.15;
 const BACKPACK_TILT = 0.055;
 
+// ---------------------------------------------------------------------------
+// The lantern on his pack
+// ---------------------------------------------------------------------------
+
+/**
+ * Every length below is in the backpack mount's units, which are *bone-local
+ * centimetres*, not metres.
+ *
+ * The skeleton is authored at 100× and the character root scales it back down,
+ * so the mount that sits `-34` behind his spine sits 34 centimetres behind it —
+ * and a lantern written in metres, at the same `-34`, would trail him by a third
+ * of the valley. The pack itself is the proof: a 1.9-unit mesh at `scale 52`
+ * comes out ~99 units tall and reads as a metre of canvas on his back.
+ *
+ * The point light is the exception. `distance` and `decay` are consumed in world
+ * space by the renderer, which reads only the translation out of the light's
+ * matrix — so those two stay in metres however deeply scaled the parent is.
+ */
+const LANTERN_CORD_CM = 4;
+const LANTERN_RADIUS_CM = 3.8;
+const LANTERN_CAGE_CM = 7.5;
+
+/**
+ * Peak candela, before `lampFactor` and the flame.
+ *
+ * Sized against the sun's 2.15: a metre and a half down, on the dirt he is
+ * standing on, this lands near 2 — a pool bright enough to walk by — and by six
+ * metres it is a wash worth a tenth of that. The valley is 640 metres across and
+ * nothing beyond his own clearing should be able to tell he is carrying a light.
+ */
+const LANTERN_PEAK = 4.5;
+/** Hard cutoff. Past here the falloff has nothing left to contribute anyway. */
+const LANTERN_RANGE_M = 14;
+/**
+ * Softer than inverse-square, on purpose.
+ *
+ * The nearest surface to this light is his own pack, thirty centimetres away,
+ * and a true `1/d²` at that range does not read as a lantern — it reads as a
+ * white hole where the canvas used to be. Pulling the exponent down flattens the
+ * near field without meaningfully extending the reach.
+ */
+const LANTERN_DECAY = 1.75;
+
+/** Peak pendulum swing, radians, at a full walking stride. */
+const LANTERN_SWING = 0.22;
+/**
+ * How far behind the pack's footfall the lantern hangs, in radians of step.
+ *
+ * A hanging thing does not arrive where its hook does at the same instant, and
+ * that lag is the entire difference between "hanging off the pack" and
+ * "modelled onto the pack". It reuses `packStepPhase` rather than a clock of its
+ * own so the two can never drift apart — a second oscillator at a slightly
+ * different rate would beat against the pack every few seconds, which looks
+ * exactly like the animation is broken.
+ */
+const LANTERN_LAG = 0.9;
+
+type Lantern = {
+  /** Rides the pack's bob group; the fixed point the lantern hangs from. */
+  hook: THREE.Group;
+  /** Pivots at the hook. Everything below it swings. */
+  swing: THREE.Group;
+  /** Null on the low tier, which cannot afford a live light. */
+  light: THREE.PointLight | null;
+  glass: THREE.MeshStandardMaterial;
+  dispose(): void;
+};
+
+/**
+ * A hooded lantern lashed to the flank of his pack.
+ *
+ * Sited off the pack's measured bounding box rather than off numbers typed in
+ * here, because the pack is an authored GLB: the day somebody re-exports it a
+ * size larger, a hard-coded offset puts the lantern inside the canvas, and a
+ * lantern buried in a bag is a bug nobody thinks to look for. Just outside the
+ * widest point is the one place that stays clear whatever silhouette the mesh
+ * has.
+ *
+ * It hangs on his right. The lute is cradled towards his left whenever he plays,
+ * and two props fighting over the same half of his body is the kind of clipping
+ * that only shows up on camera.
+ */
+function buildLantern(
+  packBox: THREE.Box3,
+  tier: QualityBudget["tier"]
+): Lantern {
+  const hook = new THREE.Group();
+  hook.name = "LanternHook";
+  // Mount space is turned 180° about Y so the pack faces out of his back, which
+  // flips X with it: +X here is his right.
+  hook.position.set(packBox.max.x * 1.02, packBox.max.y * 0.62, packBox.max.z * 0.45);
+
+  const swing = new THREE.Group();
+  swing.name = "LanternSwing";
+  hook.add(swing);
+
+  const drop = LANTERN_CORD_CM;
+  const radius = LANTERN_RADIUS_CM;
+  const bailRadius = radius * 0.58;
+  const bailY = -(drop + bailRadius);
+  const capHeight = 2.8;
+  const capY = bailY - bailRadius * 0.62 - capHeight * 0.5;
+  const cageTop = capY - capHeight * 0.5;
+  const cageY = cageTop - LANTERN_CAGE_CM * 0.5;
+  const baseHeight = 1.6;
+  const baseY = cageTop - LANTERN_CAGE_CM - baseHeight * 0.5;
+
+  // Everything metal merges to one geometry — a lantern is six primitives, and
+  // six draw calls hung off a bone is six too many for a prop this size.
+  const parts: THREE.BufferGeometry[] = [];
+
+  const cord = new THREE.CylinderGeometry(0.26, 0.26, drop, 4);
+  cord.translate(0, -drop * 0.5, 0);
+  parts.push(cord);
+
+  const cap = new THREE.ConeGeometry(radius * 1.06, capHeight, 6);
+  cap.translate(0, capY, 0);
+  parts.push(cap);
+
+  const base = new THREE.CylinderGeometry(radius * 0.82, radius * 0.94, baseHeight, 6);
+  base.translate(0, baseY, 0);
+  parts.push(base);
+
+  if (tier !== "low") {
+    // The cage is what makes it read as a lantern rather than a glowing bead,
+    // but it is also four thin boxes that are two pixels wide at the distance
+    // the camera actually sits — the first thing the cheap tier can lose.
+    const posts = radius * 0.62;
+    for (let i = 0; i < 4; i++) {
+      const angle = (i / 4) * Math.PI * 2 + Math.PI * 0.25;
+      const post = new THREE.BoxGeometry(0.5, LANTERN_CAGE_CM, 0.5);
+      post.translate(Math.cos(angle) * posts, cageY, Math.sin(angle) * posts);
+      parts.push(post);
+    }
+    const bail = new THREE.TorusGeometry(bailRadius, 0.28, 4, 10);
+    bail.translate(0, bailY, 0);
+    parts.push(bail);
+  }
+
+  const frameGeometry = mergeGeometries(parts, false) ?? parts[0];
+  for (const part of parts) {
+    if (part !== frameGeometry) part.dispose();
+  }
+
+  // Same numbers the buildings' ironwork uses, so his lantern and a smithy's
+  // hinges are demonstrably the same metal.
+  const frameMaterial = new THREE.MeshStandardMaterial({
+    color: "#2b2620",
+    roughness: 0.52,
+    metalness: 0.6,
+    flatShading: true,
+  });
+  const frame = new THREE.Mesh(frameGeometry, frameMaterial);
+  // No shadow: it is a centimetre of iron against a metre of pack, and the
+  // shadow camera is spending its resolution on him.
+  frame.castShadow = false;
+  frame.receiveShadow = false;
+  swing.add(frame);
+
+  const glassGeometry = new THREE.SphereGeometry(radius * 0.66, 8, 6);
+  glassGeometry.translate(0, cageY, 0);
+  // Horn-coloured and dead by day, driven above the bloom threshold at night —
+  // the same trick the lit windows use, and the reason the lantern is visible
+  // from across a field without the point light having to reach that far.
+  const glass = new THREE.MeshStandardMaterial({
+    color: "#c9b189",
+    emissive: new THREE.Color("#ff9a3c"),
+    emissiveIntensity: 0,
+    roughness: 0.35,
+    metalness: 0,
+  });
+  const glassMesh = new THREE.Mesh(glassGeometry, glass);
+  glassMesh.castShadow = false;
+  glassMesh.receiveShadow = false;
+  swing.add(glassMesh);
+
+  let light: THREE.PointLight | null = null;
+  if (tier !== "low") {
+    light = new THREE.PointLight("#ffb15e", 0, LANTERN_RANGE_M, LANTERN_DECAY);
+    light.name = "LanternFlame";
+    // Inside the glass, where a flame would be. Never a shadow caster: a point
+    // light's shadow is six renders of the scene, for a lamp whose whole job is
+    // a warm circle on the dirt.
+    light.castShadow = false;
+    light.position.set(0, cageY, 0);
+    swing.add(light);
+  }
+
+  return {
+    hook,
+    swing,
+    light,
+    glass,
+    dispose() {
+      hook.removeFromParent();
+      frameGeometry.dispose();
+      frameMaterial.dispose();
+      glassGeometry.dispose();
+      glass.dispose();
+    },
+  };
+}
+
 type Locomotion = {
   mixer: THREE.AnimationMixer;
   idle: THREE.AnimationAction;
@@ -96,6 +302,7 @@ export function Bard({
   bardRef,
   headAnchorRef,
   sampleMusic,
+  budget,
 }: {
   director: AdventureDirector;
   onFrame?: (position: THREE.Vector3, activity: Activity) => void;
@@ -107,7 +314,16 @@ export function Bard({
   bardRef: React.RefObject<THREE.Object3D | null>;
   headAnchorRef: React.RefObject<THREE.Object3D | null>;
   sampleMusic: React.RefObject<() => MusicLevels>;
+  /**
+   * Optional so the scene keeps working before the integrator threads it
+   * through. `detectQuality` is a pure read of the device and the query string,
+   * so falling back to it yields the same tier `BardWorld` already chose — but
+   * it is a fallback, not a second source of truth: pass the budget down and
+   * a `?quality=` override stays honoured everywhere at once.
+   */
+  budget?: QualityBudget;
 }) {
+  const quality = useMemo(() => budget ?? detectQuality(), [budget]);
   const idleGltf = useGLTF(PUNAAB_IDLE_URL);
   const walkGltf = useGLTF(PUNAAB_WALK_URL);
   const strumIdleGltf = useGLTF(PUNAAB_STRUM_IDLE_URL);
@@ -167,7 +383,7 @@ export function Bard({
   );
 
   /** Mount stays fixed on the spine; bob group is nudged each footfall. */
-  const backpackBob = useMemo(() => {
+  const { bob: backpackBob, box: packBox } = useMemo(() => {
     const mount = new THREE.Group();
     mount.name = "BackpackMount";
     // Upper back, further behind the ribs so the larger pack clears his torso.
@@ -188,6 +404,12 @@ export function Bard({
       mesh.receiveShadow = true;
     });
     pack.scale.setScalar(BACKPACK_BONE_SCALE);
+
+    // Measured before it joins the skeleton, which is the only moment the box
+    // comes out in mount-local centimetres — once the bone owns it, the same
+    // call would hand back a world-space box that moves every time he does.
+    // Anything that has to sit *on* the pack (the lantern) is placed off this.
+    const box = new THREE.Box3().setFromObject(pack);
     bob.add(pack);
 
     const hold =
@@ -196,8 +418,25 @@ export function Bard({
       model.getObjectByName("Spine") ??
       model;
     hold.add(mount);
-    return bob;
+    return { bob, box };
   }, [backpackGltf.scene, model]);
+
+  /**
+   * The lantern, hung off the pack once the pack exists.
+   *
+   * Separate from the pack's own memo so re-measuring the bag does not rebuild
+   * the light, and so the disposal has a single owner: `buildLantern` hands
+   * back its own teardown and this effect is the only thing that calls it.
+   */
+  const lantern = useMemo(
+    () => buildLantern(packBox, quality.tier),
+    [packBox, quality.tier]
+  );
+
+  useEffect(() => {
+    backpackBob.add(lantern.hook);
+    return () => lantern.dispose();
+  }, [backpackBob, lantern]);
 
   const headAnchor = useMemo(() => {
     const anchor = new THREE.Object3D();
@@ -413,6 +652,44 @@ export function Bard({
       delta
     );
 
+    // The lantern hangs, so it arrives late. Reading the pack's own step phase
+    // one `LANTERN_LAG` behind is the whole trick: it swings with him, always
+    // trailing, and can never beat against the pack the way a second clock at a
+    // slightly different rate would.
+    const swingPhase = packStepPhase.current - LANTERN_LAG;
+    lantern.swing.rotation.z = THREE.MathUtils.damp(
+      lantern.swing.rotation.z,
+      Math.sin(swingPhase) * LANTERN_SWING * bobStrength,
+      9,
+      delta
+    );
+    lantern.swing.rotation.x = THREE.MathUtils.damp(
+      lantern.swing.rotation.x,
+      Math.cos(swingPhase * 0.5) * LANTERN_SWING * 0.45 * bobStrength,
+      9,
+      delta
+    );
+
+    // Lit by the same curve that lights every window in the valley, so he is
+    // never the only one walking with a lamp at noon. Three incommensurable
+    // rates for the flame: any two would settle into an audible-looking beat.
+    const lampLevel = daylight.lampFactor;
+    if (lampLevel > 0.002) {
+      const t = _state.clock.elapsedTime;
+      const flicker =
+        0.82 +
+        Math.sin(t * 9.7) * 0.09 +
+        Math.sin(t * 5.3 + 1.7) * 0.06 +
+        Math.sin(t * 21.9 + 0.4) * 0.03;
+      lantern.glass.emissiveIntensity = lampLevel * flicker * 2.6;
+      if (lantern.light) lantern.light.intensity = lampLevel * flicker * LANTERN_PEAK;
+    } else if (lantern.glass.emissiveIntensity !== 0) {
+      // Settle to a hard zero once, rather than leaving a light on at 0.001
+      // candela costing every lit fragment in the frame all day.
+      lantern.glass.emissiveIntensity = 0;
+      if (lantern.light) lantern.light.intensity = 0;
+    }
+
     const walkRate = Math.min(0.55, Math.max(0.3, shownSpeed / WALK_CLIP_SPEED));
     loco.walk.setEffectiveTimeScale(heldStill || shownSpeed < 0.04 ? 0 : walkRate);
     loco.idle.setEffectiveTimeScale(IDLE_RATE);
@@ -522,7 +799,11 @@ export function Bard({
       <primitive object={model} />
       <primitive object={loot} />
       <group position={[0, 1.35, 0.1]}>
-        <SongAura intensity={playWeight} sampleMusic={sampleMusic} />
+        <SongAura
+          intensity={playWeight}
+          sampleMusic={sampleMusic}
+          budget={quality}
+        />
       </group>
     </group>
   );

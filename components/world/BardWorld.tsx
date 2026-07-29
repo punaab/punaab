@@ -10,7 +10,7 @@ import {
   BrightnessContrast,
   HueSaturation,
 } from "@react-three/postprocessing";
-import { BlendFunction } from "postprocessing";
+import { BlendFunction, type BloomEffect } from "postprocessing";
 import {
   Suspense,
   useCallback,
@@ -24,6 +24,7 @@ import * as THREE from "three";
 import { Architecture } from "./Architecture";
 import { Atmosphere } from "./Atmosphere";
 import { Bard } from "./Bard";
+import { Fireflies } from "./Fireflies";
 import { Flora } from "./Flora";
 import { FollowCamera } from "./FollowCamera";
 import { NPCs } from "./NPCs";
@@ -33,6 +34,7 @@ import { findPlace } from "@/lib/world/cartography";
 import { Terrain } from "./Terrain";
 import { Water } from "./Water";
 import { ensureWorldColliders } from "@/lib/world/world-colliders";
+import { daylight } from "@/lib/world/daylight";
 import { ValleyLoader } from "@/components/marketing/ValleyLoader";
 
 import {
@@ -106,6 +108,7 @@ function Scene({
   const worldRev = 10;
 
   const lastActivity = useRef<Activity>("travelling");
+  const bloomRef = useRef<BloomEffect>(null);
 
   const handleFrame = useCallback(
     (_position: THREE.Vector3, next: Activity) => {
@@ -127,6 +130,7 @@ function Scene({
       <Flora key={`flora-grass-${worldRev}`} budget={budget} layers="grass" />
 
       <Bard
+        budget={budget}
         director={director}
         bardRef={bardRef}
         headAnchorRef={headAnchorRef}
@@ -146,6 +150,7 @@ function Scene({
 
       <FollowCamera target={bardRef} activity={activity} />
       <SceneReadySignal onReady={onCoreReady} />
+      <NightGrade bloom={bloomRef} />
 
       {enrichWorld && (
         <>
@@ -156,6 +161,12 @@ function Scene({
           />
           <Architecture key={`arch-${worldRev}`} budget={budget} />
           <NPCs budget={budget} />
+          {/*
+            Deferred with the rest of the enrichment rather than mounted with
+            the core: they are invisible until dusk, so paying for the swarm
+            during the first-paint budget buys a visitor nothing.
+          */}
+          <Fireflies target={bardRef} budget={budget} />
 
           {budget.postprocessing && (
             <EffectComposer multisampling={0} enableNormalPass={false}>
@@ -164,8 +175,14 @@ function Scene({
                 Bloom only on genuinely bright things — the sun, the campfire, lit
                 windows. A low threshold would fog the whole image, which is the
                 most common way postprocessing makes a scene look worse.
+
+                That threshold is right for daylight and wrong for night, when
+                the brightest things in frame *are* the lamps. `NightGrade`
+                below walks it down after dark; a fixed value either washes out
+                noon or leaves every light source in the valley flat after dusk.
               */}
               <Bloom
+                ref={bloomRef}
                 intensity={0.55}
                 luminanceThreshold={0.84}
                 luminanceSmoothing={0.32}
@@ -189,6 +206,27 @@ function Scene({
       <AdaptiveDpr pixelated />
     </>
   );
+}
+
+/**
+ * Retunes bloom across the day/night cycle.
+ *
+ * Lives outside the `EffectComposer` on purpose. Effects are not components
+ * with children, so there is nowhere inside the composer to run a frame loop;
+ * a sibling holding the same ref is the standard way to animate one.
+ *
+ * The ref is null whenever postprocessing is off — the low tier never mounts a
+ * composer at all — so this quietly does nothing there rather than needing to
+ * be conditionally mounted.
+ */
+function NightGrade({ bloom }: { bloom: React.RefObject<BloomEffect | null> }) {
+  useFrame(() => {
+    const effect = bloom.current;
+    if (!effect) return;
+    effect.intensity = daylight.bloomIntensity;
+    effect.luminanceMaterial.threshold = daylight.bloomThreshold;
+  });
+  return null;
 }
 
 /** Fires once the Suspense tree has drawn a few frames — valley is visible. */
@@ -749,6 +787,18 @@ export function BardWorld() {
                 // nothing happens.
                 const place = findPlace(placeId);
                 if (place) setCaption(`Punaab sets out for ${place.name}.`);
+              }
+              return dispatched;
+            }}
+            onTravelPoint={(x, z) => {
+              const dispatched = director.travelToPoint(x, z);
+              if (dispatched) {
+                const name = director.current.destination?.name;
+                setCaption(
+                  name
+                    ? `Punaab sets out for ${name}.`
+                    : "Punaab sets out for the place you marked."
+                );
               }
               return dispatched;
             }}

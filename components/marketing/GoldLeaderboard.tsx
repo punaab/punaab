@@ -81,7 +81,14 @@ export function GoldLeaderboard() {
               <span className="gold-board-rank">{index + 1}</span>
               <div className="gold-board-who">
                 <strong>{row.displayName}</strong>
-                {row.title ? <span>{row.title}</span> : null}
+                {row.title ? (
+                  <>
+                    <span className="gold-board-who-sep" aria-hidden="true">
+                      ·
+                    </span>
+                    <span className="gold-board-role">{row.title}</span>
+                  </>
+                ) : null}
               </div>
               <span className="gold-board-amount">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -89,10 +96,11 @@ export function GoldLeaderboard() {
                   src="/assets/images/pixel_coin.svg"
                   alt=""
                   className="gold-board-coin"
-                  width={22}
-                  height={22}
+                  width={18}
+                  height={18}
                 />
-                {row.gold.toLocaleString()} <em>gold</em>
+                <span className="gold-board-num">{row.gold.toLocaleString()}</span>
+                <em>gold</em>
               </span>
             </li>
           ))}

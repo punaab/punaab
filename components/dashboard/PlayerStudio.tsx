@@ -113,7 +113,8 @@ export function PlayerStudio() {
         <p className="meta">Your traveler</p>
         <h2>Name on the road</h2>
         <p className="player-studio-lead">
-          Shown on the World Earnings Board when you climb the ranks.
+          Shown on the World Earnings Board when you climb the ranks. Names must
+          be unique across the camp.
         </p>
         <div className="form-row">
           <label htmlFor="traveler-name">Name</label>
@@ -125,7 +126,12 @@ export function PlayerStudio() {
             }
             placeholder="Ash of the Meadow Road"
             maxLength={48}
+            autoComplete="off"
+            aria-describedby="traveler-name-hint"
           />
+          <p id="traveler-name-hint" className="meta">
+            2–48 characters. No two travelers may share a name.
+          </p>
         </div>
         <div className="form-row">
           <label htmlFor="traveler-title">Title</label>

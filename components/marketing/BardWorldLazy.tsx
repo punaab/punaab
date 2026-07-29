@@ -1,7 +1,9 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { useEffect, useRef } from "react";
 import { ValleyLoader } from "@/components/marketing/ValleyLoader";
+import { resetValleyBootClock } from "@/lib/bard/valley-boot";
 
 /**
  * The hero world is three.js plus a scene that generates its own terrain,
@@ -22,5 +24,16 @@ const BardWorld = dynamic(
 );
 
 export function BardWorldLazy() {
+  const started = useRef(false);
+  if (!started.current) {
+    started.current = true;
+    resetValleyBootClock();
+  }
+  useEffect(() => {
+    return () => {
+      started.current = false;
+    };
+  }, []);
+
   return <BardWorld />;
 }

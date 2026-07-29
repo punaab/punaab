@@ -32,7 +32,7 @@ export default function HomePage() {
             <span className="hero-inspiration-rule" />
           </p>
           <div className="hero-actions">
-            <SiteLink className="btn primary btn-glow btn-xl" href="/music">
+            <SiteLink className="btn primary btn-glow btn-xl" href="/travel">
               Listen
             </SiteLink>
             <SiteLink className="btn ghost" href="/world">
@@ -49,13 +49,6 @@ export default function HomePage() {
         <h2>Build Together. Yours to Use.</h2>
         <p className="section-lead">{HOME_PROJECT_PITCH}</p>
         <CommunityLinks />
-        <ul className="feature-grid">
-          {FEATURES.map((f) => (
-            <li key={f} className="feature-chip">
-              <span className="check">✓</span> {f}
-            </li>
-          ))}
-        </ul>
         <SiteLink className="btn soft project-band-more" href="/project">
           Read the full project scroll
         </SiteLink>
@@ -63,6 +56,15 @@ export default function HomePage() {
 
       <GoldLeaderboard />
 
+      <section className="section home-features" aria-label="What Punaab can do">
+        <ul className="feature-grid">
+          {FEATURES.map((f) => (
+            <li key={f} className="feature-chip">
+              <span className="check">✓</span> {f}
+            </li>
+          ))}
+        </ul>
+      </section>
       <section className="section cta-band cta-glow">
         <h2>Write the next scrap of lore</h2>
         <p>

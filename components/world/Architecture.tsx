@@ -30,6 +30,7 @@ import {
 import { ROAD_HALF_WIDTH, WATER_LEVEL, heightAt } from "@/lib/world/terrain";
 import { makeCloudTexture } from "@/lib/world/textures";
 import type { QualityBudget } from "@/lib/world/quality";
+import { daylight } from "@/lib/world/daylight";
 
 /**
  * Everything anybody built.
@@ -84,7 +85,7 @@ function makeMaterials(): Map<PartKey, THREE.MeshStandardMaterial> {
   for (const key of Object.keys(PART_MATERIAL) as PartKey[]) {
     const spec = PART_MATERIAL[key];
     const material = new THREE.MeshStandardMaterial({
-      color: 0xffffff,
+      color: spec.color ?? 0xffffff,
       vertexColors: true,
       roughness: spec.roughness,
       metalness: spec.metalness,
@@ -96,9 +97,90 @@ function makeMaterials(): Map<PartKey, THREE.MeshStandardMaterial> {
       // only things in the valley that actually glow.
       material.emissiveIntensity = 2.1;
     }
+    if (key === "window") patchWindowMaterial(material);
     materials.set(key, material);
   }
   return materials;
+}
+
+/**
+ * Turns the window bucket's vertex colour into a lighting schedule.
+ *
+ * Which windows are lit *cannot* be geometry. A building variant is generated
+ * once and instanced across the whole valley, so anything baked in at build
+ * time is the same answer in every cottage of that variant, at noon and at
+ * midnight alike — which is exactly the frozen behaviour this replaces.
+ *
+ * So every pane in the world lands in one bucket, drawn by this one material,
+ * and the per-pane part of the answer rides in the colour attribute instead:
+ * red is how far through dusk that pane lights, green is how brightly (zero for
+ * a room nobody is in tonight). `lampPane` in `architecture-parts.ts` packs it.
+ * One uniform then moves per frame for the entire valley.
+ *
+ * Two of three's own chunks have to be defeated for that to survive the trip:
+ *
+ *  - `color_fragment` multiplies the diffuse colour by the attribute, which
+ *    would paint every window with its own schedule. Removed; the base colour
+ *    comes from the material instead.
+ *  - `color_vertex` multiplies the attribute by the *instance* colour, which is
+ *    the per-building warm/grey tint every other bucket wants and this one must
+ *    not have — it would scale each pane's threshold by how grey its cottage is.
+ */
+function patchWindowMaterial(material: THREE.MeshStandardMaterial): void {
+  const uniforms = { uLamp: { value: 0 } };
+  material.userData.lamp = uniforms;
+  // Emissive is a fixed peak; `uLamp` and the per-pane schedule do all the
+  // work, so the whole valley's windows are one uniform write a frame.
+  material.emissiveIntensity = 2.9;
+
+  material.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, uniforms);
+
+    // `String.replace` silently returns the original string when the pattern is
+    // absent, so a renamed chunk turns this into windows that never light and
+    // no error anywhere. Worth the four lines to be told.
+    if (process.env.NODE_ENV !== "production") {
+      const required: Array<[string, string]> = [
+        ["vertex", "#include <color_vertex>"],
+        ["fragment", "#include <color_fragment>"],
+        ["fragment", "#include <emissivemap_fragment>"],
+      ];
+      for (const [stage, chunk] of required) {
+        const source =
+          stage === "vertex" ? shader.vertexShader : shader.fragmentShader;
+        if (!source.includes(chunk)) {
+          console.warn(
+            `[punaab] window shader: missing ${chunk} — lit windows will not work`
+          );
+        }
+      }
+    }
+
+    // `vColor` is a `vec4` in three's chunks — the alpha slot is there for
+    // `USE_COLOR_ALPHA` geometry this material never has. Assigning the `vec3`
+    // attribute straight into it is a GLSL type error and would fail to compile
+    // the whole material, so the fourth component has to be supplied here.
+    shader.vertexShader = shader.vertexShader.replace(
+      "#include <color_vertex>",
+      "vColor = vec4( color, 1.0 );"
+    );
+
+    shader.fragmentShader = shader.fragmentShader
+      .replace("#include <color_fragment>", "")
+      .replace(
+        "#include <emissivemap_fragment>",
+        /* glsl */ `
+        #include <emissivemap_fragment>
+        // A pane crosses from dark to lit over a short span of the dusk ramp
+        // rather than switching, so a village warms up window by window instead
+        // of flicking on like a light switch.
+        float paneLit = smoothstep( vColor.r, vColor.r + 0.16, uLamp ) * vColor.g;
+        totalEmissiveRadiance = emissive * paneLit;
+        `
+      );
+  };
+
+  material.customProgramCacheKey = () => "punaab-window-v1";
 }
 
 // ---------------------------------------------------------------------------
@@ -765,6 +847,14 @@ type Assembly = {
   chimneys: THREE.Vector3[];
   /** Hearths and campfires in world space, for the light pool. */
   fires: THREE.Vector3[];
+  /**
+   * A spill point just outside each *occupied* window, for the lamp pool.
+   *
+   * Only the rooms somebody is in are marked. A pool of a handful of lights
+   * cannot serve every pane in a village, and the ones certain to be lit are
+   * the only ones worth spending a slot on.
+   */
+  windows: THREE.Vector3[];
 };
 
 /**
@@ -813,6 +903,7 @@ function buildArchitecture(budget: QualityBudget): Assembly {
   const geometries: THREE.BufferGeometry[] = [];
   const chimneys: THREE.Vector3[] = [];
   const fires: THREE.Vector3[] = [];
+  const windows: THREE.Vector3[] = [];
   const sailHubs: Assembly["sails"]["hubs"] = [];
 
   /** Every instanced mesh in this component is hung the same way. */
@@ -830,7 +921,9 @@ function buildArchitecture(budget: QualityBudget): Assembly {
 
       const mesh = new THREE.InstancedMesh(geometry, material, matrices.length);
       mesh.name = `${name}:${key}`;
-      mesh.castShadow = key !== "glow" && castShadow;
+      // Neither a hearth nor a windowpane is worth a shadow: both are emissive
+      // panels set flush into a wall that is already casting one.
+      mesh.castShadow = key !== "glow" && key !== "window" && castShadow;
       mesh.receiveShadow = true;
 
       for (let i = 0; i < matrices.length; i++) {
@@ -961,6 +1054,7 @@ function buildArchitecture(budget: QualityBudget): Assembly {
       };
       collect("chimney", chimneys);
       collect("fire", fires);
+      collect("window", windows);
 
       if (kind === "windmill") {
         const hubs = builder.marks.get("sailHub");
@@ -1047,6 +1141,7 @@ function buildArchitecture(budget: QualityBudget): Assembly {
     sails: { meshes: sailMeshes, hubs: sailHubs },
     chimneys,
     fires,
+    windows,
   };
 }
 
@@ -1132,6 +1227,63 @@ const FIRE_LIGHTS: Record<QualityBudget["tier"], number> = {
   high: 3,
 };
 
+/**
+ * Lamps spilling out of occupied windows. A separate pool from the hearths.
+ *
+ * Sharing one pool between the two was the alternative and it is worse: a
+ * standing beside a campfire would lose every window on the street to it,
+ * because the fire is always the nearer thing. Two small pools with their own
+ * reach cost one more light than one big one and always show both.
+ */
+const WINDOW_LIGHTS: Record<QualityBudget["tier"], number> = {
+  low: 0,
+  medium: 2,
+  high: 4,
+};
+
+/** Slot assignments for the window pool. Module scope for the same reason as `claimed`. */
+const claimedWindows: number[] = [];
+
+/**
+ * Give each light slot the nearest unclaimed point, or −1 if there is nothing
+ * in range.
+ *
+ * The nested scan is O(slots × points), which looks alarming next to a valley
+ * of several hundred hearths and windows — but `slots` is at most four, and a
+ * partial selection like this beats sorting the whole list every frame by a
+ * wide margin. It allocates nothing, which is the part that actually matters at
+ * sixty frames a second.
+ */
+function claimNearest(
+  points: THREE.Vector3[],
+  camera: THREE.Vector3,
+  slots: number,
+  into: number[],
+  maxDistanceSq: number
+): void {
+  for (let slot = 0; slot < slots; slot++) {
+    let best = -1;
+    let bestDistance = Infinity;
+    for (let i = 0; i < points.length; i++) {
+      // Skip anything a nearer slot already claimed.
+      let taken = false;
+      for (let j = 0; j < slot; j++) {
+        if (into[j] === i) {
+          taken = true;
+          break;
+        }
+      }
+      if (taken) continue;
+      const distance = points[i].distanceToSquared(camera);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = i;
+      }
+    }
+    into[slot] = bestDistance > maxDistanceSq ? -1 : best;
+  }
+}
+
 export function Architecture({ budget }: { budget: QualityBudget }) {
   // Structure Y is sampled at build time, so this memo holds geometry that
   // encodes where the ground was. `budget` is the only thing that can change
@@ -1156,6 +1308,18 @@ export function Architecture({ budget }: { budget: QualityBudget }) {
 
   const lightCount = FIRE_LIGHTS[budget.tier];
   const lightRefs = useRef<Array<THREE.PointLight | null>>([]);
+  const windowLightCount = WINDOW_LIGHTS[budget.tier];
+  const windowLightRefs = useRef<Array<THREE.PointLight | null>>([]);
+
+  // The live handle on the window material's `uLamp`, parked there by
+  // `patchWindowMaterial`. Absent only if the valley generated no windows at
+  // all, which the low tier's simplest hamlets can manage.
+  const windowUniforms = useMemo(
+    () =>
+      (built.materials.find((material) => material.userData.lamp)?.userData
+        .lamp as { uLamp: { value: number } } | undefined) ?? null,
+    [built.materials]
+  );
 
   useEffect(() => {
     return () => {
@@ -1229,48 +1393,69 @@ export function Architecture({ budget }: { budget: QualityBudget }) {
     }
 
     // --- firelight --------------------------------------------------------
-    if (lightCount > 0 && built.fires.length > 0) {
-      const camera = state.camera.position;
-      // A pool of lights that snaps to whichever hearths are nearest, rather
-      // than a light per fire. Ten point lights would cost more than the rest
-      // of the scene put together, and you can only ever be near one or two.
-      for (let slot = 0; slot < lightCount; slot++) {
-        let best = -1;
-        let bestDistance = Infinity;
-        for (let i = 0; i < built.fires.length; i++) {
-          // Skip anything a nearer slot already claimed.
-          let taken = false;
-          for (let j = 0; j < slot; j++) {
-            if (claimed[j] === i) {
-              taken = true;
-              break;
-            }
-          }
-          if (taken) continue;
-          const distance = built.fires[i].distanceToSquared(camera);
-          if (distance < bestDistance) {
-            bestDistance = distance;
-            best = i;
-          }
-        }
-        claimed[slot] = best;
+    claimNearest(built.fires, state.camera.position, lightCount, claimed, 90 * 90);
+    for (let slot = 0; slot < lightCount; slot++) {
+      const light = lightRefs.current[slot];
+      if (!light) continue;
+      const best = claimed[slot];
+      if (best < 0) {
+        light.intensity = 0;
+        continue;
+      }
+      light.position.copy(built.fires[best]);
+      // Layered sines at incommensurable rates never settle into a visible
+      // pattern, which is what fire flicker needs.
+      const flicker =
+        0.74 +
+        Math.sin(time * 11.3 + best) * 0.12 +
+        Math.sin(time * 6.7 + best * 2.1) * 0.09 +
+        Math.sin(time * 23.1 + best * 0.7) * 0.05;
+      light.intensity = 26 * flicker;
+    }
 
-        const light = lightRefs.current[slot];
-        if (!light) continue;
-        if (best < 0 || bestDistance > 90 * 90) {
-          light.intensity = 0;
-          continue;
+    // --- lit windows ------------------------------------------------------
+    // One uniform for every pane in the valley. The per-pane schedule lives in
+    // the geometry's colour attribute, so this is the whole of the day/night
+    // cost for lit windows however many buildings there are.
+    const lamp = daylight.lampFactor;
+    if (windowUniforms) windowUniforms.uLamp.value = lamp;
+
+    // The spill lights are a different matter — they are real point lights, so
+    // the pool is small and it goes completely dark during the day rather than
+    // lingering at an intensity nobody can see but every fragment pays for.
+    if (windowLightCount > 0) {
+      if (lamp <= 0.004) {
+        for (let slot = 0; slot < windowLightCount; slot++) {
+          const light = windowLightRefs.current[slot];
+          if (light && light.intensity !== 0) light.intensity = 0;
         }
-        const fire = built.fires[best];
-        light.position.copy(fire);
-        // Layered sines at incommensurable rates never settle into a visible
-        // pattern, which is what fire flicker needs.
-        const flicker =
-          0.74 +
-          Math.sin(time * 11.3 + best) * 0.12 +
-          Math.sin(time * 6.7 + best * 2.1) * 0.09 +
-          Math.sin(time * 23.1 + best * 0.7) * 0.05;
-        light.intensity = 26 * flicker;
+      } else {
+        claimNearest(
+          built.windows,
+          state.camera.position,
+          windowLightCount,
+          claimedWindows,
+          // Tighter than the hearths': a candle behind horn is not a bonfire,
+          // and past forty metres its spill is smaller than a pixel.
+          40 * 40
+        );
+        for (let slot = 0; slot < windowLightCount; slot++) {
+          const light = windowLightRefs.current[slot];
+          if (!light) continue;
+          const best = claimedWindows[slot];
+          if (best < 0) {
+            light.intensity = 0;
+            continue;
+          }
+          light.position.copy(built.windows[best]);
+          // Far gentler than the hearth flicker. A room lit by two tallow
+          // candles does move, but a window that guttered like a campfire would
+          // read as a house on fire.
+          const guttering =
+            0.93 + Math.sin(time * 2.7 + best * 1.9) * 0.05 +
+            Math.sin(time * 1.3 + best * 0.6) * 0.03;
+          light.intensity = 9 * lamp * guttering;
+        }
       }
     }
   });
@@ -1288,6 +1473,19 @@ export function Architecture({ budget }: { budget: QualityBudget }) {
           color="#ff9a44"
           intensity={0}
           distance={26}
+          decay={2}
+          castShadow={false}
+        />
+      ))}
+      {Array.from({ length: windowLightCount }, (_, i) => (
+        <pointLight
+          key={`win-${i}`}
+          ref={(light: THREE.PointLight | null) => {
+            windowLightRefs.current[i] = light;
+          }}
+          color="#ffb45c"
+          intensity={0}
+          distance={16}
           decay={2}
           castShadow={false}
         />

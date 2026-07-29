@@ -550,15 +550,15 @@ html.punaab-booting::before {
 .community-band .section-lead,
 .project-band .section-lead { margin: 0 auto 0.9rem; max-width: 40rem; }
 .project-band .community-links { margin-bottom: 0.15rem; }
-.project-band .feature-grid {
+.home-features .feature-grid {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   gap: 0.75rem;
   text-align: center;
-  margin-top: 1.1rem;
+  margin-top: 0;
 }
-.project-band .feature-chip {
+.home-features .feature-chip {
   width: auto;
   min-width: 9.5rem;
   display: inline-flex;
@@ -1340,6 +1340,16 @@ body:has(.bard-world.is-immersive) { overflow: hidden; }
     linear-gradient(90deg, #1d4ed8 0%, #2563eb 35%, #ffc93c 78%, #ffe08a 100%);
   box-shadow: inset 0 -2px 0 rgba(21, 34, 56, 0.2);
 }
+.valley-loader-fill-boot {
+  width: 100%;
+  transform: scaleX(0);
+  transform-origin: left center;
+  will-change: transform;
+}
+@keyframes valleyBootScale {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(0.9); }
+}
 .valley-loader-shimmer {
   position: absolute; inset: 0;
   background: linear-gradient(
@@ -1918,7 +1928,7 @@ body:has(.bard-world.is-immersive) { overflow: hidden; }
 
 .gold-board {
   text-align: center;
-  max-width: 48rem;
+  max-width: 40rem;
   margin-left: auto;
   margin-right: auto;
 }
@@ -2191,72 +2201,99 @@ body:has(.bard-world.is-immersive) { overflow: hidden; }
 }
 .gold-board-list {
   list-style: none;
-  margin: 1.1rem 0 0;
+  margin: 0.85rem 0 0;
   padding: 0;
   display: grid;
-  gap: 0.55rem;
+  gap: 0.35rem;
   text-align: left;
 }
 .gold-board-row {
   display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 0.75rem;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.5rem 0.65rem;
   align-items: center;
-  padding: 0.7rem 0.85rem;
+  min-height: 0;
+  padding: 0.38rem 0.6rem;
   border: 2px solid var(--ink);
-  border-radius: 4px;
+  border-radius: 3px;
   background: #fff;
-  box-shadow: 2px 2px 0 rgba(21, 34, 56, 0.3);
+  box-shadow: 1px 1px 0 rgba(21, 34, 56, 0.28);
 }
 .gold-board-rank {
-  width: 1.7rem;
-  height: 1.7rem;
+  width: 1.35rem;
+  height: 1.35rem;
   display: grid;
   place-items: center;
+  flex-shrink: 0;
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 0.85rem;
-  border: 2px solid var(--ink);
+  font-size: 0.72rem;
+  border: 1.5px solid var(--ink);
   border-radius: 999px;
   background: var(--accent);
+  line-height: 1;
 }
 .gold-board-who {
-  display: grid;
-  gap: 0.1rem;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: baseline;
+  gap: 0.35rem;
   min-width: 0;
+  overflow: hidden;
 }
 .gold-board-who strong {
   font-family: var(--font-display);
-  font-size: 1.02rem;
+  font-size: 0.92rem;
+  font-weight: 700;
   color: var(--ink);
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.gold-board-who span {
-  font-size: 0.82rem;
+.gold-board-who-sep {
+  flex: none;
+  color: rgba(21, 34, 56, 0.35);
+  font-weight: 700;
+  line-height: 1;
+}
+.gold-board-role {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.78rem;
   font-weight: 600;
   color: var(--muted);
 }
 .gold-board-amount {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.28rem;
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 1rem;
+  font-size: 0.9rem;
   color: var(--ink);
   white-space: nowrap;
+  flex-shrink: 0;
 }
 .gold-board-coin {
-  width: 1.35rem;
-  height: 1.35rem;
+  width: 1.05rem;
+  height: 1.05rem;
   object-fit: contain;
   flex-shrink: 0;
 }
+.gold-board-num {
+  font-variant-numeric: tabular-nums;
+}
 .gold-board-amount em {
   font-style: normal;
-  font-size: 0.72rem;
+  font-size: 0.65rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: rgba(21, 34, 56, 0.55);
+  color: rgba(21, 34, 56, 0.5);
 }
 .gold-board-empty,
 .gold-board-empty-card {
@@ -2279,6 +2316,40 @@ body:has(.bard-world.is-immersive) { overflow: hidden; }
   gap: 0.55rem;
   justify-content: center;
   margin-top: 1.1rem;
+}
+
+@media (max-width: 520px) {
+  .gold-board-row {
+    gap: 0.4rem 0.45rem;
+    padding: 0.32rem 0.45rem;
+  }
+  .gold-board-rank {
+    width: 1.2rem;
+    height: 1.2rem;
+    font-size: 0.65rem;
+  }
+  .gold-board-who {
+    gap: 0.25rem;
+  }
+  .gold-board-who strong {
+    font-size: 0.84rem;
+  }
+  .gold-board-role {
+    font-size: 0.7rem;
+  }
+  .gold-board-amount {
+    font-size: 0.82rem;
+    gap: 0.2rem;
+  }
+  .gold-board-coin {
+    width: 0.95rem;
+    height: 0.95rem;
+  }
+  .gold-board-amount em {
+    /* Keep label but shrink — still fits on one skinny row */
+    font-size: 0.58rem;
+    letter-spacing: 0.04em;
+  }
 }
 .empty-state { text-align: center; padding: 2.5rem 1.5rem; }
 .empty-state h2 { margin-bottom: 0.5rem; font-family: var(--font-display); font-size: 1.7rem; }

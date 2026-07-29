@@ -1,23 +1,119 @@
 "use client";
 
-import { Environment, Lightformer, Sky, Sparkles } from "@react-three/drei";
+import { Environment, Lightformer, Sparkles } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
+import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { makeCloudTexture } from "@/lib/world/textures";
 import type { QualityBudget } from "@/lib/world/quality";
-import { GHIBLI, ghibliSunDirection } from "@/lib/world/ghibli-palette";
+import { GHIBLI } from "@/lib/world/ghibli-palette";
+import {
+  advanceDaylight,
+  daylight,
+  daylightFrozen,
+  initialTime,
+  setDaylight,
+} from "@/lib/world/daylight";
+import { NightSky } from "./NightSky";
 
 /**
- * Light, sky, weather — soft Ghibli-inspired late afternoon.
+ * Light, sky, weather — and the clock that drives all three.
  *
- * Palette and sun angle drawn from the valley look reference.
+ * The valley runs a full day/night cycle. `lib/world/daylight.ts` owns the
+ * arithmetic; this file is the only place that *advances* it, and the only
+ * place that pushes its results into the renderer. Everything else in the world
+ * reads the same singleton and therefore cannot disagree about what time it is.
+ *
+ * Nothing here is React state. The sun moves every frame, so every value that
+ * follows it is written straight onto the three.js object inside `useFrame`.
  */
 
-const SUN_DIRECTION = new THREE.Vector3(...ghibliSunDirection()).normalize();
 const SUN_DISTANCE = 220;
 
-function Sun({
+/**
+ * Advances the clock, and applies the two things that live on the renderer and
+ * the scene rather than on any object: exposure and fog.
+ *
+ * It runs at a negative frame priority so the clock is already correct for this
+ * frame before any other component reads it. Without that ordering, half the
+ * world would render one frame behind the other half — which is invisible at
+ * noon and very visible during the ninety seconds either side of sunset, when
+ * the light is changing fastest.
+ */
+function DaylightClock() {
+  const gl = useThree((state) => state.gl);
+  const scene = useThree((state) => state.scene);
+  const frozen = useMemo(() => daylightFrozen(), []);
+
+  // Seed before first paint. An effect would run *after* the first frame had
+  // already been drawn at whatever time the module was last left at.
+  useMemo(() => setDaylight(initialTime()), []);
+
+  useFrame((_state, rawDelta) => {
+    // A tab left in the background hands back a delta of many seconds. Letting
+    // that through would teleport the sun; clamping means a returning visitor
+    // simply resumes where they left, which is what they expect to see.
+    if (!frozen) advanceDaylight(Math.min(rawDelta, 0.1));
+
+    gl.toneMappingExposure = daylight.exposure;
+
+    const fog = scene.fog;
+    if (fog instanceof THREE.FogExp2) {
+      fog.color.copy(daylight.fogColor);
+      fog.density = daylight.fogDensity;
+    }
+
+    // The environment map is baked once and is therefore a *daytime* sky
+    // forever. Rather than pay to re-bake it, its contribution is dialled down
+    // after dark — otherwise every polished surface in the valley goes on
+    // reflecting a sunlit horizon hours after sunset.
+    scene.environmentIntensity = 0.12 + (1 - daylight.nightFactor) * 0.88;
+  }, -10);
+
+  return null;
+}
+
+/**
+ * The Preetham sky dome.
+ *
+ * Driven imperatively off three's own `Sky` object rather than through drei's
+ * declarative wrapper, because every one of these parameters changes each frame
+ * and the wrapper's props would mean reconciling a component sixty times a
+ * second to write four floats.
+ */
+function SkyDome() {
+  const sky = useMemo(() => {
+    const dome = new Sky();
+    dome.scale.setScalar(450000);
+    dome.name = "SkyDome";
+    return dome;
+  }, []);
+
+  useEffect(() => () => {
+    sky.geometry.dispose();
+    (sky.material as THREE.Material).dispose();
+  }, [sky]);
+
+  useFrame(() => {
+    const uniforms = sky.material.uniforms;
+    uniforms.turbidity.value = daylight.turbidity;
+    uniforms.rayleigh.value = daylight.rayleigh;
+    uniforms.mieCoefficient.value = daylight.mieCoefficient;
+    uniforms.mieDirectionalG.value = daylight.mieDirectionalG;
+    uniforms.sunPosition.value.copy(daylight.sunDir);
+  });
+
+  return <primitive object={sky} />;
+}
+
+/**
+ * The one shadow-casting light in the valley — the sun by day, the moon by
+ * night. `daylight` arranges for both to be at zero intensity at the moment the
+ * direction swaps, so the handover cannot be seen and the scene never pays for
+ * a second shadow map.
+ */
+function KeyLight({
   target,
   budget,
 }: {
@@ -45,8 +141,14 @@ function Sun({
 
     light.position
       .copy(focus.position)
-      .addScaledVector(SUN_DIRECTION, SUN_DISTANCE);
+      .addScaledVector(daylight.keyDir, SUN_DISTANCE);
     light.target = anchor;
+    light.color.copy(daylight.keyColor);
+    light.intensity = daylight.keyIntensity;
+    // Skipping the shadow pass outright once the light is dark is most of the
+    // reason night is not more expensive than day: the moon is dim enough that
+    // its shadows are barely present anyway.
+    light.castShadow = daylight.keyIntensity > 0.05;
   });
 
   return (
@@ -73,8 +175,13 @@ function Clouds({ count }: { count: number }) {
   const groupRef = useRef<THREE.Group>(null);
   const camera = useThree((state) => state.camera);
 
-  const { texture, puffs } = useMemo(() => {
+  // Materials are built here rather than in JSX so the cycle can retint them.
+  // They stay one-per-puff because each carries its own opacity, and a shared
+  // material would need the alpha moved into a vertex attribute to keep it —
+  // twenty-odd colour copies a frame is not worth that.
+  const { texture, geometry, puffs } = useMemo(() => {
     const tex = makeCloudTexture(128, 3);
+    const geo = new THREE.PlaneGeometry(1, 0.55);
     const generated = Array.from({ length: count }, (_, i) => {
       const angle = (i / count) * Math.PI * 2 + Math.sin(i * 2.3);
       const radius = 150 + ((i * 37) % 130);
@@ -87,12 +194,27 @@ function Clouds({ count }: { count: number }) {
         scale: 38 + ((i * 19) % 34),
         opacity: 0.22 + ((i * 7) % 10) * 0.03,
         drift: 0.28 + ((i * 11) % 7) * 0.07,
+        material: new THREE.MeshBasicMaterial({
+          map: tex,
+          transparent: true,
+          opacity: 0.22 + ((i * 7) % 10) * 0.03,
+          depthWrite: false,
+          color: new THREE.Color(GHIBLI.cloudBody),
+          toneMapped: false,
+        }),
       };
     });
-    return { texture: tex, puffs: generated };
+    return { texture: tex, geometry: geo, puffs: generated };
   }, [count]);
 
-  useEffect(() => () => texture.dispose(), [texture]);
+  useEffect(
+    () => () => {
+      texture.dispose();
+      geometry.dispose();
+      for (const puff of puffs) puff.material.dispose();
+    },
+    [texture, geometry, puffs]
+  );
 
   useFrame((_, delta) => {
     const group = groupRef.current;
@@ -102,23 +224,25 @@ function Clouds({ count }: { count: number }) {
       puff.position.x += puffs[i].drift * delta;
       if (puff.position.x > 300) puff.position.x = -300;
       puff.lookAt(camera.position);
+      // Clouds are the most obvious thing in frame still lit by a sun that has
+      // set, so they take the cycle's tint directly. Fading them out at night
+      // as well keeps them from reading as pale holes punched in the stars.
+      puffs[i].material.color.copy(daylight.cloudColor);
+      puffs[i].material.opacity =
+        puffs[i].opacity * (1 - daylight.nightFactor * 0.55);
     }
   });
 
   return (
     <group ref={groupRef} name="Clouds">
       {puffs.map((puff, i) => (
-        <mesh key={i} position={puff.position} scale={puff.scale}>
-          <planeGeometry args={[1, 0.55]} />
-          <meshBasicMaterial
-            map={texture}
-            transparent
-            opacity={puff.opacity}
-            depthWrite={false}
-            color={GHIBLI.cloudBody}
-            toneMapped={false}
-          />
-        </mesh>
+        <mesh
+          key={i}
+          position={puff.position}
+          scale={puff.scale}
+          geometry={geometry}
+          material={puff.material}
+        />
       ))}
     </group>
   );
@@ -293,6 +417,72 @@ function Birds() {
   return <group ref={flockRef} name="Birds" />;
 }
 
+const POLLEN_OPACITY = 0.45;
+
+/**
+ * Daytime pollen. It has to go at night, or the meadow is full of bright motes
+ * competing with the fireflies that are supposed to have taken over.
+ *
+ * Fading it is more awkward than it looks. drei's `Sparkles` carries opacity as
+ * a **per-vertex attribute**, not a uniform, and its fragment shader ignores
+ * the material's own `opacity` entirely — so the obvious `material.opacity = x`
+ * compiles, runs, and does absolutely nothing.
+ *
+ * The one supported lever is that `Sparkles` accepts a `Float32Array` for
+ * `opacity` and uses it verbatim rather than building its own. So this owns
+ * that array, writes the faded value into it, and flags the attribute. Three
+ * hundred floats a frame is nothing, and it goes through drei's public prop
+ * rather than reaching into its internals.
+ */
+function DriftingPollen({ count }: { count: number }) {
+  const groupRef = useRef<THREE.Group>(null);
+  const attributeRef = useRef<THREE.BufferAttribute | null>(null);
+  const opacities = useMemo(
+    () => new Float32Array(count).fill(POLLEN_OPACITY),
+    [count]
+  );
+
+  useFrame(() => {
+    const group = groupRef.current;
+    if (!group) return;
+
+    const fade = 1 - THREE.MathUtils.smoothstep(daylight.nightFactor, 0.15, 0.7);
+    group.visible = fade > 0.01;
+    if (!group.visible) return;
+
+    if (!attributeRef.current) {
+      group.traverse((object) => {
+        const attribute = (object as THREE.Points).geometry?.attributes
+          ?.opacity as THREE.BufferAttribute | undefined;
+        if (attribute) attributeRef.current = attribute;
+      });
+    }
+
+    const attribute = attributeRef.current;
+    if (!attribute) return;
+    const target = POLLEN_OPACITY * fade;
+    // Nothing to upload when the value has not moved, which is most of the day.
+    if (Math.abs(opacities[0] - target) < 0.002) return;
+    opacities.fill(target);
+    attribute.needsUpdate = true;
+  });
+
+  return (
+    <group ref={groupRef}>
+      <Sparkles
+        count={count}
+        scale={[70, 14, 70]}
+        position={[0, 6, 0]}
+        size={2.4}
+        speed={0.2}
+        opacity={opacities}
+        color={GHIBLI.gTrans}
+        noise={0.55}
+      />
+    </group>
+  );
+}
+
 export function Atmosphere({
   target,
   budget,
@@ -300,21 +490,37 @@ export function Atmosphere({
   target: React.RefObject<THREE.Object3D | null>;
   budget: QualityBudget;
 }) {
-  const sunPosition = useMemo(
-    () => SUN_DIRECTION.clone().multiplyScalar(SUN_DISTANCE),
-    []
-  );
+  const hemiRef = useRef<THREE.HemisphereLight>(null);
+  const ambientRef = useRef<THREE.AmbientLight>(null);
+  const fogRef = useRef<THREE.FogExp2>(null);
+
+  useFrame(() => {
+    const hemi = hemiRef.current;
+    if (hemi) {
+      hemi.color.copy(daylight.hemiSky);
+      hemi.groundColor.copy(daylight.hemiGround);
+      hemi.intensity = daylight.hemiIntensity;
+    }
+    const ambient = ambientRef.current;
+    if (ambient) {
+      ambient.color.copy(daylight.ambientColor);
+      ambient.intensity = daylight.ambientIntensity;
+    }
+    // Belt and braces with DaylightClock: r3f attaches fog by replacing
+    // `scene.fog`, and this ref is the one guaranteed handle on the instance
+    // this component actually created.
+    const fog = fogRef.current;
+    if (fog) {
+      fog.color.copy(daylight.fogColor);
+      fog.density = daylight.fogDensity;
+    }
+  });
 
   return (
     <>
-      <Sky
-        distance={4500}
-        sunPosition={sunPosition}
-        turbidity={9.2}
-        rayleigh={1.85}
-        mieCoefficient={0.0075}
-        mieDirectionalG={0.88}
-      />
+      <DaylightClock />
+      <SkyDome />
+      <NightSky budget={budget} />
 
       <Environment resolution={128} frames={1}>
         <Lightformer
@@ -346,27 +552,21 @@ export function Atmosphere({
         />
       </Environment>
 
-      <Sun target={target} budget={budget} />
+      <KeyLight target={target} budget={budget} />
 
-      <hemisphereLight args={[GHIBLI.ambSky, GHIBLI.ambGround, 1.05]} />
-      <ambientLight intensity={0.32} color={GHIBLI.mist} />
+      <hemisphereLight
+        ref={hemiRef}
+        args={[GHIBLI.ambSky, GHIBLI.ambGround, 1.05]}
+      />
+      <ambientLight ref={ambientRef} intensity={0.32} color={GHIBLI.mist} />
 
-      <fogExp2 attach="fog" args={[GHIBLI.mist, 0.002]} />
+      <fogExp2 ref={fogRef} attach="fog" args={[GHIBLI.mist, 0.002]} />
 
       <Clouds count={budget.tier === "low" ? 12 : 22} />
       <Birds />
 
       {budget.tier !== "low" && (
-        <Sparkles
-          count={budget.tier === "high" ? 280 : 140}
-          scale={[70, 14, 70]}
-          position={[0, 6, 0]}
-          size={2.4}
-          speed={0.2}
-          opacity={0.45}
-          color={GHIBLI.gTrans}
-          noise={0.55}
-        />
+        <DriftingPollen count={budget.tier === "high" ? 280 : 140} />
       )}
     </>
   );

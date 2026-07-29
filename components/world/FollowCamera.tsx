@@ -103,6 +103,9 @@ export function FollowCamera({
     desired: new THREE.Vector3(),
     scratch: new THREE.Vector3(),
   });
+  /** True once we've hard-cut onto a grounded bard (not the Canvas default). */
+  const framed = useRef(false);
+  const lastBardXZ = useRef({ x: 0, z: 0 });
 
   // Manual look-around. Decays back to the automatic framing when released,
   // so the shot always recovers on its own.
@@ -233,16 +236,6 @@ export function FollowCamera({
     if (desired.y < groundMid) desired.y = groundMid;
 
     // --- Keep it out of the buildings -------------------------------------
-    //
-    // The world now has 600+ structures, and a camera parked six metres behind
-    // the bard lands inside a wall the moment he walks past a cottage — you end
-    // up staring at the inside of somebody's masonry.
-    //
-    // Sample along the line from him to the camera and stop at the first solid
-    // thing. Marching from the bard OUTWARD rather than from the camera inward
-    // matters: it guarantees the camera ends up on his side of any wall, which
-    // is the whole point. A wall between the two would otherwise be "resolved"
-    // by leaving the camera exactly where it already was — behind it.
     const toX = desired.x - focus.position.x;
     const toZ = desired.z - focus.position.z;
     const span = Math.hypot(toX, toZ);
@@ -253,8 +246,6 @@ export function FollowCamera({
         const t = (i / steps) * span;
         const sx = focus.position.x + (toX / span) * t;
         const sz = focus.position.z + (toZ / span) * t;
-        // A generous probe radius, so the near clip plane never ends up flush
-        // against a wall it technically cleared.
         if (isBlocked(sx, sz, CAMERA_CLEARANCE)) {
           allowed = Math.max(MIN_CAMERA_DISTANCE, t - CAMERA_CLEARANCE);
           break;
@@ -264,32 +255,53 @@ export function FollowCamera({
         const scale = allowed / span;
         desired.x = focus.position.x + toX * scale;
         desired.z = focus.position.z + toZ * scale;
-        // Pulling in shortens the shot, so lift a little to keep him framed
-        // rather than filling the screen with the back of his hood.
         desired.y += (1 - scale) * 1.2;
-        // Re-check the ground at the new, closer position.
         const pulledGround = heightAt(desired.x, desired.z) + 1.1;
         if (desired.y < pulledGround) desired.y = pulledGround;
       }
     }
 
-    // --- Move ---------------------------------------------------------------
-    // Exponential smoothing framed in per-second terms, so the feel of the
-    // damping doesn't change with frame rate.
-    const follow = 1 - Math.exp(-shot.current.stiffness * delta);
-    camera.position.lerp(desired, follow);
-
-    // A gentle handheld drift. Small enough to be subliminal, and the single
-    // cheapest thing that stops a camera move looking machine-generated.
-    camera.position.x += Math.sin(time * 0.37) * 0.016;
-    camera.position.y += Math.sin(time * 0.53 + 1.2) * 0.012;
-
-    // --- Aim ---------------------------------------------------------------
     scratch.set(
       focus.position.x,
       focus.position.y + shot.current.lookHeight,
       focus.position.z
     );
+
+    // Wait until the bard is grounded in the world (not the empty origin
+    // placeholder), then hard-cut onto him once so we never open on sky/blue.
+    const bardXZ = Math.hypot(focus.position.x, focus.position.z);
+    const grounded = focus.position.y > 0.05;
+    const readyToFrame = grounded && bardXZ > 0.5;
+    const teleported =
+      framed.current &&
+      Math.hypot(
+        focus.position.x - lastBardXZ.current.x,
+        focus.position.z - lastBardXZ.current.z
+      ) > 40;
+
+    if (readyToFrame && (!framed.current || teleported)) {
+      camera.position.copy(desired);
+      lookAt.copy(scratch);
+      camera.lookAt(lookAt);
+      framed.current = true;
+      lastBardXZ.current = { x: focus.position.x, z: focus.position.z };
+      return;
+    }
+
+    if (!framed.current) {
+      // Keep the Canvas default until he exists — don't lerp into the void.
+      return;
+    }
+
+    lastBardXZ.current = { x: focus.position.x, z: focus.position.z };
+
+    // --- Move ---------------------------------------------------------------
+    const follow = 1 - Math.exp(-shot.current.stiffness * delta);
+    camera.position.lerp(desired, follow);
+    camera.position.x += Math.sin(time * 0.37) * 0.016;
+    camera.position.y += Math.sin(time * 0.53 + 1.2) * 0.012;
+
+    // --- Aim ---------------------------------------------------------------
     lookAt.lerp(scratch, 1 - Math.exp(-3.2 * delta));
     camera.lookAt(lookAt);
   });

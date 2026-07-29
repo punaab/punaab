@@ -1,40 +1,39 @@
 /**
- * Shared boot-progress clock for the valley loader.
+ * Shared boot clock for the valley loader.
  *
- * The lazy chunk paints one loader, then BardWorld mounts another. Keeping the
- * value in module scope means the bar does not snap back to 0% on that handoff.
+ * The lazy chunk paints one loader, then BardWorld mounts another. A shared
+ * start time lets the CSS animation resume mid-flight instead of restarting.
  */
 
-/**
- * Soft asymptote while the scene is still coming up. The bar approaches this
- * continuously — never hard-stalls at a ceiling waiting on WebGL.
- */
-export const VALLEY_BOOT_ASYMPTOTE = 97;
+/** Seconds for the CSS fill to ease from 0 → soft ceiling while waiting. */
+export const VALLEY_BOOT_DURATION_SEC = 7;
 
-/**
- * Time constant (seconds) for the wait curve: ~63% of the way to the asymptote
- * after this many seconds of wall time. Tuned so a typical boot feels like a
- * steady fill rather than a sprint-then-freeze.
- */
-export const VALLEY_BOOT_TAU_SEC = 3.4;
+/** Soft ceiling until the scene signals ready (then we finish to 100). */
+export const VALLEY_BOOT_CEILING = 90;
 
-/** Percent per second once the scene is ready (finish to 100). */
-export const VALLEY_BOOT_FINISH_RATE = 110;
+let bootStartedAt = 0;
+let finished = false;
 
-let progress = 0;
-
-export function getValleyBootProgress(): number {
-  return progress;
+export function ensureValleyBootClock(): number {
+  if (!bootStartedAt) bootStartedAt = performance.now();
+  return Math.max(0, (performance.now() - bootStartedAt) / 1000);
 }
 
-export function setValleyBootProgress(value: number): void {
-  progress = Math.max(0, Math.min(100, value));
+export function resetValleyBootClock(): void {
+  bootStartedAt = 0;
+  finished = false;
 }
 
-/** Map wall-clock wait time onto a smooth curve toward the asymptote. */
-export function valleyBootProgressAt(elapsedSec: number): number {
-  const t = Math.max(0, elapsedSec);
-  return (
-    VALLEY_BOOT_ASYMPTOTE * (1 - Math.exp(-t / VALLEY_BOOT_TAU_SEC))
-  );
+export function markValleyBootFinished(): void {
+  finished = true;
+}
+
+export function isValleyBootFinished(): boolean {
+  return finished;
+}
+
+/** Display percent while waiting — linear with the CSS animation. */
+export function valleyBootWaitPercent(elapsedSec: number): number {
+  const t = Math.max(0, elapsedSec) / VALLEY_BOOT_DURATION_SEC;
+  return Math.min(VALLEY_BOOT_CEILING, VALLEY_BOOT_CEILING * Math.min(1, t));
 }

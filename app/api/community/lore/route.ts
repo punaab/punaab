@@ -8,6 +8,7 @@ import {
   type LoreSort,
 } from "@/lib/community-lore";
 import { ensureLoreHub } from "@/lib/lore-hub";
+import { ensureMapPlaceLore } from "@/lib/map-place-lore";
 import { mapLoreRow, type LoreDbRow } from "@/lib/lore-map";
 import {
   ensureArtMirror,
@@ -68,6 +69,9 @@ export async function GET(req: Request) {
   }
 
   await ensureLoreHub(supabase);
+  if (category === "places") {
+    await ensureMapPlaceLore(supabase);
+  }
 
   const { userId } = await auth();
   let myProfileId: string | null = null;

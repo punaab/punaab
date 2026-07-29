@@ -54,3 +54,11 @@ scripts/*-vert-indices.json
 # Raw Meshy/export packs (often >100MB). Runtime uses the .glb files.
 public/assets/models/*.zip
 
+
+# Superseded model/export packs kept on disk for reference only (~58MB).
+# The models the site actually serves are tracked in public/downloads/.
+public/downloads/old/
+
+# Throwaway measurement harness: transpiled copies of lib/world/*.ts used to
+# profile terrain and flora placement. Regenerated on demand, never imported.
+.flowmeasure/

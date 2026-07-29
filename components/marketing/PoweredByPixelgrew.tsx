@@ -1,7 +1,8 @@
 import Image from "next/image";
 
 const LOGO = "/assets/images/pixlegrew.webp";
-const PIXELGREW_URL = "https://pixelgrew.com/";
+const PIXELGREW_URL =
+  "https://discord.com/servers/pixelgrew-1150040799569002586";
 
 /**
  * Compact “POWERED BY PIXELGREW” mark — logo + label.
@@ -17,7 +18,7 @@ export function PoweredByPixelgrew({
       className={`pixelgrew-credit${className ? ` ${className}` : ""}`}
       target="_blank"
       rel="noopener noreferrer"
-      aria-label="Powered by Pixelgrew — visit pixelgrew.com"
+      aria-label="Powered by Pixelgrew — join the PixelGrew Discord"
     >
       <Image
         src={LOGO}

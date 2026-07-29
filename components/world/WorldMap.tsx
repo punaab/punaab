@@ -6,6 +6,7 @@ import {
   MAP_PLACES,
   WORLD_NAME,
   bakeMap,
+  mapToWorld,
   worldToMap,
   type MapPlace,
 } from "@/lib/world/cartography";
@@ -121,6 +122,8 @@ const MAX_ZOOM = 6;
  * gesture, and it would also drop focus if a keyboard user had one selected.
  */
 const LANDMARK_ZOOM = 1.6;
+/** World metres — parchment clicks this close to a mark count as that place. */
+const PLACE_SNAP_METRES = 22;
 /** Names appear a little sooner so zooming in always finds readable labels. */
 const LANDMARK_LABEL_ZOOM = 1.85;
 
@@ -140,6 +143,7 @@ export function WorldMap({
   open,
   onClose,
   onTravel,
+  onTravelPoint,
   currentPlaceId,
   /** Highlight a chosen pin (inline /places chart, or sticky read-out). */
   selectedPlaceId,
@@ -154,6 +158,11 @@ export function WorldMap({
   onClose: () => void;
   /** Dispatch the bard. Returns false if the place is unreachable. */
   onTravel: (placeId: string) => boolean;
+  /**
+   * Bare-parchment click (travel map only). World metres. Returns false if the
+   * spot cannot be stood on.
+   */
+  onTravelPoint?: (x: number, z: number) => boolean;
   currentPlaceId?: string | null;
   selectedPlaceId?: string | null;
   getBardPosition?: () => { x: number; z: number } | null;
@@ -393,6 +402,54 @@ export function WorldMap({
     [onTravel, onClose, onSelect]
   );
 
+  /**
+   * Bare parchment → send him there (or snap onto a nearby named mark).
+   * Pins handle themselves; this only fires on empty paper after a true click.
+   */
+  const handleGroundClick = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      if (inline || !onTravelPoint) return;
+      if (dragRef.current?.moved) return;
+      const target = event.target as HTMLElement;
+      if (target.closest(".pg-pin")) return;
+      if (target.closest(".pg-map-zoom")) return;
+      if (target.closest(".pg-map-close")) return;
+
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const u = (event.clientX - rect.left) / rect.width;
+      const v = (event.clientY - rect.top) / rect.height;
+      if (u < 0 || u > 1 || v < 0 || v > 1) return;
+
+      const [x, z] = mapToWorld(u * 1000, v * 1000, 1000);
+
+      // Prefer a named place if the click landed close to a mark.
+      let nearest: MapPlace | null = null;
+      let nearestDist = PLACE_SNAP_METRES;
+      for (const place of MAP_PLACES) {
+        const dist = Math.hypot(place.x - x, place.z - z);
+        if (dist < nearestDist) {
+          nearestDist = dist;
+          nearest = place;
+        }
+      }
+      if (nearest) {
+        handleTravel(nearest);
+        return;
+      }
+
+      if (!onTravelPoint(x, z)) return;
+      setPicked(null);
+      setTravelling("point");
+      window.setTimeout(() => {
+        setTravelling(null);
+        onClose();
+      }, 620);
+    },
+    [inline, onTravelPoint, handleTravel, onClose]
+  );
+
   // --- Drag to pan --------------------------------------------------------
   //
   // The move and up handlers go on `window`, not on the element.
@@ -483,7 +540,7 @@ export function WorldMap({
               {MAP_PLACES.length} places ·{" "}
               {inline
                 ? "click a mark to open it · scroll to zoom, drag to pan"
-                : "click one to send Punaab there · scroll to zoom, drag to pan"}
+                : "click anywhere to send Punaab · scroll to zoom, drag to pan"}
             </p>
           </div>
           {!inline && (
@@ -497,6 +554,7 @@ export function WorldMap({
           className="pg-map-sheet"
           ref={stageRef}
           onPointerDown={onPointerDown}
+          onClick={handleGroundClick}
           // Belt and braces against the browser's own drag-and-drop: even with
           // `draggable={false}` on the paper, a press that begins on a pin or
           // on a text node can still start a native drag, and once that begins
@@ -656,7 +714,7 @@ export function WorldMap({
             <span className="pg-map-hint">
               {inline
                 ? "Click a mark to read it. Drag to pan, scroll to zoom."
-                : "Hover a mark to read it. Esc closes the chart."}
+                : "Click a mark or open ground to send Punaab. Esc closes."}
             </span>
           )}
         </footer>

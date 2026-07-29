@@ -1,7 +1,9 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { CommunityForum } from "./CommunityForum";
 import { PlacesMap } from "./PlacesMap";
+import { placeLoreSlug } from "@/lib/map-place-lore";
 
 /**
  * The Places area: the chart, wired to the forum's compose form.
@@ -17,11 +19,18 @@ import { PlacesMap } from "./PlacesMap";
  * and with it the whole terrain height function — into their bundle.
  */
 export function PlacesForum() {
+  const router = useRouter();
+
   return (
     <CommunityForum
       initialCategory="places"
       header={({ setLocationKey }) => (
-        <PlacesMap onPropose={(key) => setLocationKey(key)} />
+        <PlacesMap
+          onPropose={(key) => setLocationKey(key)}
+          onOpenPlace={(place) => {
+            router.push(`/world/${placeLoreSlug(place.id)}`);
+          }}
+        />
       )}
     />
   );

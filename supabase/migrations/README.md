@@ -11,6 +11,11 @@ music and models are static files under `public/`.
 2. `002_community_lore.sql` — World hall + graph hub seed
 3. `003_gold_players.sql` — gold balances/ledger, player characters
 4. `004_lore_edits.sql` — `pending_revision` for accepted-entry edits
+5. `005_leaderboard_seeds.sql` — unique traveler names + showcase gold board
+
+Chart places from PIXELGREW are seeded into `community_lore` (category
+`places`) at runtime via `ensureMapPlaceLore` when `/world/places` loads —
+no separate SQL file required.
 
 ## Apply
 
@@ -27,10 +32,10 @@ npx supabase db push
 | Table | Purpose |
 |-------|---------|
 | `profiles` | Signed-in travelers (Clerk id, display name, referrals) |
-| `community_lore` | World submissions (moderation + art images) |
+| `community_lore` | World submissions (moderation + art images); map places auto-seed |
 | `community_lore_votes` | Upvotes (also drive author gold) |
 | `community_lore_comments` | Comments on lore |
 | `community_lore_links` | Lore graph edges |
 | `gold_balances` | Wallet + homepage leaderboard |
 | `gold_ledger` | Gold audit trail |
-| `player_characters` | Dashboard traveler sheet |
+| `player_characters` | Dashboard traveler sheet (unique `display_name`) |

@@ -2,12 +2,12 @@
 
 import { useEffect, useRef } from "react";
 import {
-  getValleyBootProgress,
-  setValleyBootProgress,
-  valleyBootProgressAt,
-  VALLEY_BOOT_ASYMPTOTE,
-  VALLEY_BOOT_FINISH_RATE,
-  VALLEY_BOOT_TAU_SEC,
+  ensureValleyBootClock,
+  isValleyBootFinished,
+  markValleyBootFinished,
+  valleyBootWaitPercent,
+  VALLEY_BOOT_CEILING,
+  VALLEY_BOOT_DURATION_SEC,
 } from "@/lib/bard/valley-boot";
 
 type ValleyLoaderProps = {
@@ -19,11 +19,11 @@ type ValleyLoaderProps = {
 };
 
 /**
- * Compact stage boot bar for the valley.
+ * Stage boot bar.
  *
- * Progress follows wall-clock time on a smooth asymptote so the bar never
- * hard-stalls at a fake ceiling. When the scene signals ready, it finishes
- * the last stretch at a steady rate.
+ * The fill uses a CSS `scaleX` animation so it keeps moving during WebGL /
+ * main-thread stalls (JS rAF freezes; CSS transform usually does not).
+ * JS only updates the percent label and finishes to 100% when ready.
  */
 export function ValleyLoader({
   ready = false,
@@ -42,24 +42,13 @@ export function ValleyLoader({
   onFinishedRef.current = onFinished;
 
   useEffect(() => {
-    let value = getValleyBootProgress();
-    if (value >= 100) value = 0;
-
-    // Resume the wall-clock curve from the shared percent so the lazy-chunk
-    // loader → BardWorld handoff does not jump backward.
-    let elapsedAtStart = 0;
-    if (value > 0.5 && value < VALLEY_BOOT_ASYMPTOTE) {
-      const ratio = Math.min(0.999, value / VALLEY_BOOT_ASYMPTOTE);
-      elapsedAtStart = -VALLEY_BOOT_TAU_SEC * Math.log(1 - ratio);
-    }
-    const start = performance.now() - elapsedAtStart * 1000;
-    let last = performance.now();
-    let frame = 0;
-
-    const paint = (pct: number) => {
-      const rounded = Math.max(0, Math.min(100, Math.round(pct)));
-      if (fillRef.current) fillRef.current.style.width = `${pct}%`;
-      if (runnerRef.current) runnerRef.current.style.left = `${pct}%`;
+    const paint = (pct: number, applyScale = false) => {
+      const clamped = Math.max(0, Math.min(100, pct));
+      const rounded = Math.round(clamped);
+      if (applyScale && fillRef.current) {
+        fillRef.current.style.transform = `scaleX(${clamped / 100})`;
+      }
+      if (runnerRef.current) runnerRef.current.style.left = `${clamped}%`;
       if (pctRef.current) pctRef.current.textContent = `${rounded}%`;
       if (rootRef.current) {
         rootRef.current.setAttribute(
@@ -69,29 +58,63 @@ export function ValleyLoader({
       }
     };
 
-    paint(value);
+    if (isValleyBootFinished()) {
+      finishedRef.current = true;
+      if (fillRef.current) {
+        fillRef.current.style.animation = "none";
+        fillRef.current.style.transform = "scaleX(1)";
+      }
+      paint(100);
+      return;
+    }
+
+    const elapsed = ensureValleyBootClock();
+    const fill = fillRef.current;
+    if (fill) {
+      fill.style.animation = "none";
+      // Force restart so negative delay applies cleanly across remounts.
+      void fill.offsetWidth;
+      fill.style.animation = `valleyBootScale ${VALLEY_BOOT_DURATION_SEC}s linear forwards`;
+      fill.style.animationDelay = `-${Math.min(elapsed, VALLEY_BOOT_DURATION_SEC)}s`;
+    }
+
+    let frame = 0;
+    let finishing = false;
+    let finishFrom = valleyBootWaitPercent(elapsed);
+    let finishStart = 0;
+    const FINISH_MS = 450;
+
+    paint(valleyBootWaitPercent(elapsed));
 
     const tick = (now: number) => {
-      const dt = Math.min(0.08, Math.max(0, (now - last) / 1000));
-      last = now;
+      if (finishedRef.current) return;
 
-      if (readyRef.current) {
-        value = Math.min(100, value + VALLEY_BOOT_FINISH_RATE * dt);
-      } else {
-        // Wall-clock asymptote — after a main-thread hitch the bar lands where
-        // elapsed time says it should, then keeps easing forward.
-        value = valleyBootProgressAt((now - start) / 1000);
+      if (readyRef.current && !finishing) {
+        finishing = true;
+        finishFrom = Math.max(
+          valleyBootWaitPercent(ensureValleyBootClock()),
+          VALLEY_BOOT_CEILING * 0.15
+        );
+        finishStart = now;
+        if (fillRef.current) {
+          fillRef.current.style.animation = "none";
+          fillRef.current.style.transform = `scaleX(${finishFrom / 100})`;
+        }
       }
 
-      setValleyBootProgress(value);
-      paint(value);
-
-      if (value >= 99.5 && readyRef.current && !finishedRef.current) {
-        finishedRef.current = true;
-        paint(100);
-        setValleyBootProgress(100);
-        onFinishedRef.current?.();
-        return;
+      if (finishing) {
+        const u = Math.min(1, (now - finishStart) / FINISH_MS);
+        const pct = finishFrom + (100 - finishFrom) * u;
+        paint(pct, true);
+        if (u >= 1) {
+          finishedRef.current = true;
+          markValleyBootFinished();
+          paint(100, true);
+          onFinishedRef.current?.();
+          return;
+        }
+      } else {
+        paint(valleyBootWaitPercent(ensureValleyBootClock()));
       }
 
       frame = requestAnimationFrame(tick);
@@ -101,7 +124,7 @@ export function ValleyLoader({
     return () => cancelAnimationFrame(frame);
   }, []);
 
-  const initialPct = Math.round(getValleyBootProgress());
+  const initialPct = Math.round(valleyBootWaitPercent(ensureValleyBootClock()));
 
   return (
     <div
@@ -119,15 +142,15 @@ export function ValleyLoader({
           <div className="valley-loader-trough">
             <div
               ref={fillRef}
-              className="valley-loader-fill"
-              style={{ width: `${getValleyBootProgress()}%` }}
+              className="valley-loader-fill valley-loader-fill-boot"
+              style={{ transform: `scaleX(${initialPct / 100})` }}
             >
               <span className="valley-loader-shimmer" />
             </div>
             <span
               ref={runnerRef}
               className="valley-loader-runner"
-              style={{ left: `${getValleyBootProgress()}%` }}
+              style={{ left: `${initialPct}%` }}
             />
           </div>
           <span className="valley-loader-cap right" />

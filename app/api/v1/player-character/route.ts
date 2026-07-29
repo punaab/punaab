@@ -50,9 +50,30 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Database unavailable." }, { status: 503 });
   }
 
+  const displayName = parsed.data.display_name.trim();
+
+  // Names must be unique across camp (case-insensitive), excluding your own.
+  const { data: clash } = await supabase
+    .from("player_characters")
+    .select("profile_id")
+    .ilike("display_name", displayName)
+    .neq("profile_id", profile.id)
+    .limit(1)
+    .maybeSingle();
+
+  if (clash) {
+    return NextResponse.json(
+      {
+        error:
+          "That traveler name is already taken. Choose another name for the road.",
+      },
+      { status: 409 }
+    );
+  }
+
   const payload = {
     profile_id: profile.id,
-    display_name: parsed.data.display_name,
+    display_name: displayName,
     title: parsed.data.title,
     motto: parsed.data.motto,
     instrument: parsed.data.instrument,
@@ -66,6 +87,15 @@ export async function POST(req: Request) {
     .single();
 
   if (error) {
+    if (error.code === "23505") {
+      return NextResponse.json(
+        {
+          error:
+            "That traveler name is already taken. Choose another name for the road.",
+        },
+        { status: 409 }
+      );
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 

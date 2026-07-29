@@ -15,6 +15,7 @@ import {
   heightAt,
 } from "@/lib/world/terrain";
 import { biomeWeights, type BiomeId } from "@/lib/world/regions";
+import { daylight } from "@/lib/world/daylight";
 import {
   barkFields,
   makeFoliageAlpha,
@@ -2769,7 +2770,20 @@ type Meadow = {
   group: THREE.Group;
   grid: GrassChunkGrid;
   rings: MeadowRing[];
-  uniforms: { uPixelScale: { value: number } };
+  /**
+   * Shared live uniforms. The lighting four are here because the grass shader
+   * runs with `lights: false` — it does its own shading from these, so nothing
+   * the renderer does to the scene's lights reaches a blade. If the cycle did
+   * not write them the meadow would stay lit for a late afternoon that ended
+   * two minutes ago, glowing green under a sky full of stars.
+   */
+  uniforms: {
+    uPixelScale: { value: number };
+    uSun: { value: THREE.Vector3 };
+    uSunColour: { value: THREE.Color };
+    uSkyColour: { value: THREE.Color };
+    uGroundColour: { value: THREE.Color };
+  };
   templates: THREE.BufferGeometry[];
   textures: THREE.Texture[];
 };
@@ -3575,6 +3589,19 @@ export function Flora({
       const fovRad = THREE.MathUtils.degToRad(persp.fov ?? 46);
       built.meadow.uniforms.uPixelScale.value =
         (2 * Math.tan(fovRad * 0.5)) / heightPx;
+
+      // The scalars are the ones the meadow was originally balanced with, kept
+      // so the reference frame of the palette is unchanged and only the *time*
+      // moves. Key direction rather than sun direction, so blades catch a rim
+      // from the moon after dark instead of from a sun that has set.
+      const lighting = built.meadow.uniforms;
+      lighting.uSun.value.copy(daylight.keyDir);
+      lighting.uSunColour.value
+        .copy(daylight.keyColor)
+        .multiplyScalar(1.2 * Math.max(0.06, daylight.keyIntensity / 2.15));
+      lighting.uSkyColour.value.copy(daylight.hemiSky).multiplyScalar(0.7);
+      lighting.uGroundColour.value.copy(daylight.hemiGround).multiplyScalar(0.4);
+
       updateMeadow(built.meadow, seen.position.x, seen.position.z);
     }
 

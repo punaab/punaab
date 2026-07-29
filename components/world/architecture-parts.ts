@@ -27,6 +27,7 @@ export type PartKey =
   | "cloth"
   | "metal"
   | "glow"
+  | "window"
   | "hay"
   | "dirt";
 
@@ -358,6 +359,15 @@ export const PALETTE = {
   iron: new THREE.Color("#2f2c29"),
   ember: new THREE.Color("#ff9a3c"),
   lamp: new THREE.Color("#f6c778"),
+  /**
+   * What a window is when nobody has lit it: a hole with a room behind it.
+   *
+   * Darker than `soil`, which is what unlit panes used to be built out of,
+   * because this one has to hold up under a night-time emissive on the same
+   * surface — a pane that is already brown-grey by day has nowhere to go when
+   * the lamp behind it comes on.
+   */
+  glass: new THREE.Color("#241c14"),
   hay: new THREE.Color("#b09343"),
   soil: new THREE.Color("#4b3d2c"),
   moss: new THREE.Color("#4a5533"),
@@ -723,11 +733,41 @@ export function door(
 }
 
 /**
+ * The vertex colour of a window pane is not a colour.
+ *
+ * Which windows are lit used to be decided here, at build time, by dropping the
+ * pane into the "glow" bucket or the "dirt" one — and a building is generated
+ * once and instanced sixty times, so that froze one answer into every cottage of
+ * a variant for all eternity, in daylight as much as at midnight. Every pane in
+ * the world now goes into one bucket drawn with one material whose emissive
+ * brightness is a single number set once a frame, which means the only place a
+ * *per-pane* answer can still live is the colour attribute. So `Architecture.tsx`
+ * reads this back in a shader patch instead of tinting with it:
+ *
+ *   red   — when this pane lights, as a fraction of the way through dusk
+ *   green — how brightly, where zero is a room nobody is in tonight
+ *   blue  — spare
+ *
+ * Packed here rather than at the call sites so there is exactly one place that
+ * has to agree with the shader.
+ */
+const paneCode = new THREE.Color();
+
+export function lampPane(threshold: number, brightness: number): THREE.Color {
+  return paneCode.setRGB(threshold, brightness, 1);
+}
+
+/**
  * A small shuttered opening.
  *
  * Small is the whole brief. Glass is expensive in this world, so windows are
  * holes with shutters, and anything picture-sized instantly reads as a modern
  * building with a thatch hat on.
+ *
+ * `lit` no longer means "this pane is drawn glowing" — nothing is drawn glowing
+ * until dusk. It means "somebody is in this room after dark", which is the thing
+ * the building generators actually knew when they passed it, and it now buys the
+ * pane an early, full-strength lamp instead of a late, grudging one.
  */
 export function shutteredWindow(
   b: Build,
@@ -740,7 +780,24 @@ export function shutteredWindow(
 ): void {
   b.box("timber", b.shade(PALETTE.oak), [width + 0.18, 0.12, 0.16], [x, y + height / 2 + 0.06, z]);
   b.box("timber", b.shade(PALETTE.oak), [width + 0.18, 0.1, 0.2], [x, y - height / 2 - 0.05, z]);
-  b.box(lit ? "glow" : "dirt", lit ? PALETTE.lamp : PALETTE.soil, [width, height, 0.06], [x, y, z + 0.01]);
+
+  // Unoccupied rooms are mostly dark all night — a village where every opening
+  // is warm reads as a hotel — but not all of them: a rushlight left at the back
+  // of a house, lit late and barely, is what keeps the dark ones from looking
+  // like a pattern.
+  const rushlight = !lit && b.rnd() < 0.45;
+  const threshold = lit ? b.range(0.16, 0.52) : b.range(0.62, 1);
+  const brightness = lit ? b.range(0.85, 1.15) : rushlight ? b.range(0.22, 0.42) : 0;
+  b.box("window", lampPane(threshold, brightness), [width, height, 0.06], [x, y, z + 0.01]);
+
+  if (lit) {
+    // Clear of the glass, and below the sill, because the point light this
+    // becomes is meant to wash the wall and the ground under the window. A light
+    // sitting in the plane of the wall lights neither: every surface around it
+    // is edge-on to it. Only occupied rooms are marked — the light pool takes
+    // one spill per building, so it wants the pane that is certain to be lit.
+    b.mark("window", [x, y - height * 0.25, z + 0.7]);
+  }
 
   if (b.lod > 0) {
     // Mullion, and one shutter swung back against the wall.

@@ -4,7 +4,7 @@ import { useCallback, useRef, useState } from "react";
 import { WorldMap } from "@/components/world/WorldMap";
 import {
   MAP_PLACES,
-  WORLD_NAME,
+  locationKeyFor,
   mapToWorld,
   type MapPlace,
 } from "@/lib/world/cartography";
@@ -36,16 +36,7 @@ const KIND_LABEL: Record<MapPlace["kind"], string> = {
   landmark: "Landmark",
 };
 
-/**
- * A stable key for a spot on the map.
- *
- * Rounded to whole metres because nobody is proposing a landmark to centimetre
- * precision, and because a key with fifteen decimal places in it is unusable in
- * a URL, a filter, or an export.
- */
-export function locationKeyFor(x: number, z: number): string {
-  return `${WORLD_NAME.toLowerCase()}:${Math.round(x)},${Math.round(z)}`;
-}
+export { locationKeyFor };
 
 export function PlacesMap({
   onPropose,

@@ -36,8 +36,15 @@ import {
   resolveMove,
 } from "@/lib/world/collision";
 import { NPCS, isAnimal } from "@/lib/world/npc";
+import { findClearPath } from "@/lib/world/pathfind";
 import { REGIONS, regionAt, type Region } from "@/lib/world/regions";
-import { ROADS, slopeAt } from "@/lib/world/terrain";
+import {
+  ROADS,
+  WATER_LEVEL,
+  WORLD_SIZE,
+  heightAt,
+  slopeAt,
+} from "@/lib/world/terrain";
 
 /**
  * What he is doing right now.
@@ -196,6 +203,37 @@ class Stream {
 // ---------------------------------------------------------------------------
 
 type Waypoint = { x: number; z: number };
+
+/** Dry, unblocked footing near a click or authored landmark. */
+function standableNear(
+  x: number,
+  z: number,
+  radius: number
+): Waypoint | null {
+  const half = WORLD_SIZE / 2 - 2;
+  const tryPoint = (px: number, pz: number): Waypoint | null => {
+    if (Math.abs(px) > half || Math.abs(pz) > half) return null;
+    if (heightAt(px, pz) < WATER_LEVEL + 0.35) return null;
+    if (isBlocked(px, pz, radius)) return null;
+    return { x: px, z: pz };
+  };
+
+  const direct = tryPoint(x, z);
+  if (direct) return direct;
+
+  const clear = nearestClearPoint(x, z, radius);
+  const fromClear = tryPoint(clear.x, clear.z);
+  if (fromClear) return fromClear;
+
+  const GOLDEN = Math.PI * (3 - Math.sqrt(5));
+  for (let i = 1; i <= 420; i++) {
+    const angle = i * GOLDEN;
+    const distance = 0.85 * Math.sqrt(i);
+    const hit = tryPoint(x + Math.cos(angle) * distance, z + Math.sin(angle) * distance);
+    if (hit) return hit;
+  }
+  return null;
+}
 
 type RoadGraph = {
   x: Float64Array;
@@ -588,6 +626,9 @@ export class AdventureDirector {
   private route: Waypoint[] = [];
   private routeIndex = 0;
   private goal: Waypoint = { x: 0, z: 0 };
+  /** Visitor map click / pin — hold the goal through stalls instead of wandering off. */
+  private playerDirected = false;
+  private timeoutRetries = 0;
 
   // --- Bookkeeping ---
   private started = false;
@@ -855,29 +896,40 @@ export class AdventureDirector {
     }
 
     if (this.travelTime > TRAVEL_TIMEOUT) {
-      // Something between him and it has beaten him. Pick elsewhere rather than
-      // grinding against a wall for the rest of the session.
+      // Something between him and it has beaten him. When a visitor sent him,
+      // re-path once before giving the valley back to wandering.
+      if (this.playerDirected && this.timeoutRetries < 1) {
+        this.timeoutRetries++;
+        this.travelTime = 0;
+        this.detours = 0;
+        this.route = this.planRoute(this.goal);
+        this.routeIndex = 0;
+        return;
+      }
       this.chooseDestination();
       return;
     }
 
     // A roadside pause: he stops to look at something for a few seconds without
     // it being a destination. Costs nothing and is most of what stops a long
-    // walk reading as a conveyor belt.
-    if (this.pauseRemaining > 0) {
-      this.pauseRemaining -= dt;
-      this.pace += (0 - this.pace) * Math.min(1, dt / ACCELERATION);
-      this.state.speed = this.pace;
-      if (this.pauseRemaining <= 0) this.setActivity("travelling");
-      return;
-    }
-    this.nextPause -= dt;
-    if (this.nextPause <= 0) {
-      this.nextPause = this.rng.range(80, 170);
-      this.pauseRemaining = this.rng.range(5, 11);
-      this.setActivity("wondering");
-      this.say(this.rng.pick(TRAVEL_LINES), "wondering");
-      return;
+    // walk reading as a conveyor belt. Skip it on player-directed trips — the
+    // visitor asked him to go, not to daydream halfway.
+    if (!this.playerDirected) {
+      if (this.pauseRemaining > 0) {
+        this.pauseRemaining -= dt;
+        this.pace += (0 - this.pace) * Math.min(1, dt / ACCELERATION);
+        this.state.speed = this.pace;
+        if (this.pauseRemaining <= 0) this.setActivity("travelling");
+        return;
+      }
+      this.nextPause -= dt;
+      if (this.nextPause <= 0) {
+        this.nextPause = this.rng.range(80, 170);
+        this.pauseRemaining = this.rng.range(5, 11);
+        this.setActivity("wondering");
+        this.say(this.rng.pick(TRAVEL_LINES), "wondering");
+        return;
+      }
     }
 
     const target =
@@ -998,7 +1050,10 @@ export class AdventureDirector {
       this.sidestep();
       return;
     }
-    if (this.detours === 4) {
+    // Re-path around whatever he hit. Player-directed trips keep trying longer
+    // before the director abandons the spot for somewhere else.
+    const repathBudget = this.playerDirected ? 10 : 4;
+    if (this.detours <= repathBudget) {
       this.route = this.planRoute(this.goal);
       this.routeIndex = 0;
       return;
@@ -1145,6 +1200,8 @@ export class AdventureDirector {
     const place = this.state.destination;
     if (!place) return;
 
+    this.playerDirected = false;
+    this.timeoutRetries = 0;
     this.state.stop = place;
     this.state.speed = 0;
     this.pace = 0;
@@ -1284,6 +1341,8 @@ export class AdventureDirector {
    * stop on the authored tour.
    */
   private chooseDestination(): void {
+    this.playerDirected = false;
+    this.timeoutRetries = 0;
     const current = this.state.destination ?? this.state.stop;
     const excluded = new Set(this.recent);
 
@@ -1358,6 +1417,42 @@ export class AdventureDirector {
     // Clear the recent-visit memory of this place, or the wander logic will
     // treat a destination the visitor deliberately chose as one to avoid.
     this.recent = this.recent.filter((id) => id !== destinationId);
+    this.playerDirected = true;
+    this.timeoutRetries = 0;
+    this.departFor(place);
+    return true;
+  }
+
+  /**
+   * Send him to bare ground the visitor clicked on the chart.
+   *
+   * Replaces any in-progress walk (redirect). Snaps onto the nearest standable
+   * footing if the click landed in a wall, trunk, or pond.
+   */
+  travelToPoint(x: number, z: number): boolean {
+    const half = WORLD_SIZE / 2 - 4;
+    const clampedX = Math.max(-half, Math.min(half, x));
+    const clampedZ = Math.max(-half, Math.min(half, z));
+    const goal = standableNear(clampedX, clampedZ, BARD_RADIUS);
+    if (!goal) return false;
+
+    const region = regionAt(goal.x, goal.z);
+    const place: Destination = {
+      id: `point-${Math.round(goal.x)}-${Math.round(goal.z)}`,
+      name: `a quiet patch of ${region.name}`,
+      x: goal.x,
+      z: goal.z,
+      activity: "wondering",
+      dwell: 18,
+      lines: [
+        "This will do for a while.",
+        "Good ground. I'll take a breath here.",
+        `Quiet stretch of ${region.name}.`,
+      ],
+    };
+
+    this.playerDirected = true;
+    this.timeoutRetries = 0;
     this.departFor(place);
     return true;
   }
@@ -1368,10 +1463,14 @@ export class AdventureDirector {
     // Somewhere he can actually stand. Destinations are authored at the thing
     // they describe — the well, the stall, the shrine — and the thing they
     // describe usually has a collider on it.
-    this.goal = nearestClearPoint(chosen.x, chosen.z, BARD_RADIUS);
+    this.goal =
+      standableNear(chosen.x, chosen.z, BARD_RADIUS) ??
+      nearestClearPoint(chosen.x, chosen.z, BARD_RADIUS);
     // Prefer plaza / roadside offset if the landmark itself is solid.
     if (isBlocked(this.goal.x, this.goal.z, BARD_RADIUS * 1.2)) {
-      this.goal = nearestClearPoint(chosen.x, chosen.z, BARD_RADIUS * 1.35);
+      this.goal =
+        standableNear(chosen.x, chosen.z, BARD_RADIUS * 1.35) ??
+        nearestClearPoint(chosen.x, chosen.z, BARD_RADIUS * 1.35);
     }
     this.route = this.planRoute(this.goal);
     this.routeIndex = 0;
@@ -1379,6 +1478,7 @@ export class AdventureDirector {
     this.travelTime = 0;
     this.stallTime = 0;
     this.detours = 0;
+    this.pauseRemaining = 0;
     this.setActivity("travelling");
   }
 
@@ -1420,17 +1520,22 @@ export class AdventureDirector {
   // --- Routing -----------------------------------------------------------
 
   /**
-   * Road for the long middle, country for the ends — usually.
-   *
-   * Deliberately *not* a pathfind over the world: the road graph is a hint about
-   * where walking is pleasant, not a navmesh. Most trips prefer graded ground;
-   * some skip the network and cut across country on purpose.
+   * Obstacle-aware route: grid A* around buildings, rocks, trunks, and water,
+   * with a soft preference for graded road. Falls back to the authored road
+   * graph when A* cannot finish, then to a direct last leg.
    */
   private planRoute(goal: Waypoint): Waypoint[] {
+    const clear = findClearPath(this.x, this.z, goal.x, goal.z, BARD_RADIUS);
+    if (clear && clear.length) {
+      return this.trimRouteHead(clear);
+    }
+
     const direct = Math.hypot(goal.x - this.x, goal.z - this.z);
     const route: Waypoint[] = [];
 
-    const preferRoad = this.rng.next() < ROAD_PREFER_CHANCE;
+    // Player-directed trips always try the network; wanderers still roll for whim.
+    const preferRoad =
+      this.playerDirected || this.rng.next() < ROAD_PREFER_CHANCE;
     const minTrip = preferRoad ? ROAD_MIN_TRIP_PREFERRED : ROAD_MIN_TRIP;
     const detourLimit = preferRoad ? ROAD_DETOUR_PREFERRED : ROAD_DETOUR_LIMIT;
 
@@ -1461,20 +1566,29 @@ export class AdventureDirector {
     }
 
     route.push({ x: goal.x, z: goal.z });
+    return this.trimRouteHead(route);
+  }
 
-    // Trim the head of the route back to the first waypoint that is genuinely
-    // ahead. The nearest node to a standing start is as often the one he just
-    // walked past as the one he wants, and opening a four-hundred-metre journey
-    // by turning round and walking eight metres backwards looks like a fault.
-    while (route.length > 1) {
-      const first = Math.hypot(route[0].x - this.x, route[0].z - this.z);
+  /**
+   * Trim the head of the route back to the first waypoint that is genuinely
+   * ahead. The nearest node to a standing start is as often the one he just
+   * walked past as the one he wants, and opening a four-hundred-metre journey
+   * by turning round and walking eight metres backwards looks like a fault.
+   */
+  private trimRouteHead(route: Waypoint[]): Waypoint[] {
+    const trimmed = route.slice();
+    while (trimmed.length > 1) {
+      const first = Math.hypot(trimmed[0].x - this.x, trimmed[0].z - this.z);
       if (first > WAYPOINT_RADIUS) {
-        const second = Math.hypot(route[1].x - this.x, route[1].z - this.z);
+        const second = Math.hypot(
+          trimmed[1].x - this.x,
+          trimmed[1].z - this.z
+        );
         if (second > first) break;
       }
-      route.shift();
+      trimmed.shift();
     }
-    return route;
+    return trimmed;
   }
 
   // --- Reacting ----------------------------------------------------------

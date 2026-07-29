@@ -162,6 +162,14 @@ export function findPlace(id: string): MapPlace | undefined {
   return MAP_PLACES.find((p) => p.id === id);
 }
 
+/**
+ * Stable key for a spot on the map — shared by the chart and World place lore.
+ * Rounded to whole metres for URLs, filters, and exports.
+ */
+export function locationKeyFor(x: number, z: number): string {
+  return `${WORLD_NAME.toLowerCase()}:${Math.round(x)},${Math.round(z)}`;
+}
+
 // ---------------------------------------------------------------------------
 // Cartographic palette
 // ---------------------------------------------------------------------------
