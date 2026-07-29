@@ -20,7 +20,7 @@ export async function POST(
 ) {
   const { id } = await context.params;
   const { userId } = await auth();
-  if (!userId || !isLoreAdmin(userId)) {
+  if (!userId || !(await isLoreAdmin(userId))) {
     return NextResponse.json({ error: "Forbidden." }, { status: 403 });
   }
 

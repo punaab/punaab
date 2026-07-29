@@ -66,7 +66,7 @@ export async function GET(
 
   const mappedPreview = mapLoreRow(row as LoreDbRow);
   const isOwner = Boolean(myProfileId && mappedPreview.authorId === myProfileId);
-  const admin = isLoreAdmin(userId);
+  const admin = await isLoreAdmin(userId);
   if (
     mappedPreview.status !== "accepted" &&
     !mappedPreview.isHub &&
@@ -276,7 +276,7 @@ export async function PATCH(
   if (!existing || existing.is_hub) {
     return NextResponse.json({ error: "Lore not found." }, { status: 404 });
   }
-  if (existing.author_id !== profile.id && !isLoreAdmin(userId)) {
+  if (existing.author_id !== profile.id && !(await isLoreAdmin(userId))) {
     return NextResponse.json({ error: "Forbidden." }, { status: 403 });
   }
 

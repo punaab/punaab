@@ -19,7 +19,7 @@ const body = Lora({
 export const metadata: Metadata = {
   title: "Punaab — The Traveling Bard",
   description:
-    "A free AI bard for your game — songs, shops, chatter, and the open road.",
+    "A bard, music, shop, chatter, and quests made for you. Help us world-build!",
   icons: {
     icon: [
       {

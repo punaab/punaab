@@ -36,7 +36,7 @@ export default function HomePage() {
               World
             </SiteLink>
             <SiteLink className="btn ghost" href="/archive">
-              Contribute
+              Start Creating
             </SiteLink>
           </div>
         </div>

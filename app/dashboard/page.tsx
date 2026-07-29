@@ -60,7 +60,7 @@ const ROAD_ACTIONS = [
 export default async function DashboardPage() {
   const { userId } = await auth();
   const { profile, supabase } = await ensureProfile(userId!);
-  const loreAdmin = isLoreAdmin(userId);
+  const loreAdmin = await isLoreAdmin(userId);
   let gold = 0;
   let hasCharacter = false;
   let travelerName: string | null = null;
@@ -83,9 +83,9 @@ export default async function DashboardPage() {
     ? [
         ...ROAD_ACTIONS.slice(0, 2),
         {
-          href: "/archive/review",
-          title: "Review",
-          blurb: "Approve pending Archive lore.",
+          href: "/admin",
+          title: "Admin",
+          blurb: "Approve Archive submissions.",
           mark: "⚖",
         },
         ...ROAD_ACTIONS.slice(2),

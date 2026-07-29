@@ -25,15 +25,16 @@ const nextConfig: NextConfig = {
       { source: "/travel", destination: "/world", permanent: true },
       { source: "/travel/:path*", destination: "/world", permanent: true },
       // Lore hall moved from /world → /archive; keep old links working.
-      { source: "/world/review", destination: "/archive/review", permanent: true },
+      { source: "/world/review", destination: "/admin", permanent: true },
       { source: "/world/:id", destination: "/archive/:id", permanent: true },
       { source: "/docs", destination: "/archive", permanent: true },
       { source: "/docs/:path*", destination: "/archive", permanent: true },
       { source: "/community", destination: "/archive", permanent: true },
       { source: "/community/:id", destination: "/archive/:id", permanent: true },
       { source: "/lore", destination: "/archive", permanent: true },
-      { source: "/lore/review", destination: "/archive/review", permanent: true },
+      { source: "/lore/review", destination: "/admin", permanent: true },
       { source: "/lore/:id", destination: "/archive/:id", permanent: true },
+      { source: "/archive/review", destination: "/admin", permanent: true },
       {
         source: "/dashboard/embeds",
         destination: "/dashboard",

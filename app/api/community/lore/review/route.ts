@@ -11,7 +11,7 @@ const SELECT =
 
 export async function GET() {
   const { userId } = await auth();
-  if (!userId || !isLoreAdmin(userId)) {
+  if (!userId || !(await isLoreAdmin(userId))) {
     return NextResponse.json({ error: "Forbidden." }, { status: 403 });
   }
 
@@ -20,24 +20,32 @@ export async function GET() {
     return NextResponse.json({ error: "Database unavailable." }, { status: 503 });
   }
 
-  const [{ data: pendingRows, error: pendingError }, { data: revisionRows, error: revError }] =
-    await Promise.all([
-      supabase
-        .from("community_lore")
-        .select(SELECT)
-        .eq("status", "pending")
-        .eq("is_hub", false)
-        .order("created_at", { ascending: true })
-        .limit(100),
-      supabase
-        .from("community_lore")
-        .select(SELECT)
-        .eq("status", "accepted")
-        .eq("is_hub", false)
-        .not("pending_revision", "is", null)
-        .order("updated_at", { ascending: true })
-        .limit(100),
-    ]);
+  const [
+    { data: pendingRows, error: pendingError },
+    { data: revisionRows, error: revError },
+    { count: acceptedLive },
+  ] = await Promise.all([
+    supabase
+      .from("community_lore")
+      .select(SELECT)
+      .eq("status", "pending")
+      .eq("is_hub", false)
+      .order("created_at", { ascending: true })
+      .limit(100),
+    supabase
+      .from("community_lore")
+      .select(SELECT)
+      .eq("status", "accepted")
+      .eq("is_hub", false)
+      .not("pending_revision", "is", null)
+      .order("updated_at", { ascending: true })
+      .limit(100),
+    supabase
+      .from("community_lore")
+      .select("*", { count: "exact", head: true })
+      .eq("status", "accepted")
+      .eq("is_hub", false),
+  ]);
 
   if (pendingError || revError) {
     return NextResponse.json(
@@ -46,13 +54,14 @@ export async function GET() {
     );
   }
 
-  const pending = ((pendingRows || []) as LoreDbRow[]).map((row) => mapLoreRow(row));
+  const pending = ((pendingRows || []) as LoreDbRow[]).map((row) =>
+    mapLoreRow(row)
+  );
 
   const edits = ((revisionRows || []) as LoreDbRow[]).map((row) => {
     const base = mapLoreRow(row);
     const rev = row.pending_revision;
     if (!isPendingRevision(rev)) return base;
-    // Surface the proposed title/body in the queue card so admins see the edit.
     return {
       ...base,
       title: String(rev.title || base.title),
@@ -68,5 +77,12 @@ export async function GET() {
   const seen = new Set(pending.map((p) => p.id));
   const lore = [...pending, ...edits.filter((e) => !seen.has(e.id))];
 
-  return NextResponse.json({ lore });
+  return NextResponse.json({
+    lore,
+    stats: {
+      newSubmissions: pending.length,
+      pendingEdits: edits.length,
+      acceptedLive: acceptedLive ?? 0,
+    },
+  });
 }

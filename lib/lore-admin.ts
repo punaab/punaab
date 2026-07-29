@@ -1,16 +1,34 @@
+import { currentUser } from "@clerk/nextjs/server";
+
 /**
- * Lore hall moderators — Clerk user IDs from LORE_ADMIN_CLERK_IDS
- * (comma-separated).
+ * Sole site admin — Archive approvals, `/admin`, and review APIs.
+ * Matched against any verified Clerk email on the signed-in account.
  */
-export function getLoreAdminIds(): string[] {
-  const raw = process.env.LORE_ADMIN_CLERK_IDS || "";
-  return raw
-    .split(",")
-    .map((id) => id.trim())
-    .filter(Boolean);
+export const SITE_ADMIN_EMAIL = "notbitcoinceo@gmail.com";
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
 }
 
-export function isLoreAdmin(clerkUserId: string | null | undefined): boolean {
-  if (!clerkUserId) return false;
-  return getLoreAdminIds().includes(clerkUserId);
+export function isSiteAdminEmail(email: string | null | undefined): boolean {
+  if (!email) return false;
+  return normalizeEmail(email) === SITE_ADMIN_EMAIL;
+}
+
+/**
+ * True when the signed-in Clerk user owns the admin email.
+ * Ignores Clerk user id lists — access is email-only.
+ */
+export async function isLoreAdmin(
+  _clerkUserId?: string | null
+): Promise<boolean> {
+  const user = await currentUser();
+  if (!user) return false;
+
+  const emails = [
+    user.primaryEmailAddress?.emailAddress,
+    ...user.emailAddresses.map((entry) => entry.emailAddress),
+  ];
+
+  return emails.some(isSiteAdminEmail);
 }
