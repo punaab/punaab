@@ -33,7 +33,7 @@ export default function HomePage() {
           </p>
           <div className="hero-actions">
             <SiteLink className="btn primary btn-glow btn-xl" href="/travel">
-              Listen
+              World
             </SiteLink>
             <SiteLink className="btn ghost" href="/world">
               Contribute

@@ -991,9 +991,17 @@ function makeTerrainMaterial(surfaces: TerrainSurfaces): THREE.MeshStandardMater
   const extra = {
     uRockNormal: { value: surfaces.rockNormalMap },
     uMacro: { value: surfaces.macroMap },
-    // UVs are in units of `detailTile` metres, so every other pitch is
-    // expressed as a ratio against it.
-    uMacroScale: { value: surfaces.detailTile / 118 },
+    /**
+     * Reciprocal of the macro variation map's period, in metres.
+     *
+     * Larger than the valley on purpose. This used to be `detailTile / 118`
+     * against the mesh UV, which put a 118-metre period on the one texture
+     * whose whole job is to *stop* things repeating — and 118 metres fits into
+     * a 640-metre world more than five times, so every distant ridge wore the
+     * same blotches over and over. Stretched past the size of the world it
+     * cannot repeat inside it at all.
+     */
+    uMacroScale: { value: 1 / 863 },
     uRockScale: { value: surfaces.detailTile / 1.7 },
     // Where the fine surface stops being worth drawing. Pushed well out: the
     // detail tiles every three metres, so at a hundred metres it is still
@@ -1027,6 +1035,7 @@ function makeTerrainMaterial(surfaces: TerrainSurfaces): THREE.MeshStandardMater
     if (process.env.NODE_ENV !== "production") {
       for (const chunk of [
         "#include <map_fragment>",
+        "#include <roughnessmap_fragment>",
         "#include <normal_fragment_maps>",
         "#include <fog_fragment>",
       ]) {
@@ -1066,14 +1075,82 @@ function makeTerrainMaterial(surfaces: TerrainSurfaces): THREE.MeshStandardMater
          uniform sampler2D uMacro;
          uniform float uMacroScale;
          uniform float uRockScale;
-         uniform vec2 uDetailFade;`
+         uniform vec2 uDetailFade;
+
+         // --- Detail tile breaking -----------------------------------------
+         //
+         // Every detail layer here repeats every couple of metres, which is
+         // right underfoot and disastrous on a mountainside: a single slope
+         // fills the screen with fifty copies of the same two-metre patch and
+         // the eye reads the repeat instantly as a woven pattern. The ground
+         // textures make it worse by design — their fibre layer is squashed to
+         // 0.3 in Y to give grass and cart ruts a lateral grain, so what tiles
+         // is directional streaks rather than neutral noise.
+         //
+         // The fix is to sample the same texture a second time, rotated and at
+         // a different pitch, and cross-fade between them. Two lattices at an
+         // oblique angle never realign, so no seam repeats. Fading rather than
+         // averaging is the important part: where the weight is near 0 or 1 you
+         // see one crisp sample, not a mush of both, so close ground keeps its
+         // bite.
+         const mat2 detailTurn = mat2( 0.6, -0.8, 0.8, 0.6 );
+         // Inverse of the above. GLSL ES has no transpose(), and a normal
+         // sampled through a rotated lookup has to have its tangent-space X/Y
+         // turned back or its bumps catch the light from the wrong side.
+         const mat2 detailUnturn = mat2( 0.6, 0.8, -0.8, 0.6 );
+         const float DETAIL_PITCH = 0.53;
+
+         // Which of the two rotations shows. Deliberately low frequency: this
+         // decides *which* sample wins, so if it varied quickly the two would
+         // blend into porridge everywhere instead of alternating in patches.
+         float detailBlend( vec2 worldXZ ) {
+           vec3 m = texture2D( uMacro, worldXZ * uMacroScale * 1.9 + 0.61 ).rgb;
+           return smoothstep( 0.84, 1.16, m.g );
+         }`
       )
       .replace(
         "#include <map_fragment>",
         `#ifdef USE_MAP
            float surfaceFade = 1.0 - smoothstep( uDetailFade.x, uDetailFade.y, length( vViewPosition ) );
-           vec3 detailTexel = texture2D( map, vMapUv ).rgb * 1.06;
-           vec3 macroTexel = texture2D( uMacro, vMapUv * uMacroScale ).rgb;
+
+           float tileBlend = detailBlend( vWorldPos.xz );
+           vec3 detailTexel = mix(
+             texture2D( map, vMapUv ).rgb,
+             texture2D( map, detailTurn * vMapUv * DETAIL_PITCH + 0.29 ).rgb,
+             tileBlend
+           ) * 1.06;
+
+           // --- Large-scale variation -------------------------------------
+           //
+           // This is the whole of what a distant mountain is made of. Past the
+           // detail fade the fine texture is gone, the relief normals are
+           // gone, and if this term repeats then every ridge in the valley
+           // wears an identical pattern — which is exactly what a 118-metre
+           // period did in a 640-metre world.
+           //
+           // Two samples, and the second one is *rotated*. Scaling alone is not
+           // enough: two axis-aligned lattices always share the same grid
+           // direction, so their beats line up into visible bands however
+           // carefully the periods are chosen. Turned obliquely against each
+           // other they never come back into alignment, so the product has no
+           // period a viewer can find inside this world.
+           //
+           // Sampled in world space rather than mesh UV so the pattern is a
+           // property of the *valley*, and cannot shift when a chunk's UV
+           // scaling changes with its level of detail.
+           mat2 macroTurn = mat2( 0.8, -0.6, 0.6, 0.8 );
+           vec2 macroUv = vWorldPos.xz * uMacroScale;
+           vec3 macroBroad = texture2D( uMacro, macroUv ).rgb;
+           vec3 macroFine = texture2D( uMacro, macroTurn * macroUv * 2.77 + 0.31 ).rgb;
+           vec3 macroTexel = macroBroad * mix( vec3( 1.0 ), macroFine, 0.55 );
+
+           // Push the large scale harder as the fine detail leaves, so distance
+           // reads as broad shifts of ground colour — a hillside that is drier
+           // here and greener there — instead of an even wash. This is the part
+           // that makes far terrain look deliberately simplified rather than
+           // badly resolved.
+           macroTexel = mix( vec3( 1.0 ), macroTexel, 1.0 + ( 1.0 - surfaceFade ) * 0.45 );
+
            vec3 mottle = mix( vec3( 1.0 ), detailTexel, surfaceFade );
            // Sand has no fibre in it and snow has no structure at all, so the
            // grass mottling is faded out of both rather than tinting them.
@@ -1088,14 +1165,49 @@ function makeTerrainMaterial(surfaces: TerrainSurfaces): THREE.MeshStandardMater
          roughnessFactor = mix( roughnessFactor, 0.6, vSplat.z * 0.8 );
          // Wet ground is the only genuinely smooth surface in the valley, and
          // the sheen on it is most of what sells a shoreline.
-         roughnessFactor = mix( roughnessFactor, 0.11, vSplat.w );`
+         roughnessFactor = mix( roughnessFactor, 0.11, vSplat.w );
+
+         // The roughness map tiles every five metres, and five metres is still
+         // twenty-odd pixels across on a ridge three hundred metres out — close
+         // enough to read as a repeating pattern of glints crawling over the
+         // mountains. The colour detail already fades over this range; this
+         // never did, which left the specular tiling on its own out there.
+         //
+         // Recomputed here rather than reusing the fade from the map block,
+         // which only exists when the material has a colour map. Distance
+         // shading should not quietly depend on that.
+         float glintFade = 1.0 - smoothstep( uDetailFade.x, uDetailFade.y, length( vViewPosition ) );
+         // Toward fully matte, because a far hillside has no highlights on it.
+         roughnessFactor = mix( 1.0, roughnessFactor, glintFade );`
       )
       .replace(
         "#include <normal_fragment_maps>",
         `#ifdef USE_NORMALMAP_TANGENTSPACE
            float reliefFade = 1.0 - smoothstep( uDetailFade.x, uDetailFade.y, length( vViewPosition ) );
-           vec3 mapN = texture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;
-           vec3 rockN = texture2D( uRockNormal, vNormalMapUv * uRockScale ).xyz * 2.0 - 1.0;
+
+           // Same two-rotation trick as the colour, and it matters most here.
+           // Shading is what the eye actually reads the repeat *in* — and at
+           // night, with the sun down and the ground lit almost entirely by
+           // flat hemisphere light, these bumps are the only variation left on
+           // a hillside, so their tiling has nothing to hide behind.
+           //
+           // The rock layer gets it too, and is the one that counts on a
+           // mountain: a slope is mostly rock, so vSplat.x is high there and
+           // the rock normal — the fastest-repeating layer of the three, at
+           // under two metres — is what dominates that surface.
+           float nBlend = detailBlend( vWorldPos.xz );
+           vec2 turnedNormalUv = detailTurn * vNormalMapUv * DETAIL_PITCH + 0.29;
+
+           vec3 soilA = texture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;
+           vec3 soilB = texture2D( normalMap, turnedNormalUv ).xyz * 2.0 - 1.0;
+           soilB.xy = detailUnturn * soilB.xy;
+
+           vec3 rockA = texture2D( uRockNormal, vNormalMapUv * uRockScale ).xyz * 2.0 - 1.0;
+           vec3 rockB = texture2D( uRockNormal, turnedNormalUv * uRockScale ).xyz * 2.0 - 1.0;
+           rockB.xy = detailUnturn * rockB.xy;
+
+           vec3 mapN = mix( soilA, soilB, nBlend );
+           vec3 rockN = mix( rockA, rockB, nBlend );
            mapN = mix( mapN, rockN, vSplat.x );
            float relief = reliefFade
              * mix( 1.0, 0.4, vSplat.y )
@@ -1166,7 +1278,7 @@ function makeTerrainMaterial(surfaces: TerrainSurfaces): THREE.MeshStandardMater
 
   // Every chunk shares this material instance, but three keys its program cache
   // on the compiled source; a stable key keeps the whole terrain on one program.
-  material.customProgramCacheKey = () => "punaab-terrain-v3-aerial";
+  material.customProgramCacheKey = () => "punaab-terrain-v5-tilebreak";
 
   return material;
 }

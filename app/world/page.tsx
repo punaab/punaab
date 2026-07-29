@@ -27,10 +27,7 @@ export default async function WorldPage({
     <MarketingShell>
       <section className="section lore-hero">
         <p className="section-num">World</p>
-        <h2>
-          &ldquo;WE ALL HAVE A STORY TO TELL&rdquo;{" "}
-          <span className="lore-hero-attrib">-punaab</span>
-        </h2>
+        <h2>SHARE YOUR STORY</h2>
       </section>
 
       <section className="section lore-section">

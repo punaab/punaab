@@ -12,8 +12,7 @@ import {
   advanceDaylight,
   daylight,
   daylightFrozen,
-  initialTime,
-  setDaylight,
+  seedDaylight,
 } from "@/lib/world/daylight";
 import { NightSky } from "./NightSky";
 
@@ -47,8 +46,9 @@ function DaylightClock() {
   const frozen = useMemo(() => daylightFrozen(), []);
 
   // Seed before first paint. An effect would run *after* the first frame had
-  // already been drawn at whatever time the module was last left at.
-  useMemo(() => setDaylight(initialTime()), []);
+  // already been drawn at whatever time the module was last left at. Seeding is
+  // itself once-per-page-load rather than once-per-mount — see `seedDaylight`.
+  useMemo(() => seedDaylight(), []);
 
   useFrame((_state, rawDelta) => {
     // A tab left in the background hands back a delta of many seconds. Letting
@@ -147,14 +147,14 @@ function KeyLight({
     light.intensity = daylight.keyIntensity;
     // Skipping the shadow pass outright once the light is dark is most of the
     // reason night is not more expensive than day: the moon is dim enough that
-    // its shadows are barely present anyway.
-    light.castShadow = daylight.keyIntensity > 0.05;
+    // its shadows are barely present anyway. Low tier never pays for maps.
+    light.castShadow = budget.shadows && daylight.keyIntensity > 0.05;
   });
 
   return (
     <directionalLight
       ref={lightRef}
-      castShadow
+      castShadow={budget.shadows}
       intensity={2.15}
       color={GHIBLI.sun}
       shadow-mapSize-width={budget.shadowMapSize}
@@ -562,8 +562,8 @@ export function Atmosphere({
 
       <fogExp2 ref={fogRef} attach="fog" args={[GHIBLI.mist, 0.002]} />
 
-      <Clouds count={budget.tier === "low" ? 12 : 22} />
-      <Birds />
+      <Clouds count={budget.tier === "low" ? 6 : 22} />
+      {budget.tier !== "low" && <Birds />}
 
       {budget.tier !== "low" && (
         <DriftingPollen count={budget.tier === "high" ? 280 : 140} />

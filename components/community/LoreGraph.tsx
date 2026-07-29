@@ -62,13 +62,11 @@ const CATEGORY_ID = (id: LoreCategoryId) => `cat:${id}`;
 /**
  * How many categories open on their own.
  *
- * The graph is meant to show the shape of the world at a glance, so the
- * biggest areas are already open when you arrive — but every expanded category
- * drags its whole entry list into the force simulation, and eight of those at
- * once is a hairball nobody can read and the layout never settles. Three is
- * what fits while still leaving the spokes legible.
+ * Zero: a mind-map starts as hub + spokes. The visitor opens what they want,
+ * biggest entries first. Auto-opening a handful used to dump dozens of nodes
+ * into the simulation before anyone had asked.
  */
-const AUTO_EXPAND = 3;
+const AUTO_EXPAND = 0;
 
 /** Entries pulled per category when it opens. */
 const CATEGORY_PAGE = 24;
@@ -164,11 +162,13 @@ export function LoreGraph() {
     link?.distance?.((l) => {
       if (l.kind === "spoke") return 180;
       if (l.kind === "category") return 72;
+      if (l.kind === "bridge") return 140;
       return 110;
     });
     link?.strength?.((l) => {
       if (l.kind === "spoke") return 0.35;
       if (l.kind === "category") return 0.18;
+      if (l.kind === "bridge") return 0.1;
       return 0.12;
     });
 
@@ -232,7 +232,9 @@ export function LoreGraph() {
             ...n,
             name: n.title,
             val: voteRadius(n.voteCount, false),
-          }));
+          }))
+          // Biggest first — mind-map convention and the force layout's bias.
+          .sort((a, b) => b.voteCount - a.voteCount);
 
         for (const entry of entries) nodeIndex.current.set(entry.id, entry);
         setNodes([...nodeIndex.current.values()]);
@@ -388,12 +390,8 @@ export function LoreGraph() {
   }, []);
 
   /**
-   * Only what is currently open.
-   *
-   * Collapsing a category filters its entries out of the simulation rather
-   * than deleting them — they stay in `nodeIndex` so reopening is instant and
-   * costs no fetch. What matters for performance is how many bodies the force
-   * layout is integrating, and that is exactly this list.
+   * Only what is currently open — plus cross-links remapped onto collapsed
+   * spokes so other open areas still show a line going into a closed section.
    */
   const graphData = useMemo(() => {
     const visible = nodes.filter((node) => {
@@ -401,11 +399,46 @@ export function LoreGraph() {
       return expanded.has(node.category);
     });
     const ids = new Set(visible.map((n) => n.id));
-    const visibleLinks = links.filter((l) => {
-      const source = linkEndId(l.source);
-      const target = linkEndId(l.target);
-      return ids.has(source) && ids.has(target);
-    });
+
+    const resolveEnd = (end: string): string | null => {
+      if (ids.has(end)) return end;
+      const node = nodeIndex.current.get(end);
+      if (!node || node.isHub || node.categoryNode) return null;
+      // Hidden entry → its category spoke (still on the canvas).
+      const spoke = CATEGORY_ID(node.category);
+      return ids.has(spoke) ? spoke : null;
+    };
+
+    const seen = new Set<string>();
+    const visibleLinks: GraphLink[] = [];
+    for (const link of links) {
+      // Hierarchy spokes only while that area is open — otherwise every
+      // collapsed section would keep a fan of stub lines to nowhere useful.
+      if (link.kind === "category") {
+        const source = linkEndId(link.source);
+        const target = linkEndId(link.target);
+        if (!ids.has(source) || !ids.has(target)) continue;
+        const key = `${source}|${target}|category`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        visibleLinks.push(link);
+        continue;
+      }
+
+      const source = resolveEnd(linkEndId(link.source));
+      const target = resolveEnd(linkEndId(link.target));
+      if (!source || !target || source === target) continue;
+      const kind =
+        link.kind === "spoke"
+          ? "spoke"
+          : source.startsWith("cat:") || target.startsWith("cat:")
+            ? "bridge"
+            : link.kind;
+      const key = `${source}|${target}|${kind}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      visibleLinks.push({ source, target, kind });
+    }
     return { nodes: visible, links: visibleLinks };
   }, [nodes, links, expanded]);
 
@@ -562,6 +595,7 @@ export function LoreGraph() {
             }
             if (link.kind === "spoke") return "rgba(21, 34, 56, 0.38)";
             if (link.kind === "category") return "rgba(21, 34, 56, 0.18)";
+            if (link.kind === "bridge") return "rgba(138, 90, 18, 0.45)";
             return "rgba(21, 34, 56, 0.32)";
           }}
           linkWidth={(link: GraphLink) => {
@@ -570,16 +604,23 @@ export function LoreGraph() {
             if (focusSet && (source === focusId || target === focusId)) {
               return 2.6;
             }
-            return link.kind === "spoke" ? 2 : 1.05;
+            if (link.kind === "spoke") return 2;
+            if (link.kind === "bridge") return 1.4;
+            return 1.05;
           }}
           onNodeClick={(node: GraphNode) => {
             if (node.categoryNode) {
-              // Open closed areas so their threads can appear; leave open ones
-              // alone so a focus click does not collapse the neighbourhood.
-              if (!expanded.has(node.categoryNode)) {
-                toggleCategory(node.categoryNode);
+              // Mind-map toggle: click opens (biggest entries first via API
+              // sort), click again collapses. Cross-links from open areas keep
+              // pointing at the spoke while it is closed.
+              toggleCategory(node.categoryNode);
+              if (expanded.has(node.categoryNode)) {
+                // Was open → now closing; drop focus on vanished children.
+                setFocusId(null);
+                setSelected(null);
+              } else {
+                focusOnNode(node);
               }
-              focusOnNode(node);
               return;
             }
             setSelected(node);
@@ -770,8 +811,8 @@ export function LoreGraph() {
             : focusId
               ? "Showing connections · click the background to reset"
               : expanded.size === 0
-                ? "Click an area to open it."
-                : `${expanded.size} of ${LORE_CATEGORIES.length} areas open · click a node to follow its threads`}
+                ? "Click an area to open its threads · click again to close"
+                : `${expanded.size} of ${LORE_CATEGORIES.length} areas open · click an area again to collapse`}
         </span>
       </div>
 

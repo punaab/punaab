@@ -127,6 +127,11 @@ export type QualityBudget = {
 
   // --- Renderer -----------------------------------------------------------
 
+  /**
+   * Directional shadow maps. Extremely expensive on mobile GPUs — off on the
+   * low tier so the fill rate goes to the meadow instead.
+   */
+  shadows: boolean;
   shadowMapSize: number;
   /**
    * Radius the shadow camera covers around the bard, and the radius inside
@@ -152,42 +157,45 @@ const BUDGETS: Record<QualityTier, QualityBudget> = {
   low: {
     tier: "low",
 
-    terrainSegments: 128,
-    terrainChunks: 14,
-    terrainNearChunks: 32,
-    terrainMidChunks: 52,
-    terrainNearSegments: 16,
-    terrainMidSegments: 8,
+    terrainSegments: 112,
+    terrainChunks: 12,
+    terrainNearChunks: 24,
+    terrainMidChunks: 40,
+    terrainNearSegments: 14,
+    terrainMidSegments: 7,
     terrainFarSegments: 4,
 
-    trees: 1300,
-    shrubs: 850,
+    // Canopy / dressing dialled down for phones. Grass tufts + radius stay as
+    // before — the meadow is the hero shot and is already ring-culled.
+    trees: 620,
+    shrubs: 380,
     groundCover: 9000,
     grassTufts: 32000,
     grassRadius: 36,
-    rocks: 320,
-    ferns: 600,
-    flowers: 5200,
-    flowerRadius: 55,
+    rocks: 140,
+    ferns: 220,
+    flowers: 2200,
+    flowerRadius: 42,
 
-    lodNear: 30,
-    lodMid: 82,
-    drawDistance: 200,
+    lodNear: 24,
+    lodMid: 64,
+    drawDistance: 145,
 
-    npcs: 16,
-    animals: 22,
+    npcs: 6,
+    animals: 8,
     structureDetail: 0,
-    structureRadius: 150,
+    structureRadius: 90,
 
-    shadowMapSize: 1024,
-    shadowDistance: 16,
-    dpr: [1, 1.25],
+    shadows: false,
+    shadowMapSize: 512,
+    shadowDistance: 10,
+    dpr: [1, 1],
     postprocessing: false,
     waterReflections: false,
-    waterSegments: 64,
-    waterRings: 7,
+    waterSegments: 48,
+    waterRings: 5,
     foam: false,
-    textureSize: 256,
+    textureSize: 128,
   },
   medium: {
     tier: "medium",
@@ -219,6 +227,7 @@ const BUDGETS: Record<QualityTier, QualityBudget> = {
     structureDetail: 1,
     structureRadius: 240,
 
+    shadows: true,
     shadowMapSize: 2048,
     shadowDistance: 20,
     dpr: [1, 1.6],
@@ -259,6 +268,7 @@ const BUDGETS: Record<QualityTier, QualityBudget> = {
     structureDetail: 2,
     structureRadius: 300,
 
+    shadows: true,
     shadowMapSize: 2048,
     shadowDistance: 26,
     dpr: [1, 2],
@@ -270,6 +280,45 @@ const BUDGETS: Record<QualityTier, QualityBudget> = {
     textureSize: 512,
   },
 };
+
+/** Phones / tablets in any orientation — not just portrait width checks. */
+function isMobileLike(): boolean {
+  const shortSide = Math.min(window.innerWidth, window.innerHeight);
+  const coarse = window.matchMedia("(pointer: coarse)").matches;
+  const noHover = window.matchMedia("(hover: none)").matches;
+  const touchPoints = navigator.maxTouchPoints ?? 0;
+  // Most phones report coarse + no-hover; landscape iPhones are >900 wide but
+  // still ~430 on the short side — the old width-only test promoted them to
+  // medium and melted the GPU.
+  if ((coarse || noHover) && shortSide < 1024) return true;
+  // A touchscreen alone proves nothing. Windows laptops report ten touch
+  // points and still have a discrete GPU and a mouse, and their viewport is
+  // under 820px tall on a 1366x768 panel or in any window that is not
+  // maximised — so this branch on its own quietly hands a desktop the phone
+  // budget. It has to agree with the pointer before it counts.
+  if (touchPoints > 1 && (coarse || noHover) && shortSide < 820) return true;
+  return false;
+}
+
+/**
+ * Whether the visitor has asked the system for less animation.
+ *
+ * Deliberately *not* a quality tier. The two were the same thing here until it
+ * became clear what that costs: the preference is common on Windows — it is on
+ * whenever "Animation effects" is switched off — and routing it to the low tier
+ * handed anyone with that setting a sixth of the grass over a sixth of the
+ * area, no shadows, no bloom, quarter-resolution textures and a third of the
+ * draw distance, on hardware that could run the full world comfortably.
+ *
+ * "Reduce animation" is a statement about *motion*, not about how much a GPU
+ * can push. Anything that wants to hold still for these visitors — swaying
+ * grass, wheeling birds, drifting cloud — should read this and damp its own
+ * movement, and leave the density of the world alone.
+ */
+export function prefersReducedMotion(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
 
 export function detectQuality(): QualityBudget {
   if (typeof window === "undefined") return BUDGETS.medium;
@@ -286,18 +335,34 @@ export function detectQuality(): QualityBudget {
   const cores = navigator.hardwareConcurrency ?? 4;
   const memory =
     (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 4;
-  const coarsePointer = window.matchMedia("(pointer: coarse)").matches;
-  const narrow = window.innerWidth < 900;
-  const reducedMotion = window.matchMedia(
-    "(prefers-reduced-motion: reduce)"
-  ).matches;
 
-  if (reducedMotion) return BUDGETS.low;
-  // Phones and tablets: the GPU is usually the bottleneck, not the CPU.
-  if (coarsePointer && narrow) return BUDGETS.low;
-  if (cores <= 4 || memory <= 4) return BUDGETS.low;
-  if (cores <= 8 || memory <= 8) return BUDGETS.medium;
-  return BUDGETS.high;
+  // Note what is *not* here: `prefers-reduced-motion`. It used to return the
+  // low tier outright, which is a category error — it says the visitor wants
+  // less movement, not that their machine is weak — and it cost anyone with
+  // Windows animation effects switched off six sevenths of the meadow. See
+  // `prefersReducedMotion` for the signal that motion should read instead.
+  const tier: QualityTier =
+    // Phones and tablets: the GPU is usually the bottleneck, not the CPU.
+    // Always low — even flagship SoCs choke on the medium shadow + canopy load.
+    isMobileLike() || cores <= 4 || memory <= 4
+      ? "low"
+      : cores <= 8 || memory <= 8
+        ? "medium"
+        : "high";
+
+  // Two separate bugs have now been traced to a desktop being silently handed
+  // the phone budget, and in both cases the symptom — a thin meadow, a sky that
+  // never changed — pointed nowhere near the cause. Saying so out loud costs
+  // one line in the console and makes the next one obvious.
+  if (process.env.NODE_ENV !== "production") {
+    console.info(
+      `[punaab] quality: ${tier} (cores ${cores}, memory ${memory}GB, ` +
+        `mobile-like ${isMobileLike()}, reduced-motion ${prefersReducedMotion()}) ` +
+        `— override with ?quality=low|medium|high`
+    );
+  }
+
+  return BUDGETS[tier];
 }
 
 export function budgetFor(tier: QualityTier): QualityBudget {

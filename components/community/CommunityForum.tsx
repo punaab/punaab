@@ -2,7 +2,7 @@
 
 import { SignInButton, useAuth } from "@clerk/nextjs";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LoreGraph } from "@/components/community/LoreGraph";
 import { CommunityLinks } from "@/components/marketing/CommunityLinks";
 import {
@@ -19,10 +19,20 @@ import {
   type LoreLinkKind,
   type LoreSort,
 } from "@/lib/community-lore";
+import {
+  invalidateLoreListCache,
+  loadLoreList,
+  peekLoreList,
+  prefetchAllWorldSections,
+  prefetchLoreList,
+} from "@/lib/lore-list-cache";
 
 type ViewMode = "list" | "graph";
 type LinkDraft = { toId: string; kind: LoreLinkKind };
 type HomeFeed = "trending" | "latest";
+
+/** Debounce for FTS round-trips — short enough to feel instant, long enough to coalesce keystrokes. */
+const SEARCH_DEBOUNCE_MS = 160;
 
 function formatWhen(iso: string): string {
   const date = new Date(iso);
@@ -125,17 +135,41 @@ export function CommunityForum({
   const [category, setCategory] = useState<LoreCategoryId | null>(
     initialCategory
   );
-  const [sort, setSort] = useState<LoreSort>(isHome ? "votes" : "votes");
+  const [sort, setSort] = useState<LoreSort>("votes");
   const [homeFeed, setHomeFeed] = useState<HomeFeed>("trending");
-  const [lore, setLore] = useState<CommunityLoreListItem[]>([]);
-  const [trending, setTrending] = useState<CommunityLoreListItem[]>([]);
-  const [latest, setLatest] = useState<CommunityLoreListItem[]>([]);
+  const [searchInput, setSearchInput] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [lore, setLore] = useState<CommunityLoreListItem[]>(() => {
+    if (!initialCategory) return [];
+    return (
+      peekLoreList({ category: initialCategory, sort: "votes" }) ?? []
+    );
+  });
+  const [trending, setTrending] = useState<CommunityLoreListItem[]>(() =>
+    initialCategory
+      ? []
+      : (peekLoreList({ sort: "votes", limit: 12 }) ?? []).slice(0, 12)
+  );
+  const [latest, setLatest] = useState<CommunityLoreListItem[]>(() =>
+    initialCategory
+      ? []
+      : (peekLoreList({ sort: "newest", limit: 12 }) ?? []).slice(0, 12)
+  );
   const [mine, setMine] = useState<CommunityLoreListItem[]>([]);
   const [linkChoices, setLinkChoices] = useState<CommunityLoreListItem[]>([]);
   const [linkQuery, setLinkQuery] = useState("");
   const [linkFilter, setLinkFilter] = useState<LoreCategoryId | "all">("all");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => {
+    if (initialCategory) {
+      return !peekLoreList({ category: initialCategory, sort: "votes" });
+    }
+    return !(
+      peekLoreList({ sort: "votes", limit: 12 }) &&
+      peekLoreList({ sort: "newest", limit: 12 })
+    );
+  });
   const [error, setError] = useState<string | null>(null);
+  const searchAbort = useRef<AbortController | null>(null);
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
   const [body, setBody] = useState("");
@@ -169,66 +203,115 @@ export function CommunityForum({
       : downloadLabelForCategory(category);
 
   const loadCategory = useCallback(
-    async (nextCategory: LoreCategoryId, nextSort: LoreSort) => {
-      setLoading(true);
+    async (nextCategory: LoreCategoryId, nextSort: LoreSort, nextQ = "") => {
+      searchAbort.current?.abort();
+      const ac = new AbortController();
+      searchAbort.current = ac;
       setError(null);
-      try {
-        const res = await fetch(
-          `/api/community/lore?sort=${nextSort}&category=${nextCategory}`
-        );
-        const data = (await res.json()) as {
-          lore?: CommunityLoreListItem[];
-          error?: string;
-        };
-        if (!res.ok && data.error) {
-          setError(
-            res.status === 503
-              ? "The world hall isn’t open yet — check back soon."
-              : data.error
-          );
-        }
-        setLore(data.lore || []);
-      } catch {
-        setError("Could not reach the world hall.");
-        setLore([]);
-      } finally {
+
+      const query = {
+        category: nextCategory,
+        sort: nextSort,
+        q: nextQ.trim(),
+      } as const;
+      const cached = peekLoreList(query);
+      if (cached) {
+        setLore(cached);
         setLoading(false);
+      } else {
+        setLoading(true);
+      }
+
+      try {
+        const { lore: next } = await loadLoreList(query, {
+          signal: ac.signal,
+          force: Boolean(cached), // soft refresh when we already painted cache
+        });
+        if (ac.signal.aborted) return;
+        setLore(next);
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        if (!cached) {
+          setError(
+            err instanceof Error && err.message.includes("open")
+              ? "The world hall isn’t open yet — check back soon."
+              : err instanceof Error
+                ? err.message
+                : "Could not reach the world hall."
+          );
+          setLore([]);
+        }
+      } finally {
+        if (!ac.signal.aborted) setLoading(false);
       }
     },
     []
   );
 
-  const loadHome = useCallback(async () => {
-    setLoading(true);
+  const loadHome = useCallback(async (nextQ = "") => {
+    searchAbort.current?.abort();
+    const ac = new AbortController();
+    searchAbort.current = ac;
     setError(null);
+
     try {
-      const [trendRes, newRes] = await Promise.all([
-        fetch("/api/community/lore?sort=votes"),
-        fetch("/api/community/lore?sort=newest"),
-      ]);
-      const trendData = (await trendRes.json()) as {
-        lore?: CommunityLoreListItem[];
-        error?: string;
-      };
-      const newData = (await newRes.json()) as {
-        lore?: CommunityLoreListItem[];
-        error?: string;
-      };
-      if ((!trendRes.ok || !newRes.ok) && (trendData.error || newData.error)) {
-        setError(
-          trendRes.status === 503 || newRes.status === 503
-            ? "The world hall isn’t open yet — check back soon."
-            : trendData.error || newData.error || "Could not load."
-        );
+      if (nextQ.trim()) {
+        const query = { sort: "votes" as const, q: nextQ.trim(), limit: 80 };
+        const cached = peekLoreList(query);
+        if (cached) {
+          setLore(cached);
+          setLoading(false);
+        } else {
+          setLoading(true);
+        }
+        const { lore: hits } = await loadLoreList(query, {
+          signal: ac.signal,
+          force: Boolean(cached),
+        });
+        if (ac.signal.aborted) return;
+        setLore(hits);
+        setTrending([]);
+        setLatest([]);
+        return;
       }
-      setTrending((trendData.lore || []).filter((item) => !item.isHub).slice(0, 12));
-      setLatest((newData.lore || []).filter((item) => !item.isHub).slice(0, 12));
-    } catch {
+
+      const trendQ = { sort: "votes" as const, limit: 12 };
+      const newQ = { sort: "newest" as const, limit: 12 };
+      const cachedTrend = peekLoreList(trendQ);
+      const cachedNew = peekLoreList(newQ);
+      if (cachedTrend || cachedNew) {
+        if (cachedTrend) setTrending(cachedTrend.slice(0, 12));
+        if (cachedNew) setLatest(cachedNew.slice(0, 12));
+        setLore([]);
+        setLoading(false);
+      } else {
+        setLoading(true);
+      }
+
+      const [trend, newest] = await Promise.all([
+        loadLoreList(trendQ, {
+          signal: ac.signal,
+          force: Boolean(cachedTrend),
+        }),
+        loadLoreList(newQ, {
+          signal: ac.signal,
+          force: Boolean(cachedNew),
+        }),
+      ]);
+      if (ac.signal.aborted) return;
+      setTrending(trend.lore.slice(0, 12));
+      setLatest(newest.lore.slice(0, 12));
+      setLore([]);
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
       setError("Could not reach the world hall.");
-      setTrending([]);
-      setLatest([]);
+      if (!peekLoreList({ sort: "votes", limit: 12 })) {
+        setTrending([]);
+        setLatest([]);
+        setLore([]);
+      }
     } finally {
-      setLoading(false);
+      if (!ac.signal.aborted) setLoading(false);
     }
   }, []);
 
@@ -254,17 +337,50 @@ export function CommunityForum({
     setCategory(initialCategory);
     setComposeCategory(initialCategory ?? "characters");
     setView("list");
+    setSearchInput("");
+    setSearchQuery("");
+    // Paint from cache on the same tick as the route change — no empty flash.
+    if (initialCategory) {
+      const cached = peekLoreList({
+        category: initialCategory,
+        sort: "votes",
+      });
+      if (cached) {
+        setLore(cached);
+        setLoading(false);
+      }
+    } else {
+      const trend = peekLoreList({ sort: "votes", limit: 12 });
+      const newest = peekLoreList({ sort: "newest", limit: 12 });
+      if (trend) setTrending(trend.slice(0, 12));
+      if (newest) setLatest(newest.slice(0, 12));
+      setLore([]);
+      if (trend || newest) setLoading(false);
+    }
   }, [initialCategory]);
+
+  // Debounce the live input into the query that actually hits FTS.
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      setSearchQuery(searchInput.trim());
+    }, SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(handle);
+  }, [searchInput]);
 
   useEffect(() => {
     if (view === "graph") return;
-    if (isHome) void loadHome();
-    else if (category) void loadCategory(category, sort);
-  }, [loadHome, loadCategory, category, sort, view, isHome]);
+    if (isHome) void loadHome(searchQuery);
+    else if (category) void loadCategory(category, sort, searchQuery);
+  }, [loadHome, loadCategory, category, sort, view, isHome, searchQuery]);
 
   useEffect(() => {
     void loadMine();
   }, [loadMine]);
+
+  // Warm every section in idle time so tab clicks feel instantaneous.
+  useEffect(() => {
+    prefetchAllWorldSections(sort);
+  }, [sort]);
 
   useEffect(() => {
     if (!composeOpen) return;
@@ -394,9 +510,10 @@ export function CommunityForum({
       setLinks([]);
       setLinkQuery("");
       setComposeOpen(false);
+      invalidateLoreListCache();
       await loadMine();
-      if (isHome) await loadHome();
-      else if (category) await loadCategory(category, sort);
+      if (isHome) await loadHome(searchQuery);
+      else if (category) await loadCategory(category, sort, searchQuery);
       // Jump to the area they just published into so the new card is obvious.
       if (composeCategory && composeCategory !== category) {
         window.location.href = `/world/${composeCategory}`;
@@ -435,6 +552,7 @@ export function CommunityForum({
   }
 
   const homeItems = homeFeed === "trending" ? trending : latest;
+  const searching = Boolean(searchQuery);
 
   return (
     <div className="lore-forum">
@@ -443,6 +561,10 @@ export function CommunityForum({
           <Link
             href="/world"
             className={`lore-area-tab${isHome ? " is-active" : ""}`}
+            onPointerEnter={() => {
+              prefetchLoreList({ sort: "votes", limit: 12 });
+              prefetchLoreList({ sort: "newest", limit: 12 });
+            }}
           >
             World
           </Link>
@@ -451,6 +573,9 @@ export function CommunityForum({
               key={area.id}
               href={`/world/${area.id}`}
               className={`lore-area-tab${category === area.id ? " is-active" : ""}`}
+              onPointerEnter={() => {
+                prefetchLoreList({ category: area.id, sort });
+              }}
             >
               {area.label}
             </Link>
@@ -489,7 +614,7 @@ export function CommunityForum({
             </button>
           </div>
 
-          {view === "list" && isHome && (
+          {view === "list" && isHome && !searchQuery && (
             <div className="lore-view-toggle" role="group" aria-label="Home feed">
               <button
                 type="button"
@@ -506,6 +631,38 @@ export function CommunityForum({
                 Latest
               </button>
             </div>
+          )}
+
+          {view === "list" && (
+            <label className="lore-search">
+              <span className="lore-search-label">Search</span>
+              <input
+                type="search"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                placeholder={
+                  isHome
+                    ? "Search published lore…"
+                    : `Search ${activeMeta?.label ?? "this area"}…`
+                }
+                aria-label="Search published lore"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              {searchInput && (
+                <button
+                  type="button"
+                  className="lore-search-clear"
+                  aria-label="Clear search"
+                  onClick={() => {
+                    setSearchInput("");
+                    setSearchQuery("");
+                  }}
+                >
+                  ×
+                </button>
+              )}
+            </label>
           )}
 
           {view === "list" && !isHome && (
@@ -778,22 +935,50 @@ export function CommunityForum({
         <LoreGraph />
       ) : isHome ? (
         <>
-          <section className="lore-home-areas">
-            <h3>Areas</h3>
-            <ul className="lore-area-cards">
-              {LORE_CATEGORIES.map((area) => (
-                <li key={area.id}>
-                  <Link href={`/world/${area.id}`} className="lore-area-card">
-                    <strong>{area.label}</strong>
-                    <span>{area.blurb}</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </section>
+          {!searching && (
+            <section className="lore-home-areas">
+              <h3>Areas</h3>
+              <ul className="lore-area-cards">
+                {LORE_CATEGORIES.map((area) => (
+                  <li key={area.id}>
+                    <Link href={`/world/${area.id}`} className="lore-area-card">
+                      <strong>{area.label}</strong>
+                      <span>{area.blurb}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
 
           {loading ? (
-            <p className="lore-empty">Unfurling the scrolls…</p>
+            <p className="lore-empty">
+              {searching ? "Searching the archive…" : "Unfurling the scrolls…"}
+            </p>
+          ) : searching ? (
+            lore.length === 0 ? (
+              <div className="lore-empty-card">
+                <h3>No matches for “{searchQuery}”</h3>
+                <p>Try another word, or clear search to browse again.</p>
+              </div>
+            ) : (
+              <section className="lore-home-feed">
+                <h3>
+                  {lore.length} result{lore.length === 1 ? "" : "s"} for “
+                  {searchQuery}”
+                </h3>
+                <ul className="lore-submission-grid">
+                  {lore.map((item) => (
+                    <SubmissionCard
+                      key={item.id}
+                      item={item}
+                      isSignedIn={Boolean(isSignedIn)}
+                      onVote={toggleVote}
+                    />
+                  ))}
+                </ul>
+              </section>
+            )
           ) : homeItems.length === 0 ? (
             <div className="lore-empty-card">
               <h3>No submissions yet</h3>
@@ -816,11 +1001,21 @@ export function CommunityForum({
           )}
         </>
       ) : loading ? (
-        <p className="lore-empty">Unfurling the scrolls…</p>
+        <p className="lore-empty">
+          {searching ? "Searching the archive…" : "Unfurling the scrolls…"}
+        </p>
       ) : lore.length === 0 ? (
         <div className="lore-empty-card">
-          <h3>No {activeMeta?.label.toLowerCase()} yet</h3>
-          <p>Be the first to publish something in this area.</p>
+          <h3>
+            {searching
+              ? `No matches for “${searchQuery}”`
+              : `No ${activeMeta?.label.toLowerCase()} yet`}
+          </h3>
+          <p>
+            {searching
+              ? "Try another word, or clear search to browse again."
+              : "Be the first to publish something in this area."}
+          </p>
         </div>
       ) : (
         <ul className="lore-submission-grid">

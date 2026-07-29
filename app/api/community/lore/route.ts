@@ -65,6 +65,7 @@ export async function GET(req: Request) {
       lore: [] as CommunityLoreListItem[],
       sort,
       category,
+      q: q || null,
     });
   }
 
@@ -80,27 +81,51 @@ export async function GET(req: Request) {
     myProfileId = profile.id === "local" ? null : profile.id;
   }
 
-  let query = supabase.from("community_lore").select(SELECT).limit(limit);
+  // Published search is accepted-only (no pending drafts in the hall results).
+  const searching = Boolean(q) && !mine;
 
-  if (mine && myProfileId) {
-    query = query.eq("author_id", myProfileId);
-  } else if (myProfileId) {
-    query = query.or(`status.eq.accepted,author_id.eq.${myProfileId}`);
-  } else {
-    query = query.eq("status", "accepted");
-  }
+  const runQuery = async (mode: "fts" | "ilike") => {
+    let query = supabase.from("community_lore").select(SELECT).limit(limit);
 
-  if (category) query = query.eq("category", category);
-  if (q) {
-    const safe = q.replace(/[%_,]/g, " ").trim();
-    if (safe) {
-      query = query.or(
-        `title.ilike.%${safe}%,summary.ilike.%${safe}%,body.ilike.%${safe}%`
-      );
+    if (mine && myProfileId) {
+      query = query.eq("author_id", myProfileId);
+    } else if (searching) {
+      query = query.eq("status", "accepted").eq("is_hub", false);
+    } else if (myProfileId) {
+      query = query.or(`status.eq.accepted,author_id.eq.${myProfileId}`);
+    } else {
+      query = query.eq("status", "accepted");
     }
+
+    if (category) query = query.eq("category", category);
+
+    if (q) {
+      const safe = q.replace(/[%_,()]/g, " ").replace(/\s+/g, " ").trim();
+      if (!safe) {
+        /* empty after sanitize */
+      } else if (mode === "fts") {
+        // Weighted GIN tsvector (migration 006). websearch accepts natural phrases.
+        query = query.textSearch("search_vector", safe, {
+          type: "websearch",
+          config: "english",
+        });
+      } else {
+        query = query.or(
+          `title.ilike.%${safe}%,summary.ilike.%${safe}%,body.ilike.%${safe}%,location_key.ilike.%${safe}%`
+        );
+      }
+    }
+
+    return query;
+  };
+
+  let result = await runQuery(q ? "fts" : "ilike");
+  // Column / extension not applied yet — fall back to ILIKE so search still works.
+  if (result.error && q) {
+    result = await runQuery("ilike");
   }
 
-  const { data, error } = await query;
+  const { data, error } = result;
 
   if (error) {
     return NextResponse.json(
@@ -109,6 +134,7 @@ export async function GET(req: Request) {
         lore: [] as CommunityLoreListItem[],
         sort,
         category,
+        q: q || null,
       },
       { status: 500 }
     );
@@ -152,7 +178,7 @@ export async function GET(req: Request) {
     })
   );
 
-  if (!mine) {
+  if (!mine && !searching) {
     lore = lore.filter(
       (item) =>
         item.status === "accepted" ||

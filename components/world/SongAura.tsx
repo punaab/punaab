@@ -35,7 +35,7 @@ const TRAIL_SEGS = COUNT * (TRAIL_LEN - 1);
  * That is why silence is `intensity = 0` rather than `visible = false`.
  */
 const SONG_LIGHTS: Record<QualityBudget["tier"], number> = {
-  low: 1,
+  low: 0,
   medium: 2,
   high: 3,
 };

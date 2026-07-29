@@ -54,7 +54,7 @@ export function MarketingShell({
           <div className="mkt-actions">
             <AuthNav />
             <SiteLink href="/travel" className="btn primary btn-glow header-cta">
-              TRAVEL
+              WORLD
             </SiteLink>
           </div>
         </header>

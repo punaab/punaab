@@ -1,11 +1,6 @@
 "use client";
 
-import {
-  SignInButton,
-  SignUpButton,
-  UserButton,
-  useAuth,
-} from "@clerk/nextjs";
+import { SignInButton, UserButton, useAuth } from "@clerk/nextjs";
 import { useEffect, useState } from "react";
 import { SiteLink } from "@/components/marketing/SiteLink";
 
@@ -54,11 +49,6 @@ export function AuthNav() {
           Sign in
         </button>
       </SignInButton>
-      <SignUpButton mode="modal">
-        <button type="button" className="btn soft nav-btn nav-btn-signup">
-          Join in!
-        </button>
-      </SignUpButton>
     </div>
   );
 }

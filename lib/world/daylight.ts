@@ -34,18 +34,70 @@ import { GHIBLI, GHIBLI_SUN_AZIM_DEG, GHIBLI_SUN_ELEV_DEG } from "@/lib/world/gh
 // ---------------------------------------------------------------------------
 
 /**
- * Wall-clock seconds for one full cycle.
+ * Wall-clock seconds for one full cycle — Minecraft's twenty minutes.
  *
- * The arc is uniform, so this splits evenly: 2½ minutes of daylight, 2½ of
- * night. Warping it to favour day was tried and abandoned — every warp smooth
- * enough to avoid a visible change in the sun's speed could only shift the
- * split by a percent or two, and the abrupt ones move that speed change to the
- * horizon, which is the one place in the cycle a viewer is actually watching.
+ * The arc is uniform, so this splits evenly: ten minutes of daylight, ten of
+ * night. Minecraft's own night is shorter than its day (roughly ten and seven,
+ * with three minutes of twilight between), and matching that exactly would mean
+ * warping time.
+ *
+ * That was tried and abandoned. Every warp smooth enough to avoid a visible
+ * change in the sun's speed can only shift the split by a percent or two, and
+ * the abrupt ones put that speed change *at the horizon* — the one moment in
+ * the whole cycle a viewer is actually watching the sky. Three extra minutes of
+ * a night full of stars, fireflies and lit windows is a far better trade than a
+ * sunset that visibly changes gear halfway through.
  */
-export const DAY_SECONDS = 300;
+export const DAY_SECONDS = 1200;
 
 /** Sun elevation at local noon. */
 const MAX_ELEVATION_DEG = 62;
+
+/**
+ * Direct sunlight at the palette's reference elevation, and at noon.
+ *
+ * This curve is not free to be any plausible falloff. The whole valley — grass,
+ * terrain, water, flora, every authored colour — was balanced against a
+ * *constant* 2.15-intensity sun sitting at `GHIBLI_SUN_ELEV_DEG`. So the curve
+ * has to pass exactly through 2.15 at that elevation. Anything else and every
+ * material in the world renders at an exposure it was not painted for.
+ *
+ * The meadow is the tell-tale, because the grass shader runs with
+ * `lights: false` and derives its entire key colour from this number, so it
+ * takes the error directly rather than having ambient and sky to hide behind.
+ *
+ * Getting it wrong is not subtle: an earlier version of this curve peaked at
+ * 2.15 at *noon*, which left the reference look — the one the site opens on —
+ * lit at 44% of intended, and the first thing anyone noticed was that the grass
+ * had stopped looking lush.
+ */
+export const REFERENCE_SUN_INTENSITY = 2.15;
+/**
+ * Noon. Only a little above the reference, and deliberately so.
+ *
+ * The valley was authored under a *constant* 2.15 sun, so every step above that
+ * is a step away from the look the textures were balanced for. 2.75 was tried
+ * and read as blown out — grass in particular, because its shader multiplies
+ * this straight into an already-bright tip colour with no specular roll-off to
+ * absorb it. Midday should feel higher and harder than late afternoon, not
+ * brighter than the film stock can hold.
+ */
+const NOON_SUN_INTENSITY = 2.32;
+
+/**
+ * `base + sin(elevation) · gain`, solved through the reference point and noon.
+ *
+ * Derived rather than typed in, so the two intensities above stay the only
+ * numbers anyone has to reason about and the curve cannot drift off the
+ * reference as the arc is retuned.
+ */
+const SUN_RISE_GAIN =
+  (NOON_SUN_INTENSITY - REFERENCE_SUN_INTENSITY) /
+  (Math.sin((MAX_ELEVATION_DEG * Math.PI) / 180) -
+    Math.sin((GHIBLI_SUN_ELEV_DEG * Math.PI) / 180));
+const SUN_BASE_INTENSITY =
+  REFERENCE_SUN_INTENSITY -
+  SUN_RISE_GAIN * Math.sin((GHIBLI_SUN_ELEV_DEG * Math.PI) / 180);
 
 function bearing(azimuthDeg: number, elevationDeg: number): THREE.Vector3 {
   const azim = (azimuthDeg * Math.PI) / 180;
@@ -390,7 +442,8 @@ export function setDaylight(t: number): void {
   const SWAP_ELEV = -1;
   const sunPower = Math.max(0, Math.sin(daylight.sunElevation));
   const sunIntensity =
-    THREE.MathUtils.smoothstep(elevDeg, SWAP_ELEV, 7) * (0.5 + sunPower * 1.9);
+    THREE.MathUtils.smoothstep(elevDeg, SWAP_ELEV, 7) *
+    (SUN_BASE_INTENSITY + sunPower * SUN_RISE_GAIN);
   const moonIntensity =
     0.34 *
     THREE.MathUtils.smoothstep(-elevDeg, -SWAP_ELEV + 1, 12) *
@@ -480,12 +533,43 @@ export function initialTime(): number {
   return Number.isFinite(numeric) ? ((numeric % 1) + 1) % 1 : REFERENCE_TIME;
 }
 
-/** True when the clock should not run — respects reduced-motion. */
+/**
+ * True when the clock should be pinned rather than run.
+ *
+ * Only `?time=` does that now, so a screenshot or a review can hold the sky
+ * still; adding `&cycle=on` runs the cycle from that starting point instead.
+ *
+ * This used to freeze for `prefers-reduced-motion` as well, and that was wrong.
+ * The setting exists to suppress motion that can cause discomfort — parallax,
+ * spinning, things flying across the viewport — and the sun crossing the sky
+ * over twenty minutes moves about a fiftieth of a degree per frame, which is
+ * below the threshold of noticing. What freezing it actually achieved was that
+ * anyone whose OS reports the preference never saw night at all, which on
+ * Windows is anybody with "Animation effects" switched off. Half the world was
+ * invisible to them, in exchange for suppressing motion nobody could see.
+ */
 export function daylightFrozen(): boolean {
   if (typeof window === "undefined") return false;
   const params = new URLSearchParams(window.location.search);
   if (params.get("time")) return params.get("cycle") !== "on";
-  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  return false;
+}
+
+/**
+ * Seed the clock, once per page load.
+ *
+ * `Atmosphere` mounts and unmounts more than you would expect — Fast Refresh in
+ * development, navigating away from the hero and back, React's double-invoked
+ * mount in strict mode. Seeding on every mount would snap the sky back to late
+ * afternoon each time, so a visitor who left the page and returned could walk
+ * towards sunset forever without arriving.
+ */
+let seeded = false;
+
+export function seedDaylight(): void {
+  if (seeded) return;
+  seeded = true;
+  setDaylight(initialTime());
 }
 
 setDaylight(REFERENCE_TIME);

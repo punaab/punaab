@@ -7,10 +7,28 @@ import { heightAt } from "@/lib/world/terrain";
 import { isBlocked } from "@/lib/world/collision";
 import type { Activity } from "@/lib/bard/adventure";
 
-/** How much air the camera keeps between itself and a wall. */
-const CAMERA_CLEARANCE = 0.55;
-/** Never dolly closer than this, however tight the space. */
-const MIN_CAMERA_DISTANCE = 1.8;
+/** How much air the camera keeps between itself and a wall / ridge. */
+const CAMERA_CLEARANCE = 0.7;
+/**
+ * Extra lift when the look-line hits a building. Colliders are flat footprints
+ * with no roof height, so this is the cottage-scale clearance that keeps the
+ * lens above thatch instead of parking inside the gable.
+ */
+const STRUCTURE_LIFT = 5.2;
+/**
+ * Ceiling on how far the obstacle sweep may lift the lens *above the bard*, so
+ * a pile of stacked hits cannot send it into orbit.
+ *
+ * Relative to him, not to sea level. As an absolute world height this was a
+ * bug with a very confusing symptom: the valley floor sits at 6 metres but the
+ * snow line is at 96, so the moment he climbed anything the clamp was *below*
+ * the ridge the sweep had just calculated it needed to clear. The camera was
+ * dutifully pushed up and then yanked back down inside the mountain, which
+ * reads as the lens falling through the world rather than as a clamp.
+ */
+const MAX_CAMERA_LIFT = 22;
+/** Samples along bard → camera for terrain / structure clearance. */
+const LOS_STEPS = 12;
 
 /**
  * A third-person camera that travels with Punaab.
@@ -21,10 +39,11 @@ const MIN_CAMERA_DISTANCE = 1.8;
  *  1. **Damping, not parenting.** The camera chases a target position with a
  *     spring. Parented cameras inherit every twitch of the walk cycle.
  *  2. **It changes shot for what he's doing.** Walking gets a trailing
- *     over-the-shoulder; performing gets a slow arc round to his front, so you
+ *     over-the-shoulder; performing gets a slow arc round to his face, so you
  *     see him sing. A single fixed angle for eight minutes is a screensaver.
- *  3. **It never clips through the world.** The ground is sampled under the
- *     camera every frame and it lifts to stay above it.
+ *  3. **It never clips through the world.** Ridges and buildings push it *up*
+ *     over the obstacle — never sideways into a forced dolly that leaves the
+ *     mountain between the lens and the bard.
  */
 
 type Shot = {
@@ -78,6 +97,57 @@ function shotFor(activity: Activity): Shot {
     return SHOTS.close;
   }
   return SHOTS.travelling;
+}
+
+/**
+ * Raise `desired.y` until the look-line from the bard's eyes clears terrain
+ * and structures. Prefer going *over* an obstacle to dollying in behind it —
+ * a forced pull-in leaves the mountain between the lens and the subject.
+ */
+function clearLineOfSight(
+  focusX: number,
+  focusY: number,
+  focusZ: number,
+  desired: THREE.Vector3
+): void {
+  const eyeY = focusY + 1.45;
+  const dx = desired.x - focusX;
+  const dy = desired.y - eyeY;
+  const dz = desired.z - focusZ;
+
+  let minCamY = desired.y;
+
+  for (let i = 1; i <= LOS_STEPS; i++) {
+    const t = i / LOS_STEPS;
+    const sx = focusX + dx * t;
+    const sz = focusZ + dz * t;
+    const losY = eyeY + dy * t;
+
+    const ground = heightAt(sx, sz) + CAMERA_CLEARANCE;
+    if (ground > losY && t > 1e-4) {
+      // Solve for camera Y so the ray at this t sits on the ridge.
+      // eyeY + t * (camY - eyeY) >= ground  →  camY >= eyeY + (ground - eyeY) / t
+      minCamY = Math.max(minCamY, eyeY + (ground - eyeY) / t);
+    }
+
+    // Buildings: footprints have no roof, so treat a hit as a cottage roof and
+    // lift the whole camera above it rather than sliding closer into the alley.
+    if (isBlocked(sx, sz, CAMERA_CLEARANCE)) {
+      const roof = heightAt(sx, sz) + STRUCTURE_LIFT;
+      if (roof > losY && t > 1e-4) {
+        minCamY = Math.max(minCamY, eyeY + (roof - eyeY) / t);
+      }
+    }
+  }
+
+  // Also keep the lens itself above local ground (and any footprint it sits in).
+  const here = heightAt(desired.x, desired.z);
+  minCamY = Math.max(minCamY, here + 1.15);
+  if (isBlocked(desired.x, desired.z, CAMERA_CLEARANCE)) {
+    minCamY = Math.max(minCamY, here + STRUCTURE_LIFT);
+  }
+
+  desired.y = Math.min(focusY + MAX_CAMERA_LIFT, Math.max(desired.y, minCamY));
 }
 
 export function FollowCamera({
@@ -221,45 +291,15 @@ export function FollowCamera({
         Math.sin(yaw) * shot.current.side
     );
 
-    // --- Keep it out of the ground ----------------------------------------
-    // Sampling the height function directly is far cheaper than a raycast and
-    // exact, since the terrain *is* that function.
-    const groundHere = heightAt(desired.x, desired.z);
-    const minimum = groundHere + 1.1;
-    if (desired.y < minimum) desired.y = minimum;
-
-    // Also check the midpoint, so a ridge between camera and bard pushes the
-    // camera up and over rather than letting the hill eat him.
-    const midX = (desired.x + focus.position.x) / 2;
-    const midZ = (desired.z + focus.position.z) / 2;
-    const groundMid = heightAt(midX, midZ) + 1.4;
-    if (desired.y < groundMid) desired.y = groundMid;
-
-    // --- Keep it out of the buildings -------------------------------------
-    const toX = desired.x - focus.position.x;
-    const toZ = desired.z - focus.position.z;
-    const span = Math.hypot(toX, toZ);
-    if (span > 0.01) {
-      const steps = 8;
-      let allowed = span;
-      for (let i = 1; i <= steps; i++) {
-        const t = (i / steps) * span;
-        const sx = focus.position.x + (toX / span) * t;
-        const sz = focus.position.z + (toZ / span) * t;
-        if (isBlocked(sx, sz, CAMERA_CLEARANCE)) {
-          allowed = Math.max(MIN_CAMERA_DISTANCE, t - CAMERA_CLEARANCE);
-          break;
-        }
-      }
-      if (allowed < span) {
-        const scale = allowed / span;
-        desired.x = focus.position.x + toX * scale;
-        desired.z = focus.position.z + toZ * scale;
-        desired.y += (1 - scale) * 1.2;
-        const pulledGround = heightAt(desired.x, desired.z) + 1.1;
-        if (desired.y < pulledGround) desired.y = pulledGround;
-      }
-    }
+    // Lift over ridges and roofs — including when the visitor has dragged the
+    // shot into a direction that would otherwise put a mountain between them
+    // and the bard. Never pull sideways into the occluder.
+    clearLineOfSight(
+      focus.position.x,
+      focus.position.y,
+      focus.position.z,
+      desired
+    );
 
     scratch.set(
       focus.position.x,
@@ -298,6 +338,10 @@ export function FollowCamera({
     // --- Move ---------------------------------------------------------------
     const follow = 1 - Math.exp(-shot.current.stiffness * delta);
     camera.position.lerp(desired, follow);
+    // Keep the live lens above ground too — the spring can lag behind a steep
+    // lift and otherwise dip into a ridge for a frame.
+    const liveFloor = heightAt(camera.position.x, camera.position.z) + 1.05;
+    if (camera.position.y < liveFloor) camera.position.y = liveFloor;
     camera.position.x += Math.sin(time * 0.37) * 0.016;
     camera.position.y += Math.sin(time * 0.53 + 1.2) * 0.012;
 

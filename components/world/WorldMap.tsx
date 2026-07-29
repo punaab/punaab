@@ -19,9 +19,7 @@ import {
  * than more canvas drawing, which costs a little layout and buys everything
  * else: hover, keyboard focus, screen readers, and the browser's own hit
  * testing instead of a hand-rolled one.
- */
-
-const MAP_TEXTURE_SIZE = 1400;
+  */
 
 const KIND_LABEL: Record<MapPlace["kind"], string> = {
   town: "Town",
@@ -107,6 +105,21 @@ function PlaceGlyph({ kind }: { kind: MapPlace["kind"] }) {
 
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 6;
+/** Full travel-map parchment. Inline / phone use a lighter bake. */
+const MAP_TEXTURE_SIZE = 1400;
+const MAP_TEXTURE_INLINE = 720;
+const MAP_TEXTURE_MOBILE = 512;
+
+/** Survives remounts so /world/places doesn't rebake the parchment every visit. */
+const parchmentCache = new Map<number, string>();
+
+function parchmentSize(inline: boolean): number {
+  const narrow =
+    typeof window !== "undefined" &&
+    Math.min(window.innerWidth, window.innerHeight) < 720;
+  if (inline) return narrow ? MAP_TEXTURE_MOBILE : MAP_TEXTURE_INLINE;
+  return narrow ? MAP_TEXTURE_INLINE : MAP_TEXTURE_SIZE;
+}
 
 /**
  * What is drawn at what magnification.
@@ -169,7 +182,10 @@ export function WorldMap({
   inline?: boolean;
   onSelect?: (place: MapPlace) => void;
 }) {
-  const [texture, setTexture] = useState<string | null>(null);
+  const [texture, setTexture] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return parchmentCache.get(parchmentSize(inline)) ?? null;
+  });
   const [hovered, setHovered] = useState<MapPlace | null>(null);
   const [picked, setPicked] = useState<MapPlace | null>(null);
   const [travelling, setTravelling] = useState<string | null>(null);
@@ -189,6 +205,7 @@ export function WorldMap({
   const stageRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ id: number; x: number; y: number; moved: boolean } | null>(null);
+  const pinchRef = useRef<{ dist: number; zoom: number } | null>(null);
   const [zoomLabel, setZoomLabel] = useState(1);
 
   const applyView = useCallback(() => {
@@ -277,21 +294,93 @@ export function WorldMap({
     return () => stage.removeEventListener("wheel", onWheel);
   }, [open, zoomAt, texture]);
 
-  // Bake lazily, and only once the map is first opened — the parchment costs a
-  // relief sample of the whole world and most visitors never open it.
+  // Bake lazily once per size — cached across remounts so section switches
+  // back to Places don't stall on a second parchment render.
   useEffect(() => {
     if (!open || texture) return;
     let cancelled = false;
-    // Off the click's own frame, so opening the map is never a janky button.
     const handle = requestAnimationFrame(() => {
-      const canvas = bakeMap(MAP_TEXTURE_SIZE);
-      if (!cancelled) setTexture(canvas.toDataURL("image/png"));
+      const size = parchmentSize(inline);
+      const cached = parchmentCache.get(size);
+      if (cached) {
+        if (!cancelled) setTexture(cached);
+        return;
+      }
+      const canvas = bakeMap(size);
+      if (cancelled) return;
+      // JPEG is plenty for parchment and encodes much faster than PNG.
+      const url = canvas.toDataURL("image/jpeg", 0.82);
+      parchmentCache.set(size, url);
+      setTexture(url);
     });
     return () => {
       cancelled = true;
       cancelAnimationFrame(handle);
     };
-  }, [open, texture]);
+  }, [open, texture, inline]);
+
+  // Pinch-to-zoom for touch. Pointer pan still handles one-finger drag.
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage || !open) return;
+
+    const touchDist = (touches: TouchList) =>
+      Math.hypot(
+        touches[0].clientX - touches[1].clientX,
+        touches[0].clientY - touches[1].clientY
+      );
+
+    const onTouchStart = (event: TouchEvent) => {
+      if (event.touches.length === 2) {
+        pinchRef.current = {
+          dist: Math.max(1, touchDist(event.touches)),
+          zoom: viewRef.current.zoom,
+        };
+        dragRef.current = null;
+      }
+    };
+
+    const onTouchMove = (event: TouchEvent) => {
+      if (event.touches.length !== 2 || !pinchRef.current) return;
+      event.preventDefault();
+      const dist = Math.max(1, touchDist(event.touches));
+      const next = Math.max(
+        MIN_ZOOM,
+        Math.min(MAX_ZOOM, pinchRef.current.zoom * (dist / pinchRef.current.dist))
+      );
+      const rect = stage.getBoundingClientRect();
+      const midX =
+        (event.touches[0].clientX + event.touches[1].clientX) / 2 - rect.left;
+      const midY =
+        (event.touches[0].clientY + event.touches[1].clientY) / 2 - rect.top;
+      const view = viewRef.current;
+      if (next === view.zoom) return;
+      const cx = midX - stage.clientWidth / 2;
+      const cy = midY - stage.clientHeight / 2;
+      const ratio = next / view.zoom;
+      view.x = cx - (cx - view.x) * ratio;
+      view.y = cy - (cy - view.y) * ratio;
+      view.zoom = next;
+      clampPan();
+      applyView();
+      setZoomLabel(next);
+    };
+
+    const onTouchEnd = (event: TouchEvent) => {
+      if (event.touches.length < 2) pinchRef.current = null;
+    };
+
+    stage.addEventListener("touchstart", onTouchStart, { passive: true });
+    stage.addEventListener("touchmove", onTouchMove, { passive: false });
+    stage.addEventListener("touchend", onTouchEnd);
+    stage.addEventListener("touchcancel", onTouchEnd);
+    return () => {
+      stage.removeEventListener("touchstart", onTouchStart);
+      stage.removeEventListener("touchmove", onTouchMove);
+      stage.removeEventListener("touchend", onTouchEnd);
+      stage.removeEventListener("touchcancel", onTouchEnd);
+    };
+  }, [open, applyView, clampPan, texture]);
 
   // Live Punaab token + screen-space labels. Labels sit OUTSIDE the zoomed
   // canvas so type is never CSS-scaled into mush at high magnification; their
@@ -539,7 +628,7 @@ export function WorldMap({
             <p>
               {MAP_PLACES.length} places ·{" "}
               {inline
-                ? "click a mark to open it · scroll to zoom, drag to pan"
+                ? "tap a mark · drag to pan · pinch to zoom"
                 : "click anywhere to send Punaab · scroll to zoom, drag to pan"}
             </p>
           </div>
@@ -713,7 +802,7 @@ export function WorldMap({
           ) : (
             <span className="pg-map-hint">
               {inline
-                ? "Click a mark to read it. Drag to pan, scroll to zoom."
+                ? "Tap a mark to read it. Drag to pan, pinch to zoom."
                 : "Click a mark or open ground to send Punaab. Esc closes."}
             </span>
           )}

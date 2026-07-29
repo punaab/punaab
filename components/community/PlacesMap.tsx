@@ -52,9 +52,24 @@ export function PlacesMap({
   );
   const [selected, setSelected] = useState<MapPlace | null>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
+  // Pan / pinch should never count as "propose a place".
+  const gestureRef = useRef({ x: 0, y: 0, moved: false });
+
+  const handlePointerDown = useCallback((event: React.PointerEvent) => {
+    if (event.button !== 0) return;
+    gestureRef.current = { x: event.clientX, y: event.clientY, moved: false };
+  }, []);
+
+  const handlePointerMove = useCallback((event: React.PointerEvent) => {
+    const g = gestureRef.current;
+    if (g.moved) return;
+    if (Math.hypot(event.clientX - g.x, event.clientY - g.y) > 6) {
+      g.moved = true;
+    }
+  }, []);
 
   /**
-   * Turns a click on the parchment into world coordinates.
+   * Turns a tap on the parchment into world coordinates.
    *
    * Read off the transformed canvas rather than the frame, so it stays correct
    * at any zoom or pan — the canvas element *is* the map's coordinate space, so
@@ -62,8 +77,10 @@ export function PlacesMap({
    */
   const handleSheetClick = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
+      if (gestureRef.current.moved) return;
       // Clicks that landed on a pin are the pin's business.
       if ((event.target as HTMLElement).closest(".pg-pin")) return;
+      if ((event.target as HTMLElement).closest(".pg-map-zoom")) return;
       const canvas = sheetRef.current?.querySelector(".pg-map-canvas");
       if (!canvas) return;
 
@@ -84,7 +101,13 @@ export function PlacesMap({
   const region = selected ? regionAt(selected.x, selected.z) : null;
 
   return (
-    <div className="pg-places" ref={sheetRef} onClick={handleSheetClick}>
+    <div
+      className="pg-places"
+      ref={sheetRef}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onClick={handleSheetClick}
+    >
       <WorldMap
         open
         inline
@@ -161,13 +184,13 @@ export function PlacesMap({
           </>
         ) : selected ? (
           <span>
-            Selected <strong>{selected.name}</strong>. Click open ground to
+            Selected <strong>{selected.name}</strong>. Tap open ground to
             propose somewhere new, or another mark to switch.
           </span>
         ) : (
           <span>
-            {MAP_PLACES.length} known places. Click one to read it, or click
-            open ground to propose a new one.
+            {MAP_PLACES.length} known places. Tap a mark to read it, or open
+            ground to propose a new one. Drag to pan, pinch to zoom.
           </span>
         )}
       </div>

@@ -2132,7 +2132,6 @@ body:has(.bard-world.is-immersive) { overflow: hidden; }
   .hero-stage-merch {
     width: 100%;
     max-width: min(100%, 28rem);
-    order: -1;
   }
   .hero-copy {
     width: 100%;
@@ -3875,6 +3874,38 @@ body:has(.punaab-overlay-root) {
   background: rgba(255, 255, 255, 0.72);
   padding: 0.45rem 0.55rem; color: var(--ink);
 }
+.lore-search {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex: 1 1 14rem;
+  min-width: 11rem;
+  max-width: 22rem;
+  font-family: var(--font-display); font-size: 0.78rem; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase;
+}
+.lore-search-label { flex: 0 0 auto; }
+.lore-search input {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  font-family: var(--font-sans); font-size: 0.9rem; font-weight: 600;
+  letter-spacing: 0; text-transform: none;
+  border: 2px solid var(--ink); border-radius: 3px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 0.45rem 2rem 0.45rem 0.55rem; color: var(--ink);
+}
+.lore-search input:focus-visible {
+  outline: 2px solid var(--border-gold); outline-offset: 1px;
+}
+.lore-search-clear {
+  position: absolute; right: 0.35rem; top: 50%; transform: translateY(-50%);
+  border: 0; background: transparent; cursor: pointer;
+  font-size: 1.1rem; line-height: 1; color: var(--muted);
+  padding: 0.2rem 0.35rem;
+}
+.lore-search-clear:hover { color: var(--ink); }
 .lore-sort {
   display: inline-flex; padding: 0.2rem;
   background: rgba(21, 34, 56, 0.06);
@@ -4539,6 +4570,17 @@ body:has(.punaab-overlay-root) {
 .pg-map-panel.is-inline .pg-map-sheet {
   /* Tall enough to be worth panning, capped so it never eats the viewport. */
   height: min(76vh, 54rem); flex: 0 0 auto;
+}
+
+@media (max-width: 720px) {
+  .pg-map-panel.is-inline .pg-map-sheet {
+    /* Square chart ≈ full map: height tracks the available width, not 76vh. */
+    height: min(calc(100vw - 2rem), 22rem);
+    max-height: 22rem;
+  }
+  .pg-places .pg-map-panel.is-inline .pg-map-head p {
+    font-size: 0.74rem;
+  }
 }
 
 .pg-map-foot {

@@ -12,6 +12,7 @@ music and models are static files under `public/`.
 3. `003_gold_players.sql` — gold balances/ledger, player characters
 4. `004_lore_edits.sql` — `pending_revision` for accepted-entry edits
 5. `005_leaderboard_seeds.sql` — unique traveler names + showcase gold board
+6. `006_lore_search.sql` — Postgres FTS (`search_vector` + GIN) for World search
 
 Chart places from PIXELGREW are seeded into `community_lore` (category
 `places`) at runtime via `ensureMapPlaceLore` when `/world/places` loads —

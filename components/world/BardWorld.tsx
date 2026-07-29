@@ -29,14 +29,6 @@ import { Flora } from "./Flora";
 import { FollowCamera } from "./FollowCamera";
 import { NPCs } from "./NPCs";
 import { SpeechBubble, type BubbleKind } from "./SpeechBubble";
-import { WorldMap } from "./WorldMap";
-import { findPlace } from "@/lib/world/cartography";
-import { Terrain } from "./Terrain";
-import { Water } from "./Water";
-import { ensureWorldColliders } from "@/lib/world/world-colliders";
-import { daylight } from "@/lib/world/daylight";
-import { ValleyLoader } from "@/components/marketing/ValleyLoader";
-
 import {
   AdventureDirector,
   SONG_INTRO_LINES,
@@ -51,6 +43,12 @@ import {
 } from "@/lib/bard/performance";
 import { walkAmbience } from "@/lib/bard/walk-ambience";
 import { budgetFor, detectQuality, type QualityBudget } from "@/lib/world/quality";
+import { WorldMap } from "./WorldMap";
+import { Terrain } from "./Terrain";
+import { Water } from "./Water";
+import { ensureWorldColliders } from "@/lib/world/world-colliders";
+import { daylight } from "@/lib/world/daylight";
+import { ValleyLoader } from "@/components/marketing/ValleyLoader";
 
 /**
  * The hero scene: Punaab travelling a fantasy valley, followed by a camera,
@@ -60,7 +58,7 @@ import { budgetFor, detectQuality, type QualityBudget } from "@/lib/world/qualit
  * position, pluck triggers, activity — lives in refs and never touches React,
  * because a `setState` at 60fps would re-render the scene graph 60 times a
  * second. Only things that change every few *seconds* (the bubble text, the
- * caption, the audio toggle) are React state.
+ * audio toggle) are React state.
  */
 
 type Bubble = { text: string; kind: BubbleKind } | null;
@@ -75,7 +73,6 @@ function Scene({
   playingMusic,
   activity,
   bubble,
-  onActivityChange,
   sampleMusic,
   enrichWorld,
   onCoreReady,
@@ -89,7 +86,6 @@ function Scene({
   playingMusic: React.RefObject<boolean>;
   activity: React.RefObject<Activity>;
   bubble: Bubble;
-  onActivityChange: (activity: Activity) => void;
   sampleMusic: React.RefObject<() => MusicLevels>;
   /** Trees, buildings, NPCs — mounted after the loader dismisses. */
   enrichWorld: boolean;
@@ -107,18 +103,13 @@ function Scene({
   // floating architecture graph alive across edits.
   const worldRev = 10;
 
-  const lastActivity = useRef<Activity>("travelling");
   const bloomRef = useRef<BloomEffect>(null);
 
   const handleFrame = useCallback(
     (_position: THREE.Vector3, next: Activity) => {
       activity.current = next;
-      if (next !== lastActivity.current) {
-        lastActivity.current = next;
-        onActivityChange(next);
-      }
     },
-    [activity, onActivityChange]
+    [activity]
   );
 
   return (
@@ -199,7 +190,8 @@ function Scene({
             </EffectComposer>
           )}
 
-          <Preload all />
+          {/* Full Preload on phones can hitch for seconds after first paint. */}
+          {budget.tier !== "low" && <Preload all />}
         </>
       )}
 
@@ -257,7 +249,6 @@ export function BardWorld() {
   const [currentPlaceId, setCurrentPlaceId] = useState<string | null>(null);
   const [nowPlaying, setNowPlaying] = useState<string | null>(null);
   const [nowPlayingOverflows, setNowPlayingOverflows] = useState(false);
-  const [caption, setCaption] = useState("Punaab is on the road.");
   // Paint the medieval loader for a frame before mounting WebGL + flora bake,
   // otherwise the stage just sits black while the main thread is busy.
   const [bootScene, setBootScene] = useState(false);
@@ -279,7 +270,6 @@ export function BardWorld() {
   const audioOnRef = useRef(false);
   const lyricLine = useRef<string[]>([]);
   const bubbleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const captionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     let outer = 0;
@@ -303,11 +293,13 @@ export function BardWorld() {
   }, []);
 
   // Core (bard + grass) is up — dismiss the loader, then stream in the rest.
+  // Phones get a longer breather before canopy / buildings / NPCs mount.
   useEffect(() => {
     if (!sceneReady) return;
-    const t = window.setTimeout(() => setEnrichWorld(true), 160);
+    const delay = budget.tier === "low" ? 480 : 160;
+    const t = window.setTimeout(() => setEnrichWorld(true), delay);
     return () => window.clearTimeout(t);
-  }, [sceneReady]);
+  }, [sceneReady, budget.tier]);
 
   const performance = useMemo(() => new BardPerformance(), []);
   const sampleMusic = useRef<() => MusicLevels>(() => EMPTY_MUSIC_LEVELS);
@@ -338,27 +330,17 @@ export function BardWorld() {
     },
     onArrive: (stop: Stop) => {
       setCurrentPlaceId(stop.id);
-      setCaption(captionFor(stop));
-      if (captionTimer.current) clearTimeout(captionTimer.current);
-      // Keep the stop caption for most of the dwell so it isn't a flash.
-      const lingerMs = Math.max(12_000, (stop.dwell || 14) * 900);
-      captionTimer.current = setTimeout(() => {
-        setCaption("Punaab is on the road.");
-      }, lingerMs);
       if (audioOnRef.current && stop.songId) {
         // One random track from the repertoire — never a fixed setlist.
         void performance.play();
       }
     },
-    onTrade: (_waresTag, stop) => {
-      setCaption(`Punaab is trading at ${stop.name}.`);
-    },
+    onTrade: () => {},
     onLore: (_loreId, stop) => {
       say(`Something worth remembering at ${stop.name}.`, "thought");
     },
     onDepart: () => {
       setCurrentPlaceId(null);
-      setCaption("Punaab is on the road.");
     },
   };
 
@@ -427,9 +409,13 @@ export function BardWorld() {
           break;
         case "song-end":
           playingMusic.current = false;
-          setNowPlaying(null);
           singing.current = false;
           lyricLine.current = [];
+          // Song finished (or faded out on stop) — return the control to its
+          // default so the visitor can start another without hunting for Stop.
+          audioOnRef.current = false;
+          setAudioOn(false);
+          setNowPlaying(null);
           setBubble(null);
           break;
       }
@@ -440,7 +426,6 @@ export function BardWorld() {
   useEffect(() => {
     return () => {
       if (bubbleTimer.current) clearTimeout(bubbleTimer.current);
-      if (captionTimer.current) clearTimeout(captionTimer.current);
       performance.dispose();
     };
   }, [performance]);
@@ -570,10 +555,6 @@ export function BardWorld() {
     void performance.play();
   }, [audioOn, performance]);
 
-  const handleActivityChange = useCallback((next: Activity) => {
-    if (next === "travelling") setCaption("Punaab is on the road.");
-  }, []);
-
   return (
     <div
       ref={stageRef}
@@ -582,13 +563,15 @@ export function BardWorld() {
     >
       {bootScene && (
         <Canvas
-          shadows
+          shadows={budget.shadows}
           dpr={budget.dpr}
           camera={{ position: [8, 6, 14], fov: 46, near: 0.3, far: 620 }}
           gl={{
-            antialias: !budget.postprocessing,
+            antialias: !budget.postprocessing && budget.tier !== "low",
             alpha: false,
-            powerPreference: "high-performance",
+            powerPreference: budget.tier === "low" ? "low-power" : "high-performance",
+            stencil: false,
+            depth: true,
           }}
           onCreated={({ gl, scene }) => {
             // ACES is the standard film response curve; it rolls off highlights
@@ -596,7 +579,9 @@ export function BardWorld() {
             // photographic rather than as a screenshot of a game engine.
             gl.toneMapping = THREE.ACESFilmicToneMapping;
             gl.toneMappingExposure = 1.18;
-            gl.shadowMap.type = THREE.PCFSoftShadowMap;
+            if (budget.shadows) {
+              gl.shadowMap.type = THREE.PCFSoftShadowMap;
+            }
             // Match the stage frame so a brief loader gap never flashes black.
             gl.setClearColor("#4aa3e8", 1);
             scene.background = null;
@@ -613,7 +598,6 @@ export function BardWorld() {
               playingMusic={playingMusic}
               activity={activity}
               bubble={uiHidden ? null : bubble}
-              onActivityChange={handleActivityChange}
               sampleMusic={sampleMusic}
               enrichWorld={enrichWorld}
               onCoreReady={handleSceneReady}
@@ -632,7 +616,6 @@ export function BardWorld() {
 
       {!showLoader && !uiHidden && (
         <>
-          <div className="bard-world-caption">{caption}</div>
           <div className="bard-world-chrome">
             <button
               type="button"
@@ -779,51 +762,11 @@ export function BardWorld() {
             onClose={() => setMapOpen(false)}
             currentPlaceId={currentPlaceId}
             getBardPosition={getBardPosition}
-            onTravel={(placeId) => {
-              const dispatched = director.travelTo(placeId);
-              if (dispatched) {
-                // Say where he is headed straight away. The walk itself can be
-                // minutes long, so without this the map closes and apparently
-                // nothing happens.
-                const place = findPlace(placeId);
-                if (place) setCaption(`Punaab sets out for ${place.name}.`);
-              }
-              return dispatched;
-            }}
-            onTravelPoint={(x, z) => {
-              const dispatched = director.travelToPoint(x, z);
-              if (dispatched) {
-                const name = director.current.destination?.name;
-                setCaption(
-                  name
-                    ? `Punaab sets out for ${name}.`
-                    : "Punaab sets out for the place you marked."
-                );
-              }
-              return dispatched;
-            }}
+            onTravel={(placeId) => director.travelTo(placeId)}
+            onTravelPoint={(x, z) => director.travelToPoint(x, z)}
           />
         </>
       )}
     </div>
   );
-}
-
-function captionFor(stop: Stop): string {
-  switch (stop.activity) {
-    case "trading":
-      return `Punaab is trading at ${stop.name}.`;
-    case "talking":
-      return `Punaab is talking with folks at ${stop.name}.`;
-    case "resting":
-      return `Punaab is resting at ${stop.name}.`;
-    case "performing":
-      return `Punaab is playing at ${stop.name}.`;
-    case "discovering":
-      return `Punaab discovered ${stop.name}.`;
-    case "wondering":
-      return `Punaab is taking in ${stop.name}.`;
-    default:
-      return `Punaab stopped at ${stop.name}.`;
-  }
 }

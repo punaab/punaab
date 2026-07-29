@@ -461,6 +461,59 @@ export function bakeGrassGround(size: number): GrassGround {
     }
   }
 
+  if (process.env.NODE_ENV !== "production") {
+    // How far the blades will actually sit off the ground, measured rather than
+    // assumed. Floating grass has now been introduced twice by changes nowhere
+    // near this file, and both times it was argued about before it was measured.
+    //
+    // The lattice points themselves are exact — they *are* `drawnHeightAt`.
+    // What matters is the bilinear interpolation between them, which is what
+    // the shader reads, and which is free to stray from the mesh in between.
+    // A positive error is the field sitting above the terrain, which is the
+    // one that shows: blades hover with daylight under them.
+    let worst = 0;
+    let worstAbove = 0;
+    let sum = 0;
+    const SAMPLES = 4000;
+    for (let s = 1; s <= SAMPLES; s++) {
+      // R2 low-discrepancy sequence — covers the valley far more evenly than
+      // random sampling, and gives the same answer every run so the number can
+      // be compared across builds.
+      const x = -HALF_WORLD + ((s * 0.7548776662) % 1) * WORLD_SIZE;
+      const z = -HALF_WORLD + ((s * 0.5698402909) % 1) * WORLD_SIZE;
+
+      // Exactly the lookup the vertex shader does: UV to texel centres, then
+      // bilinear. Anything else here would measure a field nobody reads.
+      const fx = ((x + HALF_WORLD) / WORLD_SIZE) * size - 0.5;
+      const fz = ((z + HALF_WORLD) / WORLD_SIZE) * size - 0.5;
+      const i0 = Math.floor(fx);
+      const j0 = Math.floor(fz);
+      const tx = fx - i0;
+      const tz = fz - j0;
+      const at = (i: number, j: number) =>
+        height[
+          Math.min(size - 1, Math.max(0, j)) * size +
+            Math.min(size - 1, Math.max(0, i))
+        ];
+      const sampled =
+        at(i0, j0) * (1 - tx) * (1 - tz) +
+        at(i0 + 1, j0) * tx * (1 - tz) +
+        at(i0, j0 + 1) * (1 - tx) * tz +
+        at(i0 + 1, j0 + 1) * tx * tz;
+
+      const error = sampled - drawnHeightAt(x, z);
+      sum += Math.abs(error);
+      if (Math.abs(error) > worst) worst = Math.abs(error);
+      if (error > worstAbove) worstAbove = error;
+    }
+    console.info(
+      `[punaab] grass footing: lattice ${size}² over ${WORLD_SIZE}m ` +
+        `(${(WORLD_SIZE / size).toFixed(2)}m/texel) — ` +
+        `mean |error| ${(sum / SAMPLES).toFixed(3)}m, worst ${worst.toFixed(3)}m, ` +
+        `worst float ${worstAbove.toFixed(3)}m (blades are planted 0.11m down)`
+    );
+  }
+
   // --- the coarse biome fields ---
   const coarse = Math.max(4, size >> 3);
   const nodes = coarse + 1;

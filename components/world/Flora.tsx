@@ -15,7 +15,7 @@ import {
   heightAt,
 } from "@/lib/world/terrain";
 import { biomeWeights, type BiomeId } from "@/lib/world/regions";
-import { daylight } from "@/lib/world/daylight";
+import { daylight, REFERENCE_SUN_INTENSITY } from "@/lib/world/daylight";
 import {
   barkFields,
   makeFoliageAlpha,
@@ -2729,6 +2729,30 @@ function grassVertexShader(index: number, ring: GrassRing, density: number): str
       ) );
       float sky = 0.5 + 0.5 * n.y;
       float sun = max( dot( n, uSun ), 0.0 );
+
+      // --- Distance settling -------------------------------------------
+      //
+      // Every blade takes its own yaw, so every blade catches the sun
+      // differently: this term runs 0.0 to 0.65 between neighbours, two and a
+      // half times its own mean. Underfoot that spread *is* the meadow — it is
+      // what makes a gust visibly travel across the field.
+      //
+      // Past twenty metres a blade is thinner than a pixel, and then the
+      // spread stops being texture and becomes noise: whichever blade happens
+      // to win the depth test decides that pixel, and it wins a different one
+      // next frame as the camera drifts. That is the sparkle — a field of
+      // specks twinkling in the middle distance.
+      //
+      // Converging on the field mean with distance means it no longer matters
+      // which blade wins, because they all say nearly the same thing out
+      // there. The mean is measured, not guessed, so the meadow's overall
+      // brightness does not shift as it recedes.
+      //
+      // Only the sun term needs it. The sky term is built from n.y, which is
+      // the same for every blade whatever its yaw, so it carries no variance.
+      float viewDist = distance( pos, cameraPosition );
+      float settle = smoothstep( 18.0, 62.0, viewDist );
+      sun = mix( sun, 0.261, settle );
       // Roots sit in their own shade. Without this the sward is flat and the
       // field reads as a painted plane however many blades are standing in it.
       float ao = 0.34 + 0.66 * t * t;
@@ -3594,11 +3618,21 @@ export function Flora({
       // so the reference frame of the palette is unchanged and only the *time*
       // moves. Key direction rather than sun direction, so blades catch a rim
       // from the moon after dark instead of from a sun that has set.
+      //
+      // The key is normalised against `REFERENCE_SUN_INTENSITY` rather than a
+      // literal, because that is precisely the sun the 1.2 was chosen under: at
+      // the reference hour the division cancels and the meadow is lit exactly
+      // as it was authored. A hardcoded number here could silently fall out of
+      // step with the curve in `daylight.ts` and dim the whole meadow — which
+      // is what happened the first time.
       const lighting = built.meadow.uniforms;
       lighting.uSun.value.copy(daylight.keyDir);
       lighting.uSunColour.value
         .copy(daylight.keyColor)
-        .multiplyScalar(1.2 * Math.max(0.06, daylight.keyIntensity / 2.15));
+        .multiplyScalar(
+          1.2 *
+            Math.max(0.06, daylight.keyIntensity / REFERENCE_SUN_INTENSITY)
+        );
       lighting.uSkyColour.value.copy(daylight.hemiSky).multiplyScalar(0.7);
       lighting.uGroundColour.value.copy(daylight.hemiGround).multiplyScalar(0.4);
 
