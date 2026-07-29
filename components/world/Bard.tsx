@@ -128,6 +128,10 @@ const LANTERN_DECAY = 1.75;
  * the pack is exactly where the light would be. A short outrigger stands it off
  * far enough that the glow falls on the pack rather than inside it.
  *
+ * `LANTERN_ARM_CM` is only the length *past* the pack's outer flank. The stick
+ * itself is longer: it is rooted in the middle of the bag so the pole reads as
+ * lashed through the canvas, not floating off the side.
+ *
  * Bone-local centimetres, like everything else in this block.
  */
 const LANTERN_ARM_CM = 6.5;
@@ -180,7 +184,26 @@ function buildLantern(
   hook.name = "LanternHook";
   // Mount space is turned 180° about Y so the pack faces out of his back, which
   // flips X with it: +X here is his right.
-  hook.position.set(packBox.max.x * 1.02, packBox.max.y * 0.62, packBox.max.z * 0.45);
+  //
+  // Root the stick in the *middle* of the pack — centre X and Z, a little above
+  // mid-height so the pole reads as lashed through the canvas rather than glued
+  // onto the outer face. The tip still clears the flank by `LANTERN_ARM_CM`.
+  const packMidX = (packBox.min.x + packBox.max.x) * 0.5;
+  const packMidZ = (packBox.min.z + packBox.max.z) * 0.5;
+  const packMountY = THREE.MathUtils.lerp(
+    (packBox.min.y + packBox.max.y) * 0.5,
+    packBox.max.y,
+    0.28
+  );
+  hook.position.set(packMidX, packMountY, packMidZ);
+
+  // Reach from the pack's heart out past the right flank, then the outrigger.
+  const outward =
+    packBox.max.x - packMidX + LANTERN_ARM_CM * Math.cos(LANTERN_ARM_RISE);
+  const armLength = Math.max(
+    LANTERN_ARM_CM,
+    outward / Math.max(0.2, Math.cos(LANTERN_ARM_RISE))
+  );
 
   // The outrigger. Rigid, so it belongs to the hook and not to the swing group
   // — it is lashed to the pack and moves with it, and only what hangs *off* its
@@ -190,11 +213,11 @@ function buildLantern(
     Math.sin(LANTERN_ARM_RISE),
     0
   );
-  const armGeometry = new THREE.CylinderGeometry(0.3, 0.42, LANTERN_ARM_CM, 4);
+  const armGeometry = new THREE.CylinderGeometry(0.3, 0.42, armLength, 4);
   // Cylinders are built centred on the origin and running along +Y. Shifting it
   // up by half its length puts its base at the pivot, so the tilt below rotates
   // it about the point where it meets the pack rather than about its middle.
-  armGeometry.translate(0, LANTERN_ARM_CM * 0.5, 0);
+  armGeometry.translate(0, armLength * 0.5, 0);
   // Tip +Y over onto `armDir`: a rotation of θ about Z sends +Y to
   // (−sin θ, cos θ, 0), so θ = −(π/2 − rise) lands it on (cos rise, sin rise, 0).
   armGeometry.rotateZ(-(Math.PI / 2 - LANTERN_ARM_RISE));
@@ -215,7 +238,7 @@ function buildLantern(
   const swing = new THREE.Group();
   swing.name = "LanternSwing";
   // Hangs from the far end of the stick, not from the pack.
-  swing.position.copy(armDir).multiplyScalar(LANTERN_ARM_CM);
+  swing.position.copy(armDir).multiplyScalar(armLength);
   hook.add(swing);
 
   const drop = LANTERN_CORD_CM;

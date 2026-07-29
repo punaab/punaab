@@ -38,7 +38,7 @@ export default async function ProjectDetailPage({
           <ol>
             <li>Generate an API key below</li>
             <li>
-              <Link href="/dashboard/downloads">Download Godot plugin</Link>
+              <Link href="/models">Download free models</Link>
             </li>
             <li>
               <Link href={`/dashboard/character/${id}`}>Configure Punaab</Link>

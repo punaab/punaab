@@ -31,6 +31,7 @@ import {
   type LeafKind,
 } from "@/lib/world/foliage";
 import type { QualityBudget } from "@/lib/world/quality";
+import { drawnHeightAt } from "@/lib/world/surfaces";
 import { GHIBLI, ghibliSunDirection } from "@/lib/world/ghibli-palette";
 import {
   GRASS_BLADE_HEIGHT,
@@ -1182,8 +1183,8 @@ function buildTrunk(spec: TreeSpec, detail: boolean): {
   // trunk a one-in-two slope drops half a metre, so one side of the flare
   // hangs in the air. Sinking the first ring costs four triangles and is the
   // difference between a tree standing in the ground and standing on it.
-  stem.unshift(new THREE.Vector3(0, -Math.max(0.35, spec.trunkRadius * 1.3), 0));
-  radii.unshift(radii[0] * 1.3);
+  stem.unshift(new THREE.Vector3(0, -Math.max(0.55, spec.trunkRadius * 1.55), 0));
+  radii.unshift(radii[0] * 1.35);
 
   addTube(b, stem, radii, sides, bark, 1);
 
@@ -1943,6 +1944,12 @@ type ScatterOptions = {
   minWaterDistance: number;
   scale: [number, number];
   lean: number;
+  /**
+   * How far below the *drawn* ground the plant's origin sits. Convex LOD
+   * triangles cut under `heightAt`, so zero bury leaves trunks hovering;
+   * trees want a deeper sink than grass so hillside flare never floats.
+   */
+  bury?: number;
 };
 
 function distanceToWater(x: number, z: number): number {
@@ -1998,6 +2005,7 @@ function placeClump(
     options.minRoadDistance,
     ROAD_HALF_WIDTH + 0.85
   );
+  const bury = options.bury ?? 0.06;
 
   for (let k = 0; k < options.clump; k++) {
     const key = index * 31 + k;
@@ -2006,19 +2014,20 @@ function placeClump(
     const radius = Math.sqrt(hash2(key * 5, options.seed + key)) * options.clumpRadius;
     const ox = Math.cos(angle) * radius;
     const oz = Math.sin(angle) * radius;
-    if (distanceToRoad(cx + ox, cz + oz) < memberRoadClear) continue;
+    const mx = cx + ox;
+    const mz = cz + oz;
+    if (distanceToRoad(mx, mz) < memberRoadClear) continue;
 
     results.push({
-      x: cx + ox,
-      // The clump's own gradient carries each member to its own height. Sink a
-      // touch so plants meet the drawn LOD mesh (which sits below heightAt
-      // between vertices) instead of hovering a centimetre above it.
-      y:
-        groundScratch.y +
-        groundScratch.dydx * ox +
-        groundScratch.dydz * oz -
-        0.025,
-      z: cz + oz,
+      x: mx,
+      // Root on the drawn LOD surface, not the smooth height function — on
+      // convex ground the mesh cuts the corner and sits below `heightAt`,
+      // which is why trees planted on the function float. Sample each
+      // member: a ten-metre clump's linear gradient from the centre is
+      // already wrong on a ridge. Then bury so flare and lean never leave
+      // a gap above the dirt.
+      y: drawnHeightAt(mx, mz) - bury,
+      z: mz,
       scale: lerp(
         options.scale[0],
         options.scale[1],
@@ -3202,6 +3211,9 @@ export function Flora({
         // Trees stand up to the hill. One lying along the slope the way
         // heather does reads as a felled one.
         lean: 0.2,
+        // Deep enough that flare + hillside lean never leave daylight under
+        // the trunk — a shallow bury still floats on coarse LOD ridges.
+        bury: 0.32,
       });
       if (items.length === 0) continue;
 
@@ -3328,6 +3340,7 @@ export function Flora({
         minWaterDistance: spec.minWaterDistance,
         scale: spec.scale,
         lean: spec.lean,
+        bury: 0.1,
       });
       if (items.length === 0) return;
 
@@ -3568,6 +3581,7 @@ export function Flora({
           scale: [0.3, 1.7],
           // Boulders sit *in* the hill, not on top of it.
           lean: 0.9,
+          bury: 0.18,
         });
         if (items.length === 0) continue;
 

@@ -7,6 +7,6 @@ export const FEATURES = [
 
 export const DASHBOARD_NAV = [
   { href: "/dashboard", label: "Overview" },
-  { href: "/dashboard/character", label: "Character" },
-  { href: "/dashboard/downloads", label: "Downloads" },
+  { href: "/dashboard/ledger", label: "Ledger" },
+  { href: "/dashboard/rewards", label: "Rewards" },
 ] as const;

@@ -2,14 +2,14 @@ import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { PlayerStudio } from "@/components/dashboard/PlayerStudio";
 
 export const metadata = {
-  title: "Create character · Punaab",
+  title: "Ledger · Punaab",
 };
 
-export default function PlayerCharacterPage() {
+export default function LedgerPage() {
   return (
     <DashboardShell
-      title="Character & purse"
-      subtitle="Name your traveler, check the gold wallet, and invite friends to the road."
+      title="Ledger"
+      subtitle="Check the gold in your wallet, update your passport, and earn."
       primaryAction={null}
     >
       <PlayerStudio />

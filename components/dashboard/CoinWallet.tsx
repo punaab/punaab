@@ -6,13 +6,13 @@ type CoinWalletProps = {
   referralRate?: number;
   inviteCount?: number | null;
   loading?: boolean;
-  /** Compact for grids; full for character page. */
+  /** Compact for grids; full for ledger page. */
   size?: "full" | "compact";
   footer?: ReactNode;
 };
 
 /**
- * Shared medieval coin-purse / wallet used on Overview and Character.
+ * Shared medieval coin-purse / wallet used on Overview and Ledger.
  */
 export function CoinWallet({
   balance,

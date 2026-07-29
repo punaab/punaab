@@ -1,15 +1,14 @@
 import Link from "next/link";
-import Image from "next/image";
-import { UserButton } from "@clerk/nextjs";
-import { DASHBOARD_NAV } from "@/lib/nav";
+import { MarketingShell } from "@/components/marketing/MarketingShell";
+import { GuildNav } from "@/components/dashboard/GuildNav";
 
 export function DashboardShell({
   children,
   title,
   subtitle,
   primaryAction = {
-    href: "/dashboard/character",
-    label: "Create character",
+    href: "/dashboard/ledger",
+    label: "OPEN LEDGER",
   },
 }: {
   children: React.ReactNode;
@@ -18,44 +17,42 @@ export function DashboardShell({
   primaryAction?: { href: string; label: string } | null;
 }) {
   return (
-    <div className="dash-root">
-      <aside className="dash-sidebar">
-        <Link href="/" className="brand">
-          <Image
-            src="/assets/solana.png"
-            alt="Punaab"
-            width={36}
-            height={36}
-            className="brand-mark"
-          />
-          <span className="brand-text">Punaab</span>
-        </Link>
-        <nav className="dash-nav">
-          {DASHBOARD_NAV.map((item) => (
-            <Link key={item.href} href={item.href}>
-              {item.label}
-            </Link>
-          ))}
-        </nav>
-        <div className="dash-sidebar-foot">
-          <UserButton />
-          <Link href="/account">Profile</Link>
+    <MarketingShell>
+      <div className="guild-hall">
+        <div className="guild-hall-atmosphere" aria-hidden="true">
+          <span className="guild-hall-glow guild-hall-glow-a" />
+          <span className="guild-hall-glow guild-hall-glow-b" />
+          <span className="guild-hall-motif">✦</span>
         </div>
-      </aside>
-      <div className="dash-main">
-        <header className="dash-top">
-          <div>
-            <h1>{title}</h1>
-            {subtitle ? <p>{subtitle}</p> : null}
+
+        <GuildNav />
+
+        <header className="guild-hall-hero">
+          <div className="guild-hall-hero-frame">
+            <span className="guild-hall-corner guild-hall-corner-tl" aria-hidden="true" />
+            <span className="guild-hall-corner guild-hall-corner-tr" aria-hidden="true" />
+            <span className="guild-hall-corner guild-hall-corner-bl" aria-hidden="true" />
+            <span className="guild-hall-corner guild-hall-corner-br" aria-hidden="true" />
+
+            <p className="guild-hall-eyebrow">
+              <span aria-hidden="true">❧</span> Guild hall <span aria-hidden="true">❧</span>
+            </p>
+            <div className="guild-hall-hero-row">
+              <div className="guild-hall-copy">
+                <h1>{title}</h1>
+                {subtitle ? <p>{subtitle}</p> : null}
+              </div>
+              {primaryAction ? (
+                <Link href={primaryAction.href} className="btn primary btn-glow guild-hall-cta">
+                  {primaryAction.label}
+                </Link>
+              ) : null}
+            </div>
           </div>
-          {primaryAction ? (
-            <Link href={primaryAction.href} className="btn primary">
-              {primaryAction.label}
-            </Link>
-          ) : null}
         </header>
-        <div className="dash-content">{children}</div>
+
+        <div className="guild-hall-content">{children}</div>
       </div>
-    </div>
+    </MarketingShell>
   );
 }

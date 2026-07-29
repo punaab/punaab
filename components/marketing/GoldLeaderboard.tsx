@@ -109,21 +109,26 @@ export function GoldLeaderboard() {
 
       {showCreate && (
         <div className="gold-board-empty-card">
-          <p>Create your character to start earning your place on the board.</p>
-          <SiteLink className="btn primary" href="/dashboard/character">
-            Create your character
+          <p>Open your ledger to start earning your place on the board.</p>
+          <SiteLink className="btn primary" href="/dashboard/ledger">
+            Open ledger
           </SiteLink>
         </div>
       )}
 
       <div className="gold-board-actions">
         {hasCharacter === true && (
-          <SiteLink className="btn soft" href="/dashboard/character">
-            Open wallet &amp; invites
+          <SiteLink className="btn soft" href="/dashboard/ledger">
+            Open ledger
+          </SiteLink>
+        )}
+        {hasCharacter === true && (
+          <SiteLink className="btn soft" href="/dashboard/rewards">
+            Invite scroll
           </SiteLink>
         )}
         <SiteLink className="btn soft" href="/archive">
-          Earn gold in World
+          Earn gold in Archive
         </SiteLink>
       </div>
     </section>

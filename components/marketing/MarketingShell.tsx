@@ -4,6 +4,7 @@ import { LoadingScreen } from "@/components/LoadingScreen";
 import { PumpTicker } from "@/components/marketing/PumpTicker";
 import { ReferralCapture } from "@/components/marketing/ReferralCapture";
 import { PoweredByPixelgrew } from "@/components/marketing/PoweredByPixelgrew";
+import { GuildCta } from "@/components/marketing/GuildCta";
 import { SiteLink } from "@/components/marketing/SiteLink";
 import { COMMUNITY } from "@/lib/community";
 
@@ -53,9 +54,7 @@ export function MarketingShell({
           </nav>
           <div className="mkt-actions">
             <AuthNav />
-            <SiteLink href="/world" className="btn primary btn-glow header-cta">
-              WORLD
-            </SiteLink>
+            <GuildCta />
           </div>
         </header>
         <PumpTicker />

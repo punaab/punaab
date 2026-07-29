@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { CoinWallet } from "@/components/dashboard/CoinWallet";
 
 type Character = {
@@ -13,9 +14,6 @@ type Character = {
 
 type Wallet = {
   balance: number;
-  referralCode: string | null;
-  invitePath: string | null;
-  inviteUrl: string | null;
   rates: { upvote: number; referral: number };
 };
 
@@ -30,7 +28,6 @@ export function PlayerStudio() {
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [walletLoading, setWalletLoading] = useState(true);
 
   useEffect(() => {
@@ -49,19 +46,12 @@ export function PlayerStudio() {
         }
         setWallet({
           balance: Number(goldData.balance ?? 0),
-          referralCode: goldData.referralCode ?? null,
-          invitePath: goldData.invitePath ?? null,
-          inviteUrl: goldData.inviteUrl ?? null,
           rates: goldData.rates ?? { upvote: 5, referral: 50 },
         });
       })
-      .catch(() => setStatus("Could not load your traveler."))
+      .catch(() => setStatus("Could not load your ledger."))
       .finally(() => setWalletLoading(false));
   }, []);
-
-  const inviteUrl =
-    wallet?.inviteUrl ??
-    (wallet?.invitePath ? `https://punaab.com${wallet.invitePath}` : null);
 
   async function save() {
     setBusy(true);
@@ -74,23 +64,12 @@ export function PlayerStudio() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Save failed");
-      setStatus("Character saved. Welcome to the road.");
+      setStatus("Passport updated. The guild records your name.");
       router.refresh();
     } catch (err) {
       setStatus(err instanceof Error ? err.message : "Save failed");
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function copyInvite() {
-    if (!inviteUrl) return;
-    try {
-      await navigator.clipboard.writeText(inviteUrl);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1800);
-    } catch {
-      setStatus("Could not copy — select the link and copy manually.");
     }
   }
 
@@ -103,18 +82,18 @@ export function PlayerStudio() {
         loading={walletLoading}
         footer={
           <p className="coin-wallet-hint">
-            Coins land here from Archive upvotes and friends who join with your
-            invite.
+            Gold from Archive upvotes and guild invites lands here. Share your
+            scroll on Rewards to earn more.
           </p>
         }
       />
 
       <article className="card player-traveler-card">
-        <p className="meta">Your traveler</p>
-        <h2>Name on the road</h2>
+        <p className="meta">Guild passport</p>
+        <h2>Update your papers</h2>
         <p className="player-studio-lead">
-          Shown on the World Earnings Board when you climb the ranks. Names must
-          be unique across the camp.
+          Your name on the Earnings Board and across the camp. Names must be
+          unique — no two travelers share a seal.
         </p>
         <div className="form-row">
           <label htmlFor="traveler-name">Name</label>
@@ -176,33 +155,56 @@ export function PlayerStudio() {
           onClick={() => void save()}
           disabled={busy || character.display_name.trim().length < 2}
         >
-          {busy ? "Saving…" : "Save character"}
+          {busy ? "Sealing…" : "Update passport"}
         </button>
         {status ? <p className="player-studio-status">{status}</p> : null}
       </article>
 
-      <article className="card player-invite-card">
-        <p className="meta">Invite scroll</p>
-        <h2>Call friends to camp</h2>
-        <p>
-          Share your link. When they sign up, you earn gold — and the camp
-          grows.
-        </p>
-        <div className="player-invite-box">
-          <code>{inviteUrl || "Loading invite…"}</code>
-          <button
-            type="button"
-            className="btn soft"
-            onClick={() => void copyInvite()}
-            disabled={!inviteUrl}
-          >
-            {copied ? "Copied" : "Copy link"}
-          </button>
-        </div>
-        {wallet?.referralCode ? (
-          <p className="meta">Code: {wallet.referralCode}</p>
-        ) : null}
-      </article>
+      <section className="guild-desk" aria-label="Guild desk">
+        <header className="guild-desk-head">
+          <p className="meta">Guild desk</p>
+          <h2>Work of the camp</h2>
+          <p>Paths that fill the ledger — publish, invite, climb.</p>
+        </header>
+        <ul className="guild-desk-grid">
+          <li>
+            <Link href="/dashboard/rewards" className="guild-desk-card">
+              <span className="guild-desk-mark" aria-hidden="true">
+                ✦
+              </span>
+              <strong>Invite scroll</strong>
+              <span>Share your sealed link and earn gold per signup.</span>
+            </Link>
+          </li>
+          <li>
+            <Link href="/archive" className="guild-desk-card">
+              <span className="guild-desk-mark" aria-hidden="true">
+                II
+              </span>
+              <strong>World Archive</strong>
+              <span>Write lore and art — upvotes pay into this purse.</span>
+            </Link>
+          </li>
+          <li>
+            <Link href="/#leaderboard" className="guild-desk-card">
+              <span className="guild-desk-mark" aria-hidden="true">
+                III
+              </span>
+              <strong>Earnings board</strong>
+              <span>See who leads the coffers across the valley.</span>
+            </Link>
+          </li>
+          <li>
+            <Link href="/world" className="guild-desk-card" target="_blank" rel="noopener noreferrer">
+              <span className="guild-desk-mark" aria-hidden="true">
+                IV
+              </span>
+              <strong>Land of Pixelgrew</strong>
+              <span>Walk the stage — the living road of the guild.</span>
+            </Link>
+          </li>
+        </ul>
+      </section>
     </div>
   );
 }

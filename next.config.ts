@@ -44,6 +44,16 @@ const nextConfig: NextConfig = {
         destination: "/dashboard",
         permanent: false,
       },
+      {
+        source: "/dashboard/character",
+        destination: "/dashboard/ledger",
+        permanent: true,
+      },
+      {
+        source: "/dashboard/downloads",
+        destination: "/dashboard/rewards",
+        permanent: true,
+      },
     ];
   },
 };

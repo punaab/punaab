@@ -18,10 +18,13 @@ import {
 
 export type PathPoint = { x: number; z: number };
 
-const CELL = 3.2;
+const CELL = 2.6;
 const HALF = WORLD_SIZE / 2;
 const GRID = Math.ceil(WORLD_SIZE / CELL);
-const MAX_EXPAND = 14_000;
+const MAX_EXPAND = 18_000;
+
+/** How much wider than the walker's body a planned route keeps clear of trunks. */
+const PLAN_PAD = 1.28;
 
 function toCell(x: number, z: number): { i: number; j: number } {
   return {
@@ -63,7 +66,13 @@ export function findClearPath(
   goalZ: number,
   radius: number
 ): PathPoint[] | null {
-  if (!walkable(goalX, goalZ, radius)) return null;
+  // Plan with a fatter footprint so routes bend around trunks instead of
+  // threading the gap between bark and the walker's shoulders.
+  const planRadius = radius * PLAN_PAD;
+  if (!walkable(goalX, goalZ, planRadius)) {
+    // Goal itself may be tight against a tree — still try with the true radius.
+    if (!walkable(goalX, goalZ, radius)) return null;
+  }
 
   const start = toCell(startX, startZ);
   const goal = toCell(goalX, goalZ);
@@ -147,7 +156,7 @@ export function findClearPath(
       // Snap the final point to the exact clear goal.
       if (cells.length) cells[cells.length - 1] = { x: goalX, z: goalZ };
       else cells.push({ x: goalX, z: goalZ });
-      return simplifyPath(cells, radius);
+      return simplifyPath(cells, planRadius);
     }
 
     const ci = current % GRID;
@@ -161,7 +170,7 @@ export function findClearPath(
       if (closed[nk]) continue;
 
       const center = cellCenter(ni, nj);
-      if (!walkable(center.x, center.z, radius)) continue;
+      if (!walkable(center.x, center.z, planRadius)) continue;
 
       const step = Math.hypot(di, dj);
       // Prefer graded road when the detour is modest.
@@ -201,7 +210,8 @@ function lineClear(a: PathPoint, b: PathPoint, radius: number): boolean {
   const dz = b.z - a.z;
   const dist = Math.hypot(dx, dz);
   if (dist < 0.01) return true;
-  const steps = Math.max(2, Math.ceil(dist / 1.6));
+  // Fine enough to catch a trunk between coarse A* cells (~0.85m samples).
+  const steps = Math.max(2, Math.ceil(dist / 0.85));
   for (let i = 1; i < steps; i++) {
     const t = i / steps;
     const x = a.x + dx * t;

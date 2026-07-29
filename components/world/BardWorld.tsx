@@ -45,7 +45,7 @@ import {
 } from "@/lib/bard/performance";
 import { walkAmbience } from "@/lib/bard/walk-ambience";
 import { bumpValleyBoot } from "@/lib/bard/valley-boot";
-import { budgetFor, detectQuality, type QualityBudget } from "@/lib/world/quality";
+import { detectQuality, type QualityBudget } from "@/lib/world/quality";
 import { WorldMap } from "./WorldMap";
 import { Terrain } from "./Terrain";
 import { Water } from "./Water";
@@ -94,17 +94,17 @@ function Scene({
   enrichWorld: boolean;
   onCoreReady: () => void;
 }) {
-  // Every building and NPC has to be in the collision registry BEFORE anything
-  // takes a step, or the first frames of movement pass straight through the
-  // world. Doing it here — during render, before the bard and the NPCs mount —
-  // rather than in an effect is deliberate: effects run after children have
-  // already had a frame to move. Shared pathing always uses the medium set so
-  // every visitor agrees on where the walls are.
-  ensureWorldColliders(budgetFor("medium"));
+  // Every building, trunk and NPC has to be in the collision registry BEFORE
+  // anything takes a step, or the first frames of movement pass straight
+  // through the world. Doing it here — during render, before the bard and the
+  // NPCs mount — rather than in an effect is deliberate: effects run after
+  // children have already had a frame to move. Use the same quality budget as
+  // Flora so every tree you can see is a tree he has to walk around.
+  ensureWorldColliders(budget);
 
   // Bump when placement/footing code changes so Fast Refresh cannot keep a
   // floating architecture graph alive across edits.
-  const worldRev = 10;
+  const worldRev = 11;
 
   const bloomRef = useRef<BloomEffect>(null);
 
@@ -444,7 +444,7 @@ export function BardWorld() {
   };
 
   const director = useMemo(() => {
-    ensureWorldColliders(budgetFor("medium"));
+    ensureWorldColliders(budget);
     const next = new AdventureDirector({
       onSay: (line, activity) =>
         adventureCallbacks.current.onSay(line, activity),

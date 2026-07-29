@@ -645,6 +645,8 @@ export class AdventureDirector {
   private travelTime = 0;
   private stallTime = 0;
   private detours = 0;
+  /** Seconds before another mid-leg tree detour may splice into the route. */
+  private detourCooldown = 0;
   private stuckTime = 0;
   private unstickCooldown = 0;
   private discoverRemaining = 0;
@@ -968,7 +970,33 @@ export class AdventureDirector {
     }
 
     // Aim at the waypoint, then bend around anything solid in front of him so
-    // he does not pinball into a trunk and stall.
+    // he does not pinball into a trunk and stall. If the straight leg is blocked
+    // by a stand of trees, splice an A* hop that still ends at the same target.
+    this.detourCooldown = Math.max(0, this.detourCooldown - dt);
+    if (
+      this.detourCooldown <= 0 &&
+      distance > 3.5 &&
+      this.segmentBlocked(this.x, this.z, target.x, target.z)
+    ) {
+      const detour = findClearPath(
+        this.x,
+        this.z,
+        target.x,
+        target.z,
+        BARD_RADIUS
+      );
+      if (detour && detour.length > 1) {
+        this.route.splice(this.routeIndex, 0, ...detour.slice(0, -1));
+        this.detourCooldown = 2.4;
+        const next = this.route[this.routeIndex];
+        dx = next.x - this.x;
+        dz = next.z - this.z;
+        distance = Math.hypot(dx, dz);
+      } else {
+        this.detourCooldown = 0.8;
+      }
+    }
+
     const desired = this.clearHeading(Math.atan2(dx, dz));
     const error = wrapAngle(desired - this.heading);
     const turn = Math.min(Math.abs(error), TURN_RATE * dt) * Math.sign(error);
@@ -1011,7 +1039,7 @@ export class AdventureDirector {
    * stops him locking onto a cottage wall and walking into it forever.
    */
   private clearHeading(desired: number): number {
-    const radius = BARD_RADIUS * 1.05;
+    const radius = BARD_RADIUS * 1.2;
     if (this.headingOpen(desired, LOOK_AHEAD, radius)) return desired;
 
     let best = desired;

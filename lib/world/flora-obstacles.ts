@@ -316,7 +316,9 @@ export function floraObstacleColliders(budget: QualityBudget): Collider[] {
         id: `flora-tree-${id++}`,
         x: item.x,
         z: item.z,
-        radius: Math.max(0.45, spec.trunk * item.scale),
+        // Trunk + berth. The mesh is wider than `trunk`, and a bard footprint
+        // of ~0.4m needs room to slide past without clipping the bark.
+        radius: Math.max(0.85, spec.trunk * item.scale + 0.45),
         solid: true,
         kind: "tree",
         label: spec.id,
@@ -344,7 +346,7 @@ export function floraObstacleColliders(budget: QualityBudget): Collider[] {
         id: `flora-shrub-${id++}`,
         x: item.x,
         z: item.z,
-        radius: Math.max(0.4, spec.radius * item.scale),
+        radius: Math.max(0.55, spec.radius * item.scale + 0.15),
         solid: true,
         kind: "shrub",
         label: spec.id,

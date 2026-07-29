@@ -8,58 +8,52 @@ import { isLoreAdmin } from "@/lib/lore-admin";
 
 const ROAD_ACTIONS = [
   {
-    href: "/dashboard/character",
-    title: "Character & invites",
-    blurb: "Name your traveler, open the purse, share your referral.",
-    mark: "I",
+    href: "/dashboard/ledger",
+    title: "Ledger",
+    blurb: "Wallet, passport, guild tools.",
+    mark: "✦",
+  },
+  {
+    href: "/dashboard/rewards",
+    title: "Rewards",
+    blurb: "Invite friends. Earn gold.",
+    mark: "◎",
   },
   {
     href: "/archive",
-    title: "World Archive",
-    blurb: "Publish lore, art, quests — earn gold when the camp upvotes you.",
-    mark: "II",
+    title: "Archive",
+    blurb: "Publish lore. Earn upvotes.",
+    mark: "※",
   },
   {
     href: "/#leaderboard",
-    title: "Earnings board",
-    blurb: "See who leads the coffers across the valley.",
-    mark: "III",
+    title: "Board",
+    blurb: "See who leads the coffers.",
+    mark: "♛",
   },
   {
     href: "/models",
-    title: "Free models",
-    blurb: "Static GLBs, backpack, lute, and reference still.",
-    mark: "IV",
+    title: "Models",
+    blurb: "Free GLBs for your game.",
+    mark: "◇",
   },
   {
     href: "/music",
-    title: "Road music",
-    blurb: "CC BY tracks for games, streams, and campfires.",
-    mark: "V",
-  },
-  {
-    href: "/dashboard/downloads",
-    title: "Downloads",
-    blurb: "Grab packs again from your dashboard shelf.",
-    mark: "VI",
-  },
-  {
-    href: "/dashboard/embeds",
-    title: "Embeds & stream",
-    blurb: "Drop Punaab on a site or OBS overlay.",
-    mark: "VII",
+    title: "Music",
+    blurb: "CC BY tracks for the road.",
+    mark: "♪",
   },
   {
     href: "/project",
-    title: "Project scroll",
-    blurb: "What this place is, and how to help it grow.",
-    mark: "VIII",
+    title: "Project",
+    blurb: "What this place is about.",
+    mark: "▣",
   },
   {
     href: "/account",
     title: "Account",
-    blurb: "Profile, billing, and camp settings.",
-    mark: "IX",
+    blurb: "Profile and guild settings.",
+    mark: "⛨",
   },
 ] as const;
 
@@ -96,9 +90,9 @@ export default async function DashboardPage() {
         ...ROAD_ACTIONS.slice(0, 2),
         {
           href: "/archive/review",
-          title: "Review queue",
-          blurb: "Approve pending lore before it enters the Archive.",
-          mark: "※",
+          title: "Review",
+          blurb: "Approve pending Archive lore.",
+          mark: "⚖",
         },
         ...ROAD_ACTIONS.slice(2),
       ]
@@ -106,17 +100,13 @@ export default async function DashboardPage() {
 
   return (
     <DashboardShell
-      title="Camp overview"
+      title="Guild overview"
       subtitle={
         travelerName
-          ? `Welcome back, ${travelerName}. Your purse, road, and tools.`
+          ? `Welcome back, ${travelerName}. Your purse, road, and guild tools.`
           : "Your traveler's purse, invites, and the roads ahead."
       }
-      primaryAction={
-        hasCharacter
-          ? { href: "/dashboard/character", label: "Open character" }
-          : { href: "/dashboard/character", label: "Create character" }
-      }
+      primaryAction={{ href: "/dashboard/ledger", label: "OPEN LEDGER" }}
     >
       <div className="dash-overview">
         <CoinWallet
@@ -125,24 +115,27 @@ export default async function DashboardPage() {
           referralRate={GOLD_PER_REFERRAL}
           inviteCount={inviteCount}
           footer={
-            <Link className="btn soft coin-wallet-cta" href="/dashboard/character">
-              {hasCharacter ? "Open full wallet" : "Create character & wallet"}
+            <Link className="btn soft coin-wallet-cta" href="/dashboard/ledger">
+              {hasCharacter ? "Open full ledger" : "Open ledger & passport"}
             </Link>
           }
         />
 
         {!hasCharacter ? (
           <article className="dash-callout">
-            <p className="dash-callout-mark">New to camp</p>
-            <h2>Forge your traveler</h2>
+            <p className="dash-callout-mark">New to the guild</p>
+            <h2>Forge your passport</h2>
             <p>
-              Name yourself, claim a title, and take an invite link. Gold from
-              World upvotes and friends who join with your code lands in this
+              Name yourself, claim a title, and take an invite scroll. Gold from
+              Archive upvotes and friends who join with your code lands in this
               purse.
             </p>
             <div className="dash-callout-actions">
-              <Link className="btn primary" href="/dashboard/character">
-                Create character
+              <Link className="btn primary" href="/dashboard/ledger">
+                Open ledger
+              </Link>
+              <Link className="btn soft" href="/dashboard/rewards">
+                Invite scroll
               </Link>
               <Link className="btn ghost" href="/archive">
                 Browse the Archive
@@ -161,7 +154,10 @@ export default async function DashboardPage() {
               <Link className="btn primary" href="/archive">
                 Publish to Archive
               </Link>
-              <Link className="btn soft" href="/#leaderboard">
+              <Link className="btn soft" href="/dashboard/rewards">
+                Share invite
+              </Link>
+              <Link className="btn soft" href="/archive">
                 View board
               </Link>
             </div>
@@ -169,14 +165,14 @@ export default async function DashboardPage() {
         )}
       </div>
 
-      <section className="dash-roadboard" aria-label="Camp tools">
+      <section className="dash-roadboard" aria-label="Guild tools">
         <header className="dash-roadboard-head">
-          <h2>Traveler&apos;s desk</h2>
+          <h2>Guild desk</h2>
           <p>Paths from this camp — pick one and walk it.</p>
         </header>
         <ul className="dash-roadboard-grid">
           {actions.map((item) => (
-            <li key={item.href}>
+            <li key={`${item.title}-${item.href}`}>
               <Link href={item.href} className="dash-road-card">
                 <span className="dash-road-mark" aria-hidden="true">
                   {item.mark}
