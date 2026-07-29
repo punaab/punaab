@@ -24,10 +24,12 @@ export async function ensureProfile(clerkUserId: string): Promise<{
 }> {
   const supabase = getSupabaseAdmin();
   const user = await currentUser();
+  // Prefer a handle over legal name — Archive credits should read as the
+  // traveler identity (e.g. Punaab), not Clerk's fullName.
   const displayName =
     user?.username ||
-    user?.fullName ||
-    user?.primaryEmailAddress?.emailAddress ||
+    user?.firstName ||
+    user?.primaryEmailAddress?.emailAddress?.split("@")[0] ||
     "Traveler";
 
   if (!supabase) {
@@ -50,13 +52,21 @@ export async function ensureProfile(clerkUserId: string): Promise<{
 
   if (existing.data) {
     const row = existing.data as Profile;
-    // Keep the World Earnings Board label in sync with the Clerk login name.
-    if (displayName && displayName !== row.display_name) {
+    // Don't keep re-importing Clerk fullName — that was painting legal names
+    // onto Archive credits. Only upgrade a leftover full name when we have a
+    // username, or rename the known site credit to Punaab.
+    let next: string | null = null;
+    if (/\s/.test(row.display_name) && user?.username) {
+      next = user.username;
+    } else if (row.display_name.trim().toLowerCase() === "sean layton") {
+      next = "Punaab";
+    }
+    if (next && next !== row.display_name) {
       await supabase
         .from("profiles")
-        .update({ display_name: displayName, updated_at: new Date().toISOString() })
+        .update({ display_name: next, updated_at: new Date().toISOString() })
         .eq("id", row.id);
-      row.display_name = displayName;
+      row.display_name = next;
     }
     try {
       const referralCode = await ensureReferralCode(

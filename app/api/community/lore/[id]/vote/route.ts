@@ -1,14 +1,15 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import { GOLD_PER_UPVOTE, grantGold } from "@/lib/gold";
+import { resolveLoreId } from "@/lib/lore-resolve";
 import { ensureProfile } from "@/lib/profiles";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { GOLD_PER_UPVOTE, grantGold } from "@/lib/gold";
 
 export async function POST(
   _req: Request,
   context: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await context.params;
+  const { id: idOrSlug } = await context.params;
   const { userId } = await auth();
   if (!userId) {
     return NextResponse.json({ error: "Sign in to upvote." }, { status: 401 });
@@ -22,6 +23,11 @@ export async function POST(
   const { profile } = await ensureProfile(userId);
   if (profile.id === "local") {
     return NextResponse.json({ error: "Database unavailable." }, { status: 503 });
+  }
+
+  const id = await resolveLoreId(supabase, idOrSlug);
+  if (!id) {
+    return NextResponse.json({ error: "Not found." }, { status: 404 });
   }
 
   const { data: lore } = await supabase

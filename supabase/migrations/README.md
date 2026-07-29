@@ -13,6 +13,7 @@ music and models are static files under `public/`.
 4. `004_lore_edits.sql` — `pending_revision` for accepted-entry edits
 5. `005_leaderboard_seeds.sql` — unique traveler names + showcase gold board
 6. `006_lore_search.sql` — Postgres FTS (`search_vector` + GIN) for World search
+7. `007_rename_sean_to_punaab.sql` — map Clerk legal name credit → Punaab
 
 Chart places from PIXELGREW are seeded into `community_lore` (category
 `places`) at runtime via `ensureMapPlaceLore` when `/archive/places` loads —

@@ -40,7 +40,7 @@ export const LORE_CATEGORIES = [
     blurb: "Towns, inns, ruins, and stretches of road.",
     placeholder:
       "What does it look like, smell like, who gathers there, what rumour sticks…",
-    symbol: "pin",
+    symbol: "house",
     downloadLabel: "Download places",
   },
   {

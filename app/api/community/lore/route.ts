@@ -99,6 +99,13 @@ export async function GET(req: Request) {
 
     if (category) query = query.eq("category", category);
 
+    // Auto art mirrors (item/quest/etc. with an image) live under Art — keep them
+    // out of Archive home trending / latest / mixed search so the source card
+    // is the one that surfaces on the front page.
+    if (!category && !mine) {
+      query = query.is("meta->>mirrored_from", null);
+    }
+
     // Order in SQL before limit — otherwise Postgres returns an arbitrary page and
     // vote/alpha sorting in JS only reshuffles that slice (characters vanish
     // behind seeded places when filtering All).
@@ -195,6 +202,15 @@ export async function GET(req: Request) {
         item.status === "accepted" ||
         item.isHub ||
         (myProfileId && item.authorId === myProfileId)
+    );
+  }
+
+  // Belt-and-suspenders if the SQL mirror filter is unavailable on older DBs.
+  if (!category && !mine) {
+    lore = lore.filter(
+      (item) =>
+        typeof item.meta?.mirrored_from !== "string" &&
+        !item.tags.includes("mirror")
     );
   }
 

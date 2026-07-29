@@ -213,6 +213,7 @@ export async function ensureArtMirror(
     category: "art" as const,
     status: params.status === "denied" ? "pending" : params.status,
     updated_at: new Date().toISOString(),
+    tags: ["mirror"],
     meta: { mirrored_from: params.sourceId },
   };
 
@@ -225,7 +226,6 @@ export async function ensureArtMirror(
         author_id: params.authorId,
         slug: makeLoreSlug(`${params.title} art`),
         location_key: null,
-        tags: ["mirror"],
         is_hub: false,
         reviewed_at:
           params.status === "accepted" ? new Date().toISOString() : null,

@@ -83,6 +83,13 @@ export async function GET(req: Request) {
   );
 
   if (category) nodes = nodes.filter((n) => n.category === category || n.isHub);
+  // Mixed graph (no category): hide auto art mirrors — source entries stay.
+  if (!category) {
+    nodes = nodes.filter(
+      (n) =>
+        typeof n.meta?.mirrored_from !== "string" && !n.tags.includes("mirror")
+    );
+  }
   if (q) {
     nodes = nodes.filter(
       (n) =>

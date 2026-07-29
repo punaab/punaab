@@ -9,6 +9,7 @@ import {
   uploadLoreImage,
 } from "@/components/community/SquareImageCrop";
 import { LoreConnectionsEditor } from "@/components/community/LoreConnectionsEditor";
+import { LoreCategoryIcon } from "@/components/community/LoreCategoryIcon";
 import { CommunityLinks } from "@/components/marketing/CommunityLinks";
 import {
   downloadLabelForCategory,
@@ -72,9 +73,11 @@ function SubmissionCard({
             <img src={item.imageUrl} alt="" className="lore-tile-img" />
           ) : (
             <span className="lore-tile-placeholder" data-cat={item.category}>
-              <span className="lore-tile-placeholder-mark" aria-hidden="true">
-                {meta.label.slice(0, 1)}
-              </span>
+              <LoreCategoryIcon
+                category={item.category}
+                className="lore-tile-placeholder-icon"
+                title={meta.label}
+              />
             </span>
           )}
         </Link>
@@ -108,13 +111,20 @@ function SubmissionCard({
         )}
       </div>
       <div className="lore-tile-info">
-        <Link href={`/archive/${item.id}`} className="lore-tile-title">
+        <Link
+          href={`/archive/${item.id}`}
+          className="lore-tile-title"
+          title={item.title}
+        >
           {item.title}
         </Link>
-        <p className="lore-tile-meta">
-          <span>{meta.label}</span>
+        <p
+          className="lore-tile-meta"
+          title={`${meta.label} · ${item.authorName}`}
+        >
+          {meta.label}
           <span className="dot">·</span>
-          <span>{item.authorName}</span>
+          {item.authorName}
         </p>
       </div>
     </li>

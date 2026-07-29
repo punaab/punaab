@@ -10,6 +10,8 @@ import {
 import { isLoreAdmin } from "@/lib/lore-admin";
 import { ensureLoreHub } from "@/lib/lore-hub";
 import { mapLoreRow, type LoreDbRow } from "@/lib/lore-map";
+import { ensureMapPlaceLore } from "@/lib/map-place-lore";
+import { looksLikeUuid, resolveLoreId } from "@/lib/lore-resolve";
 import {
   ensureArtMirror,
   fieldsToPendingRevision,
@@ -28,7 +30,7 @@ export async function GET(
   _req: Request,
   context: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await context.params;
+  const { id: idOrSlug } = await context.params;
   const supabase = getSupabaseAdmin();
   if (!supabase) {
     return NextResponse.json({ error: "Database unavailable." }, { status: 503 });
@@ -41,11 +43,17 @@ export async function GET(
     myProfileId = profile.id === "local" ? null : profile.id;
   }
 
-  const { data: row, error } = await supabase
-    .from("community_lore")
-    .select(DETAIL_SELECT)
-    .eq("id", id)
-    .maybeSingle();
+  // Map pins navigate with slugs (`place-crowfoot`); UUIDs still work for cards.
+  if (!looksLikeUuid(idOrSlug) && idOrSlug.startsWith("place-")) {
+    await ensureMapPlaceLore(supabase);
+  }
+
+  let detailQuery = supabase.from("community_lore").select(DETAIL_SELECT);
+  detailQuery = looksLikeUuid(idOrSlug)
+    ? detailQuery.eq("id", idOrSlug)
+    : detailQuery.eq("slug", idOrSlug);
+
+  const { data: row, error } = await detailQuery.maybeSingle();
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -53,6 +61,8 @@ export async function GET(
   if (!row) {
     return NextResponse.json({ error: "Lore not found." }, { status: 404 });
   }
+
+  const id = (row as LoreDbRow).id;
 
   const mappedPreview = mapLoreRow(row as LoreDbRow);
   const isOwner = Boolean(myProfileId && mappedPreview.authorId === myProfileId);
@@ -230,7 +240,7 @@ export async function PATCH(
   req: Request,
   context: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await context.params;
+  const { id: idOrSlug } = await context.params;
   const { userId } = await auth();
   if (!userId) {
     return NextResponse.json({ error: "Sign in to edit." }, { status: 401 });
@@ -239,6 +249,11 @@ export async function PATCH(
   const supabase = getSupabaseAdmin();
   if (!supabase) {
     return NextResponse.json({ error: "Database unavailable." }, { status: 503 });
+  }
+
+  const id = await resolveLoreId(supabase, idOrSlug);
+  if (!id) {
+    return NextResponse.json({ error: "Lore not found." }, { status: 404 });
   }
 
   const hub = await ensureLoreHub(supabase);
@@ -292,7 +307,8 @@ export async function PATCH(
       id,
       status: "accepted",
       needsReview: true,
-      message: "Edits submitted for admin approval. The live entry is unchanged until accepted.",
+      message:
+        "Edits submitted for admin approval. The live entry is unchanged until accepted.",
     });
   }
 
