@@ -19,7 +19,7 @@ export default function HomePage() {
         <div className="hero-copy hero-copy-animate">
           <PoweredByPixelgrew className="pixelgrew-credit-hero" />
           <h1>
-            Meet Punaab —
+            Find Punaab —
             <span className="hero-gradient-line"> the traveling bard</span>
           </h1>
           <p className="hero-desc">
