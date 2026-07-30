@@ -105,12 +105,8 @@ export function storyWindowSlot(maxPerDay: number): {
         ? hour >= w.start && hour < w.end
         : hour >= w.start || hour < w.end - 24;
     if (!inWindow) continue;
-
-    // Prefer mid-window; small chance early so a late heartbeat can still claim
-    const mid = w.start + (w.end - w.start) / 2;
-    const dist = Math.abs(hour + 0.5 - (mid % 24));
-    if (dist > 2.5 && Math.random() > 0.22) continue;
-
+    // First heartbeat in each UTC window claims the slot (NX). No soft skip —
+    // missed windows were why X went silent after Limbothy was disabled.
     return { slot: `punaab_story_${w.index}`, index: w.index };
   }
   return null;
