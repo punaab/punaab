@@ -98,7 +98,10 @@ export function ValleyLoader({
       }
 
       // Smooth chase — patient while waiting, snappier on the final stretch.
-      const follow = finishing ? 12 : 4.5;
+      // The finishing constant has to outrun the drain easing by a good margin
+      // or the tail of the lerp, not `VALLEY_BOOT_FINISH_MS`, sets how long the
+      // visitor waits on a valley that is already drawn behind the bar.
+      const follow = finishing ? 20 : 4.5;
       display += (target - display) * Math.min(1, 1 - Math.exp(-follow * dt));
       if (!finishing && display < target) {
         // Guaranteed crawl so float (and bar) never sit still under target.

@@ -11,8 +11,7 @@ import { COMMUNITY } from "@/lib/community";
 const NAV = [
   { href: "/project", label: "Project" },
   { href: "/archive", label: "Archive" },
-  { href: "/music", label: "Music" },
-  { href: "/models", label: "Models" },
+  { href: "/dashboard", label: "Guild" },
 ] as const;
 
 export function MarketingShell({
@@ -31,7 +30,7 @@ export function MarketingShell({
         <header className="mkt-header">
           <SiteLink href="/" className="brand">
             <Image
-              src="/assets/solana.png"
+              src="/assets/punaab-logo.png"
               alt="Punaab"
               width={56}
               height={56}

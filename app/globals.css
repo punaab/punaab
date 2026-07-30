@@ -1095,12 +1095,6 @@ html.punaab-booting::before {
   border-radius: 10px;
   box-shadow: none;
 }
-.travel-page-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.65rem;
-  justify-content: center;
-}
 @media (max-width: 720px) {
   .travel-page { padding: 0.85rem 0.75rem 1.75rem; }
   .travel-stage .bard-world {
@@ -1230,7 +1224,9 @@ body:has(.bard-world.is-immersive) { overflow: hidden; }
     radial-gradient(ellipse at 50% 35%, rgba(255, 201, 60, 0.22), transparent 55%),
     radial-gradient(ellipse at 20% 90%, rgba(37, 99, 235, 0.18), transparent 50%),
     linear-gradient(165deg, #2a4058 0%, #3d6a8c 42%, #5f8f78 100%);
-  transition: opacity 0.55s ease, visibility 0.55s ease;
+  /* Kept in step with the unmount timer in BardWorld — a slower curtain here
+     just adds dead time after the valley is already drawn behind it. */
+  transition: opacity 0.3s ease, visibility 0.3s ease;
 }
 .valley-loader.is-fading {
   opacity: 0; visibility: hidden; pointer-events: none;
@@ -2728,16 +2724,6 @@ body:has(.bard-world.is-immersive) { overflow: hidden; }
   }
   .notebook-merch-copy .btn {
     width: 100%;
-    min-height: 2.75rem;
-  }
-  .travel-page-actions {
-    width: 100%;
-    flex-direction: column;
-    align-items: stretch;
-  }
-  .travel-page-actions .btn {
-    width: 100%;
-    justify-content: center;
     min-height: 2.75rem;
   }
   .travel-stage-frame {
@@ -4353,6 +4339,20 @@ body:has(.punaab-overlay-root) {
 
 /* Community lore hall */
 .lore-section { padding-top: 0.5rem; }
+/* Free downloads — deliberately above and apart from the archive database. */
+.lore-vault-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  max-width: min(72rem, 100%);
+  margin: 0 auto 1.1rem;
+  padding-bottom: 1.1rem;
+  border-bottom: 2px dashed rgba(21, 34, 56, 0.22);
+}
+.lore-vault-links .btn { min-width: 9rem; justify-content: center; }
+@media (max-width: 520px) {
+  .lore-vault-links .btn { flex: 1 1 8rem; min-width: 0; }
+}
 .lore-hero-attrib {
   font-size: 0.5em;
   font-weight: 600;

@@ -1,35 +1,23 @@
 "use client";
 
-import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { Canvas, useFrame } from "@react-three/fiber";
 import { AdaptiveDpr, Preload } from "@react-three/drei";
+import type { BloomEffect } from "postprocessing";
+import dynamic from "next/dynamic";
 import {
-  Bloom,
-  EffectComposer,
-  Vignette,
-  SMAA,
-  BrightnessContrast,
-  HueSaturation,
-} from "@react-three/postprocessing";
-import { BlendFunction, type BloomEffect } from "postprocessing";
-import {
-  Component,
   Suspense,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
-  type ReactNode,
 } from "react";
 import * as THREE from "three";
 
-import { Architecture } from "./Architecture";
 import { Atmosphere } from "./Atmosphere";
 import { Bard } from "./Bard";
-import { Fireflies } from "./Fireflies";
 import { Flora } from "./Flora";
 import { FollowCamera } from "./FollowCamera";
-import { NPCs } from "./NPCs";
 import { SpeechBubble, type BubbleKind } from "./SpeechBubble";
 import {
   AdventureDirector,
@@ -46,12 +34,43 @@ import {
 import { walkAmbience } from "@/lib/bard/walk-ambience";
 import { bumpValleyBoot } from "@/lib/bard/valley-boot";
 import { detectQuality, type QualityBudget } from "@/lib/world/quality";
-import { WorldMap } from "./WorldMap";
 import { Terrain } from "./Terrain";
 import { Water } from "./Water";
 import { ensureWorldColliders } from "@/lib/world/world-colliders";
 import { daylight } from "@/lib/world/daylight";
 import { ValleyLoader } from "@/components/marketing/ValleyLoader";
+
+/**
+ * Everything below is code-split out of the stage's critical chunk.
+ *
+ * None of it is needed to draw the first frame — the buildings, people,
+ * fireflies and composer only mount once `enrichWorld` flips, and the map only
+ * matters once someone opens it. Bundled statically they were several hundred
+ * kilobytes of JavaScript a visitor had to download, parse and compile *before*
+ * the terrain could appear, which is time spent staring at a loading bar.
+ * `loading: () => null` is what lets these render inside the R3F tree: the
+ * placeholder has to be a scene object or nothing at all, never a DOM node.
+ */
+const Architecture = dynamic(
+  () => import("./Architecture").then((m) => m.Architecture),
+  { ssr: false, loading: () => null }
+);
+const NPCs = dynamic(() => import("./NPCs").then((m) => m.NPCs), {
+  ssr: false,
+  loading: () => null,
+});
+const Fireflies = dynamic(
+  () => import("./Fireflies").then((m) => m.Fireflies),
+  { ssr: false, loading: () => null }
+);
+const ValleyPostFx = dynamic(
+  () => import("./ValleyPostFx").then((m) => m.ValleyPostFx),
+  { ssr: false, loading: () => null }
+);
+const WorldMap = dynamic(() => import("./WorldMap").then((m) => m.WorldMap), {
+  ssr: false,
+  loading: () => null,
+});
 
 /**
  * The hero scene: Punaab travelling a fantasy valley, followed by a camera,
@@ -174,127 +193,6 @@ function Scene({
   );
 }
 
-/** True when the canvas still has a live WebGL context we can query. */
-function hasLiveGl(gl: THREE.WebGLRenderer): boolean {
-  try {
-    const ctx = gl.getContext();
-    return Boolean(ctx?.getContextAttributes?.());
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Isolates postprocessing so a composer crash (lost context, library bug)
- * cannot take down the whole valley Canvas.
- */
-class PostFxBoundary extends Component<
-  { children: ReactNode },
-  { failed: boolean }
-> {
-  state = { failed: false };
-
-  static getDerivedStateFromError() {
-    return { failed: true };
-  }
-
-  componentDidCatch(error: unknown) {
-    console.warn("[punaab] postprocessing disabled after error:", error);
-  }
-
-  render() {
-    if (this.state.failed) return null;
-    return this.props.children;
-  }
-}
-
-/**
- * Bloom / SMAA / grade — deferred until the renderer reports a live context.
- *
- * `postprocessing` reads `gl.getContext().getContextAttributes().alpha` when
- * building framebuffers. After a Canvas remount or a lost context that call
- * returns null and throws; mounting one frame late and gating on attributes
- * avoids the crash, and the boundary keeps the stage up if it still fails.
- */
-function ValleyPostFx({
-  bloomRef,
-}: {
-  bloomRef: React.MutableRefObject<BloomEffect | null>;
-}) {
-  const gl = useThree((state) => state.gl);
-  const [armed, setArmed] = useState(false);
-
-  useEffect(() => {
-    let alive = true;
-    let attempts = 0;
-    let raf = 0;
-
-    const arm = () => {
-      if (!alive) return;
-      if (hasLiveGl(gl)) {
-        setArmed(true);
-        return;
-      }
-      if (attempts++ < 45) {
-        raf = requestAnimationFrame(arm);
-      }
-    };
-
-    // Two frames after enrich mounts — lets R3F finish sizing the renderer.
-    raf = requestAnimationFrame(() => {
-      raf = requestAnimationFrame(arm);
-    });
-
-    return () => {
-      alive = false;
-      cancelAnimationFrame(raf);
-      setArmed(false);
-      bloomRef.current = null;
-    };
-  }, [gl, bloomRef]);
-
-  if (!armed) return null;
-
-  return (
-    <PostFxBoundary>
-      <EffectComposer multisampling={0} enableNormalPass={false}>
-        <SMAA />
-        {/*
-          Bloom only on genuinely bright things — the sun, the campfire, lit
-          windows. A low threshold would fog the whole image, which is the
-          most common way postprocessing makes a scene look worse.
-
-          That threshold is right for daylight and wrong for night, when
-          the brightest things in frame *are* the lamps. `NightGrade`
-          below walks it down after dark; a fixed value either washes out
-          noon or leaves every light source in the valley flat after dusk.
-        */}
-        <Bloom
-          // Object refs break @react-three/postprocessing under React 19:
-          // wrapEffect memoizes with JSON.stringify(props), and once the
-          // ref points at the live effect graph that walk is circular.
-          // Callback refs are dropped by stringify, so they stay safe.
-          ref={(effect: BloomEffect | null) => {
-            bloomRef.current = effect;
-          }}
-          intensity={0.55}
-          luminanceThreshold={0.84}
-          luminanceSmoothing={0.32}
-          mipmapBlur
-        />
-        {/* Warm Ghibli push — cream haze, soft contrast. */}
-        <HueSaturation saturation={0.06} hue={0.015} />
-        <BrightnessContrast brightness={0.018} contrast={0.055} />
-        <Vignette
-          offset={0.32}
-          darkness={0.42}
-          blendFunction={BlendFunction.NORMAL}
-        />
-      </EffectComposer>
-    </PostFxBoundary>
-  );
-}
-
 /**
  * Retunes bloom across the day/night cycle.
  *
@@ -316,14 +214,20 @@ function NightGrade({ bloom }: { bloom: React.RefObject<BloomEffect | null> }) {
   return null;
 }
 
-/** Fires once the Suspense tree has drawn a few frames — valley is visible. */
+/**
+ * Fires once the Suspense tree has actually drawn — valley is visible.
+ *
+ * Two frames, not one: the first `useFrame` after mount can run before the
+ * renderer has presented anything, so calling ready there dismisses the loader
+ * onto a blank canvas.
+ */
 function SceneReadySignal({ onReady }: { onReady: () => void }) {
   const frames = useRef(0);
   const sent = useRef(false);
   useFrame(() => {
     if (sent.current) return;
     frames.current += 1;
-    if (frames.current < 3) return;
+    if (frames.current < 2) return;
     sent.current = true;
     onReady();
   });
@@ -366,19 +270,40 @@ export function BardWorld() {
   const lyricLine = useRef<string[]>([]);
   const bubbleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // One frame is all the loader needs to paint before WebGL + the terrain bake
+  // seize the main thread. Waiting two just spent a frame doing nothing.
   useEffect(() => {
-    let outer = 0;
-    let inner = 0;
-    outer = requestAnimationFrame(() => {
-      inner = requestAnimationFrame(() => {
-        bumpValleyBoot(2);
-        setBootScene(true);
-      });
+    const frame = requestAnimationFrame(() => {
+      bumpValleyBoot(2);
+      setBootScene(true);
     });
-    return () => {
-      cancelAnimationFrame(outer);
-      cancelAnimationFrame(inner);
+    return () => cancelAnimationFrame(frame);
+  }, []);
+
+  // Warm the deferred chunks while the terrain bakes.
+  //
+  // Splitting the canopy, buildings, people and composer out of the critical
+  // chunk is what makes the first frame arrive sooner, but it would be a hollow
+  // win if the world then had to wait on a network round trip to fill in. The
+  // bake is CPU-bound and the network is idle during it, so fetching them here
+  // costs the first frame nothing and means `enrichWorld` finds them resident.
+  // Module requests are deduped, so the `dynamic` wrappers reuse these.
+  useEffect(() => {
+    const warm = () => {
+      void import("./Architecture");
+      void import("./NPCs");
+      void import("./Fireflies");
+      void import("./ValleyPostFx");
     };
+    // Safari only shipped requestIdleCallback recently; the timeout fallback
+    // keeps the warm-up on the same side of the bake everywhere.
+    const idle = window.requestIdleCallback;
+    if (typeof idle === "function") {
+      const handle = idle(warm, { timeout: 1_200 });
+      return () => window.cancelIdleCallback(handle);
+    }
+    const handle = window.setTimeout(warm, 200);
+    return () => window.clearTimeout(handle);
   }, []);
 
   const handleSceneReady = useCallback(() => {
@@ -388,14 +313,17 @@ export function BardWorld() {
 
   const handleLoaderFinished = useCallback(() => {
     setLoaderFading(true);
-    window.setTimeout(() => setShowLoader(false), 560);
+    window.setTimeout(() => setShowLoader(false), 300);
   }, []);
 
   // Core (bard + grass) is up — dismiss the loader, then stream in the rest.
   // Phones get a longer breather before canopy / buildings / NPCs mount.
   useEffect(() => {
     if (!sceneReady) return;
-    const delay = budget.tier === "low" ? 480 : 160;
+    // Both values are shorter than the loader's drain + fade so the enrichment
+    // still mounts behind the curtain; phones keep the longer breather because
+    // piling the canopy on immediately costs them frames, not just time.
+    const delay = budget.tier === "low" ? 260 : 140;
     const t = window.setTimeout(() => setEnrichWorld(true), delay);
     return () => window.clearTimeout(t);
   }, [sceneReady, budget.tier]);

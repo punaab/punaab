@@ -20,15 +20,9 @@ export const metadata: Metadata = {
   title: "Punaab — The Traveling Bard",
   description:
     "A bard, music, shop, chatter, and quests made for you. Help us world-build!",
-  icons: {
-    icon: [
-      {
-        url: "/assets/images/pixel_coin.svg",
-        type: "image/svg+xml",
-      },
-    ],
-    apple: "/assets/images/pixel_coin.svg",
-  },
+  // Icons come from the `app/icon.png` + `app/apple-icon.png` file convention
+  // (Punaab's wink). Declaring them here too would emit a second, competing
+  // <link rel="icon">, so this stays out of the metadata object on purpose.
 };
 
 export const viewport: Viewport = {

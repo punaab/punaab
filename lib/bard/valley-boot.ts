@@ -9,11 +9,23 @@
 /** Soft ceiling until the scene signals ready (never quite arrives). */
 export const VALLEY_BOOT_CEILING = 97;
 
-/** Time constant (seconds) for the main climb — larger = slower, steadier. */
-export const VALLEY_BOOT_TAU_SEC = 24;
+/**
+ * Time constant (seconds) for the main climb — larger = slower, steadier.
+ *
+ * Tuned to the honest length of a boot. At 24s the bar was still down in the
+ * teens when the valley was already drawn, so the drain below had to cover
+ * eighty points and the whole thing read as slow even when it was not.
+ */
+export const VALLEY_BOOT_TAU_SEC = 9;
 
-/** How long the final drain from current → 100% takes once the scene is up. */
-export const VALLEY_BOOT_FINISH_MS = 1100;
+/**
+ * How long the final drain from current → 100% takes once the scene is up.
+ *
+ * This is pure waiting: the valley is behind the loader, finished, for every
+ * millisecond of it. Long enough to read as a fill, short enough not to be a
+ * toll — the enrichment pass still has this plus the fade to mount under cover.
+ */
+export const VALLEY_BOOT_FINISH_MS = 480;
 
 let bootStartedAt = 0;
 let finished = false;

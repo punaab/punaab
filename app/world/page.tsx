@@ -1,6 +1,5 @@
 import { MarketingShell } from "@/components/marketing/MarketingShell";
 import { BardWorldLazy } from "@/components/marketing/BardWorldLazy";
-import { SiteLink } from "@/components/marketing/SiteLink";
 import { TravelPageTitle } from "@/components/marketing/TravelPageTitle";
 import { WorldStageFocus } from "@/components/marketing/WorldStageFocus";
 
@@ -28,15 +27,6 @@ export default function WorldPage() {
             <BardWorldLazy />
           </div>
         </WorldStageFocus>
-
-        <div className="travel-page-actions">
-          <SiteLink className="btn soft" href="/archive">
-            Contribute to the Archive
-          </SiteLink>
-          <SiteLink className="btn ghost" href="/models">
-            Free models
-          </SiteLink>
-        </div>
       </section>
     </MarketingShell>
   );
