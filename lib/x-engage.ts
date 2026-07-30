@@ -12,7 +12,7 @@ import { getActivityLog } from "./owner-state";
 import { persona, personaSystemPrompt } from "./persona";
 import { createRedisClient } from "./redis";
 import { maybeDailyScriptureTweet } from "./scripture/daily-tweet";
-import { maybeLimbothyTweet } from "./limbothy/daily-tweet";
+import { maybePunaabStoryTweet } from "./punaab-story/daily-tweet";
 import { claimDailySlot, releaseDailySlot } from "./x-daily-slot";
 import { canPostToX, createXPost, xApiGet } from "./x-twitter";
 import { getStoredXTokens } from "./x-auth";
@@ -29,8 +29,11 @@ export interface XEngageSummary {
   scriptureAttempted: boolean;
   scripturePosted: boolean;
   scriptureReference?: string;
+  /** @deprecated Limbothy permanently disabled */
   limbothyAttempted: boolean;
   limbothyPosted: boolean;
+  storyAttempted: boolean;
+  storyPosted: boolean;
   errors: string[];
   skipped?: string;
 }
@@ -197,6 +200,7 @@ async function craftDailyOriginal(topics: string[]): Promise<string | null> {
     "Make it relatable OR humorous OR intelligent OR boldly specific — pick one lane.",
     "Inspired by recent Moltbook chatter below, but standalone — no 'as I said on Moltbook'.",
     "Never mention OpenSolve, open-solve, Limbothy, Jimothy, or any research network brand.",
+    "You may gently nod to punaab.com or the Traveling Bard when it fits — never hard-sell.",
     "1–3 short sentences. No hashtags. No links unless essential. Under 260 chars.",
     "Sound like a chill cat AI with a brain, not a marketing bot.",
     "Output ONLY the tweet text.",
@@ -272,6 +276,8 @@ export async function runXEngageTick(): Promise<XEngageSummary> {
     scripturePosted: false,
     limbothyAttempted: false,
     limbothyPosted: false,
+    storyAttempted: false,
+    storyPosted: false,
     errors: [],
   };
 
@@ -392,18 +398,20 @@ export async function runXEngageTick(): Promise<XEngageSummary> {
     summary.errors.push(`scripture:${msg}`);
   }
 
-  // --- Limbothy lore (max 1/day) ---
+  // --- Traveling Bard story (up to 4/day across UTC windows) ---
   try {
-    const limbothy = await maybeLimbothyTweet();
-    summary.limbothyAttempted = limbothy.attempted;
-    summary.limbothyPosted = limbothy.posted;
-    if (limbothy.error) summary.errors.push(`limbothy:${limbothy.error}`);
-    if (limbothy.posted) {
-      console.log("[x-engage] limbothy lore tweet posted");
+    const story = await maybePunaabStoryTweet();
+    summary.storyAttempted = story.attempted;
+    summary.storyPosted = story.posted;
+    if (story.error) summary.errors.push(`story:${story.error}`);
+    if (story.posted) {
+      console.log(
+        `[x-engage] punaab story tweet posted (${story.slot ?? "ok"})`,
+      );
     }
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
-    summary.errors.push(`limbothy:${msg}`);
+    summary.errors.push(`story:${msg}`);
   }
 
   if (
@@ -411,7 +419,7 @@ export async function runXEngageTick(): Promise<XEngageSummary> {
     summary.repliesPosted === 0 &&
     !summary.dailyPosted &&
     !summary.scripturePosted &&
-    !summary.limbothyPosted
+    !summary.storyPosted
   ) {
     summary.ok = summary.errors.every((e) => e.startsWith("mentions:"));
   }

@@ -1,6 +1,6 @@
 /**
- * Immediately claim today's Limbothy + OpenSolve tweet slots so spam stops
- * even before the next heartbeat (fail-closed NX keys).
+ * Utility: force-claim today's X tweet slots (OpenSolve / original / scripture).
+ * Limbothy is permanently disabled — no longer claimed.
  */
 import { createRedisClient } from "../lib/redis";
 import { existsSync, readFileSync } from "fs";
@@ -29,7 +29,6 @@ async function claim(key: string) {
     nx: true,
     ex: 3 * 86400,
   });
-  // Also overwrite to force-claim if somehow racing
   if (res !== "OK") {
     await r.set(key, new Date().toISOString(), { ex: 3 * 86400 });
     return "forced";
@@ -40,7 +39,6 @@ async function claim(key: string) {
 async function main() {
   const day = new Date().toISOString().slice(0, 10);
   const keys = [
-    `x:daily_slot:limbothy:${day}`,
     `opensolve:daily_tweet_day:${day}`,
     `x:daily_slot:original:${day}`,
     `x:daily_slot:scripture:${day}`,

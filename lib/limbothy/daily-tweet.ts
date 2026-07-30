@@ -148,6 +148,7 @@ function inSoftWindow(): boolean {
 }
 
 export async function maybeLimbothyTweet(): Promise<LimbothyTweetSummary> {
+  // Permanently disabled — Traveling Bard story tweets replaced this path.
   if (!isLimbothyTweetsEnabled()) {
     return { attempted: false, posted: false };
   }

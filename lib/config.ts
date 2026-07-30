@@ -739,25 +739,42 @@ export function isXDailyScriptureEnabled(): boolean {
   return isXEngageEnabled() || isXDailyOriginalEnabled();
 }
 
-/** Occasional Jimothy/Limbothy lore posts on X (default on when X engage is on). */
+/** Limbothy lore tweets — permanently off. */
 export function isLimbothyTweetsEnabled(): boolean {
-  const v = process.env.LIMBOTHY_TWEETS_ENABLED?.trim().toLowerCase();
+  return false;
+}
+
+/** @deprecated Limbothy disabled — always 0. */
+export function getLimbothyMaxTweetsPerDay(): number {
+  return 0;
+}
+
+/** @deprecated unused */
+export function getLimbothyMint(): string {
+  return "";
+}
+
+/**
+ * Traveling Bard story tweets for punaab.com + Pump $PUNAAB (default on with X engage).
+ */
+export function isPunaabStoryTweetsEnabled(): boolean {
+  const v = process.env.PUNAAB_STORY_TWEETS_ENABLED?.trim().toLowerCase();
   if (v === "false" || v === "0" || v === "no") return false;
   if (v === "true" || v === "1" || v === "yes") return true;
   return isXEngageEnabled() || isXDailyOriginalEnabled();
 }
 
-/** Hard cap for Limbothy lore tweets per UTC day — always 1 (env cannot raise it). */
-export function getLimbothyMaxTweetsPerDay(): number {
-  const n = Number(process.env.LIMBOTHY_MAX_TWEETS_PER_DAY ?? "1");
+/** Story tweets per UTC day — hard max 4. */
+export function getPunaabStoryMaxTweetsPerDay(): number {
+  const n = Number(process.env.PUNAAB_STORY_MAX_TWEETS_PER_DAY ?? "4");
   if (!Number.isFinite(n) || n <= 0) return 0;
-  return 1;
+  return Math.min(Math.floor(n), 4);
 }
 
-export function getLimbothyMint(): string {
+export function getPunaabPumpMint(): string {
   return (
-    process.env.LIMBOTHY_MINT?.trim() ||
-    "9CtQhxDcNd3nzHE2h6v2zc2STZKXT9MYwY2e3AWapump"
+    process.env.PUNAAB_PUMP_MINT?.trim() ||
+    "8xWMreut8z93Pg4Uh1HgY9eWNJJxUtyWnGPjjnuJpump"
   );
 }
 
