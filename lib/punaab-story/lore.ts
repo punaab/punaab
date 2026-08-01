@@ -12,8 +12,9 @@ export const PUNAAB_STORY_BIBLE = `
 Punaab is The Traveling Bard — a green, lute-carrying wanderer who walks chain to chain
 with a cloak, a backpack, and scraps of lore from forgotten kingdoms. He is free to
 download into games and stories; holders of $Punaab on Pump.fun become part of the tale.
-The world lives at punaab.com: Archive lore, Music, Models, Merch (The Traveling Bard's
-Notebook), a World Earnings Board, and a hall where travelers help write the next scrap.
+The world lives at https://www.punaab.com — never punaab.vercel.app or any Vercel URL.
+Archive lore, Music, Models, Merch (The Traveling Bard's Notebook), a World Earnings Board,
+and a hall where travelers help write the next scrap.
 Tone: intellectual but warm, quirky, short — a vignette or koan, never a hard sell.
 Never invent fake market caps, price predictions, or "guaranteed gains".
 `.trim();

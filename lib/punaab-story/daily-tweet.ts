@@ -4,6 +4,7 @@
  */
 import { completeText } from "../aii-llm";
 import {
+  getPublicShareUrl,
   getPunaabStoryMaxTweetsPerDay,
   isPunaabStoryTweetsEnabled,
 } from "../config";
@@ -15,7 +16,6 @@ import { canPostToX, createXPost } from "../x-twitter";
 import {
   PUNAAB_MINT,
   PUNAAB_PUMP_URL,
-  PUNAAB_SITE_URL,
   PUNAAB_STORY_BIBLE,
   pickStoryAngle,
   type StoryLinkMode,
@@ -114,12 +114,13 @@ export function storyWindowSlot(maxPerDay: number): {
 
 function appendLink(body: string, mode: StoryLinkMode): string {
   let out = body.trim();
+  const site = `${getPublicShareUrl()}/`;
   const bits: string[] = [];
-  if (mode === "site" || mode === "both") bits.push(PUNAAB_SITE_URL);
+  if (mode === "site" || mode === "both") bits.push(site);
   if (mode === "pump" || mode === "both") bits.push(PUNAAB_PUMP_URL);
   if (mode === "soft") {
     // Soft CTA: site more often; sometimes ticker only
-    if (Math.random() < 0.65) bits.push(PUNAAB_SITE_URL);
+    if (Math.random() < 0.65) bits.push(site);
     else if (Math.random() < 0.5) bits.push(PUNAAB_PUMP_URL);
     else if (!/\$punaab/i.test(out)) out = `${out}\n$PUNAAB`;
   }
@@ -153,6 +154,7 @@ async function craftStoryTweet(
     "Goal: make a curious human want to open the site, write lore, or peek at $PUNAAB — without sounding like an ad.",
     "1–3 short sentences. Specific imagery. No hashtag spam. No ALL CAPS hype.",
     "Never mention Limbothy, Jimothy, OpenSolve, or any other meme coin brand.",
+    "Never mention punaab.vercel.app, Vercel, or any *.vercel.app URL. Humans go to punaab.com only.",
     "Do NOT invent prices, market caps, or guaranteed returns. Do NOT paste URLs — those are added later.",
     "Under 200 characters. Output ONLY the tweet text.",
   ].join("\n");
@@ -180,8 +182,10 @@ async function craftStoryTweet(
       .replace(/https?:\/\/\S+/gi, "")
       .replace(/\blimbothy\b/gi, "")
       .replace(/\bjimothy\b/gi, "")
+      .replace(/\bpunaab\.vercel\.app\b/gi, "")
       .replace(/\s+/g, " ")
       .trim();
+    if (/vercel\.app/i.test(text)) return null;
     if (text.length < 28 || text.length > 220) return null;
     if (tooSimilar(text, recent)) return null;
     return { body: text, link: picked.link };

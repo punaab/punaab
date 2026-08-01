@@ -4,6 +4,7 @@
  */
 import { createHmac, randomBytes } from "crypto";
 import {
+  getPublicShareUrl,
   getXAccessToken,
   getXAccessTokenSecret,
   getXApiKey,
@@ -12,6 +13,23 @@ import {
   isXEngageEnabled,
 } from "./config";
 import { getValidXUserAccessToken, getXConnectionStatus } from "./x-auth";
+
+/**
+ * Tweets must never send people to the agent host (punaab.vercel.app).
+ * Rewrite any Vercel / agent URLs to the public marketing site.
+ */
+export function sanitizeTweetPublicUrls(text: string): string {
+  const share = getPublicShareUrl();
+  return text
+    .replace(/https?:\/\/(?:www\.)?punaab\.vercel\.app/gi, share)
+    .replace(
+      /https?:\/\/punaab[a-z0-9-]*\.vercel\.app/gi,
+      share,
+    )
+    .replace(/\b(?:www\.)?punaab\.vercel\.app\b/gi, share.replace(/^https?:\/\//, ""))
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
 
 export interface XPostResult {
   ok: boolean;
@@ -195,7 +213,7 @@ export async function createXPost(
   if (!options.force && !isXCrossPostEnabled()) {
     return { ok: false, skipped: true, error: "x_crosspost_disabled" };
   }
-  const trimmed = text.trim();
+  const trimmed = sanitizeTweetPublicUrls(text.trim());
   if (!trimmed) {
     return { ok: false, skipped: true, error: "empty_text" };
   }

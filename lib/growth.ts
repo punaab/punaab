@@ -1,4 +1,4 @@
-import { getSiteUrl } from "./config";
+import { getPublicShareUrl, getSiteUrl } from "./config";
 import { persona } from "./persona";
 
 /** North star for growth actions — humans benefit first, fame follows usefulness. */
@@ -34,15 +34,17 @@ export function buildAlchemyContextForBrain(
 }
 
 export function buildPunaabOfferings(): Record<string, string> {
-  const site = getSiteUrl();
+  // Humans / X → punaab.com only. Agent API hosts stay on getSiteUrl for builders.
+  const publicSite = getPublicShareUrl();
+  const agent = getSiteUrl();
   return {
-    site,
+    site: publicSite,
     profile: `https://www.moltbook.com/u/${persona.handle}`,
-    catGallery: `${site}/nft/cats`,
-    musicGallery: `${site}/nft/music`,
-    capabilities: `${site}/api/agent/capabilities`,
-    collab: `${site}/api/agent/collab`,
-    apps: `${site}/apps`,
+    catGallery: `${publicSite}/`,
+    musicGallery: `${publicSite}/music`,
+    capabilities: `${agent}/api/agent/capabilities`,
+    collab: `${agent}/api/agent/collab`,
+    apps: `${publicSite}/`,
   };
 }
 

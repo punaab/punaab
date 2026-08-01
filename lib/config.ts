@@ -629,6 +629,18 @@ export function getSiteUrl(): string {
   return "http://localhost:3000";
 }
 
+/**
+ * Public marketing URL for humans / X — always punaab.com.
+ * Never use getSiteUrl() (agent host) in tweets or share CTAs.
+ */
+export function getPublicShareUrl(): string {
+  const raw =
+    process.env.NEXT_PUBLIC_PUBLIC_SHARE_URL?.trim() ||
+    process.env.PUNAAB_PUBLIC_SHARE_URL?.trim() ||
+    "https://www.punaab.com";
+  return raw.replace(/\/$/, "");
+}
+
 /** X / Twitter — Consumer Key (same as API Key). */
 export function getXApiKey(): string | undefined {
   return (

@@ -170,6 +170,7 @@ async function craftMentionReply(mention: XMention): Promise<string | null> {
     "Write ONE chill, funny reply — 1–2 short sentences max.",
     "Tone: warm cat-AI energy, lightly humorous, intelligent, never mean.",
     "No hashtags, no links, no emojis spam, no \"Great point!\", no sales pitch.",
+    "Never mention punaab.vercel.app or any *.vercel.app URL.",
     "Do not start with @mentions — the API handles threading.",
     "Stay under 240 characters. Output ONLY the reply text.",
   ].join("\n");
@@ -183,8 +184,10 @@ async function craftMentionReply(mention: XMention): Promise<string | null> {
 
   try {
     const result = await completeText(system, user, 120);
-    const text = clampTweet(stripTweetJunk(result.text || ""));
+    let text = clampTweet(stripTweetJunk(result.text || ""));
+    text = text.replace(/https?:\/\/\S*vercel\.app\S*/gi, "").trim();
     if (text.length < 8) return null;
+    if (/vercel\.app/i.test(text)) return null;
     return text;
   } catch (error) {
     console.warn("[x-engage] craft reply:", error);
@@ -200,6 +203,7 @@ async function craftDailyOriginal(topics: string[]): Promise<string | null> {
     "Make it relatable OR humorous OR intelligent OR boldly specific — pick one lane.",
     "Inspired by recent Moltbook chatter below, but standalone — no 'as I said on Moltbook'.",
     "Never mention OpenSolve, open-solve, Limbothy, Jimothy, or any research network brand.",
+    "Never mention punaab.vercel.app, Vercel, or any *.vercel.app URL. Public site is only punaab.com / www.punaab.com.",
     "You may gently nod to punaab.com or the Traveling Bard when it fits — never hard-sell.",
     "1–3 short sentences. No hashtags. No links unless essential. Under 260 chars.",
     "Sound like a chill cat AI with a brain, not a marketing bot.",
@@ -223,9 +227,12 @@ async function craftDailyOriginal(topics: string[]): Promise<string | null> {
     let text = clampTweet(result.text || "", 260);
     text = text
       .replace(/\bopen[\s_-]?solve\b/gi, "")
+      .replace(/https?:\/\/\S*vercel\.app\S*/gi, "")
+      .replace(/\bpunaab\.vercel\.app\b/gi, "")
       .replace(/\s{2,}/g, " ")
       .trim();
     if (/\bopen[\s_-]?solve\b/i.test(text)) return null;
+    if (/vercel\.app/i.test(text)) return null;
     if (text.length < 20) return null;
     return text;
   } catch (error) {
