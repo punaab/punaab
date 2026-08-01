@@ -54,6 +54,29 @@ export default function HomePage() {
         </SiteLink>
       </section>
 
+      <section className="section home-song" aria-labelledby="home-song-title">
+        <p className="section-num">Song</p>
+        <h2 id="home-song-title">&ldquo;Until It Leads Me Home&rdquo;</h2>
+        <p className="section-lead">
+          Hear Punaab&apos;s walking ballad — the road, the longing, and the way
+          back.
+        </p>
+        <div className="home-song-frame">
+          <iframe
+            className="home-song-video"
+            src="https://www.youtube.com/embed/_3e-lfXprhQ"
+            title="Until It Leads Me Home — Punaab"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowFullScreen
+            loading="lazy"
+            referrerPolicy="strict-origin-when-cross-origin"
+          />
+        </div>
+        <SiteLink className="btn soft home-song-more" href="/music">
+          More songs
+        </SiteLink>
+      </section>
+
       <GoldLeaderboard />
 
       <section className="section home-features" aria-label="What Punaab can do">
