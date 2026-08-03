@@ -1,12 +1,12 @@
 import { MarketingShell } from "@/components/marketing/MarketingShell";
-import { BardWorldLazy } from "@/components/marketing/BardWorldLazy";
+import { WorldComingSoon } from "@/components/marketing/WorldComingSoon";
 import { TravelPageTitle } from "@/components/marketing/TravelPageTitle";
 import { WorldStageFocus } from "@/components/marketing/WorldStageFocus";
 
 export const metadata = {
   title: "World — Punaab the traveling bard",
   description:
-    "Watch Punaab walk the valley — drag to look, play a song, open the map.",
+    "The Land of Pixelgrew is coming soon — watch this space for the living valley.",
 };
 
 export default function WorldPage() {
@@ -17,14 +17,13 @@ export default function WorldPage() {
           <p className="section-num">World</p>
           <TravelPageTitle>LAND OF PIXELGREW</TravelPageTitle>
           <p className="section-lead">
-            Drag to look around. Play a song. Open the map and set him on the
-            road.
+            The living valley is on its way. Stay a moment — the road will open.
           </p>
         </header>
 
         <WorldStageFocus>
           <div className="travel-stage">
-            <BardWorldLazy />
+            <WorldComingSoon />
           </div>
         </WorldStageFocus>
       </section>

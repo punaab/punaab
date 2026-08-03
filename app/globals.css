@@ -1176,6 +1176,51 @@ body:has(.bard-world.is-immersive) { overflow: hidden; }
 .bard-world::before,
 .bard-world::after { content: none; }
 .bard-world canvas { width: 100% !important; height: 100% !important; display: block; }
+.world-coming-soon {
+  display: grid;
+  place-items: center;
+}
+.world-coming-soon-sign {
+  display: grid;
+  gap: 0.45rem;
+  justify-items: center;
+  text-align: center;
+  padding: 1.5rem 1.25rem;
+  max-width: 26rem;
+  animation: world-coming-soon-in 0.55s ease both;
+}
+.world-coming-soon-eyebrow {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(255, 248, 231, 0.78);
+}
+.world-coming-soon-sign h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 5vw, 3rem);
+  letter-spacing: 0.06em;
+  color: #fff8e7;
+  text-shadow: 0 2px 0 rgba(21, 34, 56, 0.45);
+}
+.world-coming-soon-sign p {
+  margin: 0;
+  color: rgba(255, 248, 231, 0.88);
+  line-height: 1.45;
+  font-weight: 600;
+}
+@keyframes world-coming-soon-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.6rem) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
 .bard-world-chrome {
   position: absolute;
   top: 1.6rem;
