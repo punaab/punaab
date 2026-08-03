@@ -572,10 +572,10 @@ html.punaab-booting::before {
   font-weight: 700;
 }
 
-/* Homepage song short — vertical clip under the project pitch */
+/* Homepage song — landscape YouTube under the project pitch */
 .home-song {
   text-align: center;
-  max-width: 40rem;
+  max-width: 60rem;
   margin-left: auto;
   margin-right: auto;
   display: grid;
@@ -584,10 +584,11 @@ html.punaab-booting::before {
 }
 .home-song .section-lead {
   margin: 0 auto 1rem;
+  max-width: 40rem;
 }
 .home-song-frame {
-  width: min(100%, 19.5rem);
-  aspect-ratio: 9 / 16;
+  width: min(100%, 56rem);
+  aspect-ratio: 16 / 9;
   border: 2px solid var(--border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-chunky-lg);
