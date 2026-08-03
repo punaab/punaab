@@ -56,16 +56,16 @@ export default function HomePage() {
 
       <section className="section home-song" aria-labelledby="home-song-title">
         <p className="section-num">Song</p>
-        <h2 id="home-song-title">&ldquo;Until It Leads Me Home&rdquo;</h2>
+        <h2 id="home-song-title">&ldquo;The Grass Grows Green&rdquo;</h2>
         <p className="section-lead">
-          Hear Punaab&apos;s walking ballad — the road, the longing, and the way
-          back.
+          A soft meadow air — green shoulders of the road, and light on the
+          verge.
         </p>
         <div className="home-song-frame">
           <iframe
             className="home-song-video"
-            src="https://www.youtube.com/embed/_3e-lfXprhQ"
-            title="Until It Leads Me Home — Punaab"
+            src="https://www.youtube.com/embed/KF1KL32s8-8"
+            title="The Grass Grows Green — Punaab"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
             allowFullScreen
             loading="lazy"
